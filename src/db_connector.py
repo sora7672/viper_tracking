@@ -1,22 +1,35 @@
 """
 This module will write & read data from/into a MongoDB database.
-Author: Sora_7672
+Authors: Sora_7672 and Vulnona
 """
 
 from pymongo import MongoClient
+from typing import Optional
+import os
+
+mongodb_host = os.getenv('MONGODB_HOST', 'localhost')
+mongodb_port = int(os.getenv('MONGODB_PORT', 27017))
 
 # Init the connection
-m_client = MongoClient("localhost", 27017)
-m_db = m_client.viper_tracking
+try:
+    m_client = MongoClient(mongodb_host, mongodb_port)
+    m_db = m_client.viper_tracking
+except errors.ConnectionError as e:
+    print(f"Could not connect to MongoDB: {e}")
+    
 
-
-def add_window_dict(window_dict: dict):
+def add_window_dict(window_dict: dict) -> Optional[str]:
     """
     This function will add a window dictionary to the MongoDB database.
     :param window_dict: dict
-    :return: _id
+    :return: _id | None
     """
-    return m_db.window_collection.insert_one(window_dict).inserted_id
+    if isinstance(window_dict, dict):
+        result = m_db.window_collection.insert_one(window_dict)
+        return result.inserted_id
+    else:
+        print("Invalid parameter type: Expected a dictionary.")
+        return None
 
 
 def get_window_dict_list_by_label(label: str) -> list[dict]:
@@ -75,16 +88,18 @@ def add_label(label_dict: dict):
     return m_db.label_collection.insert_one(label_dict).inserted_id
 
 
-def update_label(label_dict: dict):
+def update_label(label_dict: dict) -> Optional[str]:
     """
     This function will update a label dictionary in the MongoDB database.
     :param label_dict: dict
-    :return: _id
+    :return: _id | None
     """
-    if label_dict["_id"] is not None:
-        m_db.label_collection.find_one_and_update({"$and": [{"name": label_dict["name"]}, {"_id": label_dict["_id"]}]},
-                                                  {"$set": label_dict})
-        return label_dict["_id"]
+    if "_id" in label_dict and label_dict["_id"] is not None:
+        result = m_db.label_collection.find_one_and_update(
+            {"$and": [{"name": label_dict["name"]}, {"_id": label_dict["_id"]}]},
+            {"$set": label_dict}
+        )
+        return label_dict["_id"] if result else None
     else:
         label_dict.pop("_id", None)
         return add_label(label_dict)

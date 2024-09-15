@@ -3,8 +3,7 @@
 import ttkbootstrap as tb
 from input_tracker import start as input_start, stop as input_stop
 from window_tracker import start as tracking_start, stop as tracking_stop, setup_labels
-import input_tracker
-import window_tracker
+
 
 # TODO:
 #   wenn was hinzugefügt, dann update des tracking threads/microservies/Prozess

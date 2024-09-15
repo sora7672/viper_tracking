@@ -370,11 +370,11 @@ def setup_labels() -> None:
 
 
 if __name__ == "__main__":
+    print("Please start with the main.py")
     # one time only test setup:
     # add_label("Mongo DB", [Condition("window_title", "in", "mongo")])
     # add_label("Java", [Condition("window_title", "in", "java")])
     # add_label("Python", [Condition("window_title", "in", ".py")])
     # add_label("Python", [Condition("window_title", "in", "python")])
     # add_label("Research", [Condition("window_title", "in", "chatgpt")])
-    print("Please start with the main.py")
 

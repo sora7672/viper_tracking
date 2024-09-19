@@ -11,6 +11,8 @@ from threading import Thread, Event, Lock
 tray_helper_thread: Thread = None
 tray_helper_lock: Lock = Lock()
 
+# FIXME: Sync error whenever a label was added and the app is closed, it results in a error closing
+
 
 def create_label_win():
 

@@ -3,6 +3,7 @@
 import ttkbootstrap as tb
 from input_tracker import start as input_start, stop as input_stop
 from window_tracker import start as tracking_start, stop as tracking_stop, setup_labels
+from system_tray_handler import start as system_tray_start
 
 
 # TODO:
@@ -24,13 +25,11 @@ def start() -> None:
     # start the thread for reading windows
     tracking_start()
 
-    root_window = tb.Window()
-    root_window.geometry(f"{300}x{100}+{100}+{100}")
-    root_window.grid_rowconfigure(0, weight=1)
-    root_window.grid_columnconfigure(0, weight=1)
+    # main loop with the systemtray
+    system_tray_start()
 
     # TODO: If there is a setting change, stop & start again the threads.
-    root_window.mainloop()
+
 
     # TODO: termination process handeling
     # Stop the inputmanager & window tracker thread if the program gets terminated

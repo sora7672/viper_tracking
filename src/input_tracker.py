@@ -89,9 +89,9 @@ class InputManager:
         Only way to access it.
         :return:
         """
-        if InputManager._instance is None:
-            InputManager()
-        return InputManager._instance
+        if cls._instance is None:
+            cls()
+        return cls._instance
 
     def add_input(self, user_input_type) -> None:
         """

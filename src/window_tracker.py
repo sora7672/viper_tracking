@@ -1,4 +1,4 @@
-import pprint
+
 
 import win32gui
 import win32process
@@ -7,6 +7,7 @@ import db_connector
 from threading import Thread, Event, Lock
 from time import time, sleep
 from input_tracker import InputManager
+
 
 
 # boolean for stopping window readings loop, if set True window tracking stops
@@ -189,6 +190,10 @@ class Label:
         self._id = db_connector.add_label(dict_no_id)
         return self
 
+    @property
+    def is_active(self):
+        return self._active
+
     def enable(self):
         """
         Sets the label active for checking.
@@ -298,7 +303,6 @@ def win_track() -> None:
         input_dict = InputManager.get_instance().get_all()
         db_connector.add_window_dict(tmp_win.add_input_info(input_dict).get_as_dict())
 
-        print(tmp_win) if viper_settings["debug"] else None
 
 
 def start() -> None:

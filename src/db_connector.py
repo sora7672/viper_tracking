@@ -14,8 +14,8 @@ mongodb_port = int(os.getenv('MONGODB_PORT', 27017))
 try:
     m_client = MongoClient(mongodb_host, mongodb_port)
     m_db = m_client.viper_tracking
-except errors.ConnectionError as e:
-    print(f"Could not connect to MongoDB: {e}")
+except MongoClient.errors.ServerSelectionTimeoutError as err:
+    print(f"Could not connect to MongoDB: {err}")
     
 
 def add_window_dict(window_dict: dict) -> Optional[str]:
@@ -38,7 +38,8 @@ def get_window_dict_list_by_label(label: str) -> list[dict]:
     :param label: str
     :return: list[dict]
     """
-    return list(m_db.window_collection.find({"label": label}).collation({"locale": "en", "strength": 2}))
+    return list(m_db.window_collection.find({"label": label}).collation({"locale": "en", "strength": 2})
+                .sort("timestamp"))
 
 
 def get_window_dict_list_by_time_window(start_time: float, end_time: float) -> list[dict]:
@@ -48,7 +49,7 @@ def get_window_dict_list_by_time_window(start_time: float, end_time: float) -> l
     :param end_time: timestamp float
     :return:
     """
-    return list(m_db.window_collection.find({"timestamp": {"$gte": start_time, "$lte": end_time}}))
+    return list(m_db.window_collection.find({"timestamp": {"$gte": start_time, "$lte": end_time}}).sort("timestamp"))
 
 
 def get_window_dict_list_by_window_type(*window_types: str) -> list[dict]:
@@ -57,7 +58,7 @@ def get_window_dict_list_by_window_type(*window_types: str) -> list[dict]:
     :param window_types: str | str, str, ...
     :return: list[dict]
     """
-    return list(m_db.window_collection.find({"window_type": {"$in": window_types}})
+    return list(m_db.window_collection.find({"window_type": {"$in": window_types}}).sort("timestamp")
                 .collation({"locale": "en", "strength": 2}))
 
 
@@ -67,7 +68,7 @@ def get_window_dict_list_by_words(*words: str) -> list[dict]:
     :param words: str | str, str, ...
     :return:
     """
-    return list(m_db.window_collection.find({"window_text_words": {"$in": words}})
+    return list(m_db.window_collection.find({"window_text_words": {"$in": words}}).sort("timestamp")
                 .collation({"locale": "en", "strength": 2}))
 
 

@@ -3,6 +3,8 @@ This module will write & read data from/into a MongoDB database.
 Authors: Sora_7672 and Vulnona
 """
 
+# FIXME: When closing the app, the labels get saved again / double saved
+
 from pymongo import MongoClient
 from typing import Optional
 import os

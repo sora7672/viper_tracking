@@ -1,0 +1,5 @@
+pymongo==4.8.0
+pynput==1.7.7
+pywin32==306
+psutil==6.0.0
+ttkbootstrap==1.10.1

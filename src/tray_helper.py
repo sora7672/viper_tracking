@@ -48,6 +48,7 @@ def create_label_win():
         manual_label.mainloop()
 
 
+# FIXME: Needs to change completely to new Topwindow architecture to work and needs to be created by GUI Handler
 def sys_add_label():
     global tray_helper_thread
 
@@ -56,16 +57,15 @@ def sys_add_label():
 
 
 def sys_add(window, label_text):
+    # TODO: Probably need to make this smoother, because circualr import if import on top
     from system_tray_handler import SystemTrayManager
     Label(label_text.get(), manually=True)
-    # TODO: Probably this wont update the widget properly, needs a fix
     sys_cancel(window)
     SystemTrayManager.get_instance().update_menu()
 
 
 def sys_cancel(window=None):
     window.destroy()
-
 
 
 if __name__ == "__main__":

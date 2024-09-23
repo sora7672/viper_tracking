@@ -2,8 +2,9 @@
 
 import ttkbootstrap as tb
 from input_tracker import start as input_start, stop as input_stop
-from window_tracker import start as tracking_start, stop as tracking_stop, setup_labels
+from window_tracker import start as tracking_start, stop as tracking_stop, Label
 from system_tray_handler import start as system_tray_start
+from gui_handler import GuiHandler
 
 
 # TODO:
@@ -19,16 +20,17 @@ def start() -> None:
     """
     # First get the Label elements from the DB, needs to be called here once,
     # because the start function will be called in between on changes.
-    setup_labels()
+    Label.init_all_label_from_db()
+
     # start thread for tracking mouse and keyboard signals (only counting & timestamp)
     input_start()
     # start the thread for reading windows
     tracking_start()
 
-    # main loop with the systemtray
+    # main loop with the system tray
     system_tray_start()
 
-    # TODO: If there is a setting change, stop & start again the threads.
+    GuiHandler.get_instance().run()
 
 
     # TODO: termination process handeling

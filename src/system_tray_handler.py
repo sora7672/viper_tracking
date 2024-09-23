@@ -3,27 +3,21 @@
 from pystray import Icon, Menu, MenuItem
 from PIL import Image, ImageDraw
 from random import randint
-from window_tracker import Label
 from threading import Thread, Event, Lock
-from tray_helper import sys_add_label, sys_cancel
-from gui_handler import open_gui
 
-# TODO:
-#  get icon for viper tracking
-#  menu should include:
-#  Manual Labels -> Every label thats manual -> should include activate (if turned off) and deactivate (when its on)
-#  + New label, which will create a new label and directly activate it (use ttkb win)
-#  Open App (like opening the main gui)
-#  Exit app (turning it off)
+from window_tracker import Label
+from gui_handler import GuiHandler
+
 
 
 class MultiFunction:
     def __init__(self, *functions):
         self.functions = functions
 
+    # Call each function in sequence
     def __call__(self, *args):
         for func in self.functions:
-            func()  # Call each function in sequence
+            func()
 
 
 class SystemTrayManager:
@@ -32,23 +26,24 @@ class SystemTrayManager:
         if SystemTrayManager._instance is not None:
             raise Exception("This class is a singleton!")
         else:
-            self.icon = Icon("Viper Tracking", tmp_image())  # TODO: replace with image
+            self.icon = Icon("Viper Tracking", Image.open("viper_tray.ico"))
             self.lock = Lock()
             self.menu = None
             SystemTrayManager._instance = self
 
     def start_systray(self):
-        self.icon.run()
+        self.icon.run_detached()
 
     def stop_systray(self):
         self.icon.stop()
+        GuiHandler.get_instance().stop()
 
 
 
     def update_menu(self):
         self.icon.menu = Menu(self._label_menu(),
-                         MenuItem ("Open GUI", open_gui),  # TODO: Add right call for GUI opening
-                         MenuItem("Exit Viper Tracking", self.stop_systray))
+                              MenuItem("Open GUI", lambda: GuiHandler.get_instance().main_window()),
+                              MenuItem("Exit Viper Tracking", self.stop_systray))
         self.icon.update_menu()
 
     def _label_menu(self):
@@ -64,13 +59,11 @@ class SystemTrayManager:
                     MenuItem("Activate", enable_action, visible=not label.is_active),
                     MenuItem("Deactivate", disable_action, visible=label.is_active)
                 )))
-        menu_labels.append(MenuItem("Add & start new Label", self.add_new_label))
+        menu_labels.append(MenuItem("Add & start new Label", lambda: GuiHandler.get_instance().sys_tray_manual_label()))
 
         tmp_menu = MenuItem("Manual Labels", Menu(*menu_labels))
         return tmp_menu
 
-    def add_new_label(self):
-        sys_add_label()
 
 
     @classmethod
@@ -86,16 +79,6 @@ class SystemTrayManager:
 
 
 
-
-# Function to create an image for the tray icon , just temporary till icon is created :D
-def tmp_image():
-    # Create a basic image with two colors
-
-    image = Image.new('RGB', (64, 64), "green")
-    draw = ImageDraw.Draw(image)
-    draw.rectangle((32, 0, 64, 32), fill="purple")
-    draw.rectangle((0, 32, 32, 64), fill="purple")
-    return image
 
 
 def start():
@@ -113,5 +96,7 @@ def start():
 
 
 if __name__ == "__main__":
+    # Will get an async error if tested alone, because GUI is not initiated
+    start()
     print("Please start with the main.py")
 

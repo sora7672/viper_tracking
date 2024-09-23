@@ -12,8 +12,22 @@ from threading import Thread, Event, Lock
 from time import time, sleep
 from pynput import mouse, keyboard
 
+from db_connector import add_input_infos as db_add_input_infos
+
+
 mouse_thread: Thread = None
 keyboard_thread: Thread = None
+input_writer_thread: Thread = None
+
+viper_settings = {"interval": 30}
+
+stop_event = Event()
+
+# Key lists for different types we want to handle different
+# Obvious directions and some keys that don't have the Key.char attribute, but should be counted as
+# char / write keys.
+direction_keys = [keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right]
+other_write_keys = [keyboard.Key.space, keyboard.Key.enter, keyboard.Key.backspace, keyboard.Key.delete]
 
 class InputManager:
     """
@@ -81,6 +95,9 @@ class InputManager:
         self._count_middle_mouse_pressed = 0
         self._count_mouse_scrolls = 0
 
+    def add_to_db(self):
+        db_add_input_infos(self.get_all())
+
 
     @classmethod
     def get_instance(cls):
@@ -132,14 +149,7 @@ class InputManager:
                     raise Exception(f'Unexpected input type: {user_input_type}')
 
 
-# handler for stopping input readings
-stop_event = Event()
 
-# Key lists for different types we want to handle different
-# Obvious directions and some keys that don't have the Key.char attribute, but should be counted as
-# char / write keys.
-direction_keys = [keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right]
-other_write_keys = [keyboard.Key.space, keyboard.Key.enter, keyboard.Key.backspace, keyboard.Key.delete]
 
 
 def on_key_press(key) -> None | bool:
@@ -194,10 +204,11 @@ def on_mouse_scroll(x, y, dx, dy) -> None | bool:
     InputManager.get_instance().add_input("mouse_scroll")
 
 
-def start_mouse_listener() -> None:
+def mouse_tracker() -> None:
     """ Used for starting the event listener in a thread
     Calls the on_mouse_click function every time a button of the mouse is pressed
     and the on_mouse_scroll function  every time the user scrolls
+    Limited to 10 inputs per second.
 
     """
     with mouse.Listener(on_click=on_mouse_click, on_scroll=on_mouse_scroll) as listener:
@@ -206,9 +217,10 @@ def start_mouse_listener() -> None:
         listener.stop()
 
 
-def start_keyboard_listener() -> None:
+def keyboard_tracker() -> None:
     """ Used for starting the event listener in a thread
     Calls the on_key_press function every time a key is pressed on keyboard
+    Limited to 10 inputs per second.
     """
     with keyboard.Listener(on_press=on_key_press) as listener:
         while not stop_event.is_set():
@@ -216,17 +228,30 @@ def start_keyboard_listener() -> None:
         listener.stop()
 
 
+def input_writer() -> None:
+    """
+    This function is for adding to the thread to run it properly.
+    :return: None
+    """
+
+    while not stop_event.is_set():
+        sleep(viper_settings["interval"])
+        if stop_event.is_set():
+            break
+        InputManager.get_instance().add_to_db()
+
+
 def stop() -> None:
     """
     This function is called to stop the thread or better the input tracker.
     :return: None
     """
-    global keyboard_thread
-    global mouse_thread
+    global mouse_thread, keyboard_thread, input_writer_thread
     stop_event.set()
 
     mouse_thread.join()
     keyboard_thread.join()
+    input_writer_thread.join()
 
 
 def start() -> None:
@@ -234,12 +259,14 @@ def start() -> None:
     Starts the manager thread, which will listen to all key inputs and mouse clicks/scrolls.
     :return:
     """
-    global mouse_thread
-    mouse_thread = Thread(target=start_mouse_listener)
+    global mouse_thread, keyboard_thread, input_writer_thread
+    mouse_thread = Thread(target=mouse_tracker)
+    keyboard_thread = Thread(target=keyboard_tracker)
+    input_writer_thread = Thread(target=input_writer)
+
     mouse_thread.start()
-    global keyboard_thread
-    keyboard_thread = Thread(target=start_keyboard_listener)
     keyboard_thread.start()
+    input_writer_thread.start()
 
 
 if __name__ == "__main__":

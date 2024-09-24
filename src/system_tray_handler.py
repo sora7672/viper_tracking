@@ -41,6 +41,7 @@ class SystemTrayManager:
         self.update_menu()
         self.icon.run_detached()
 
+
     def stop_program(self):
         """
         This methode is the most important after the program start.

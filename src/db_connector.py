@@ -160,7 +160,7 @@ def delete_label(label_id) -> None:
 
 # TODO: do what is needed to close the db connection properly
 def close_db_connection():
-    pass
+    m_client.close()
 
 
 if __name__ == "__main__":

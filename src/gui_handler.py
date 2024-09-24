@@ -4,10 +4,15 @@ from tkinter import Toplevel
 from ttkbootstrap import Window
 from threading import Thread, Lock, Event
 from PIL import Image, ImageTk
+from os import path
+
 
 
 class GuiHandler:
+    """ Does not need to be trhead safe, because it will allways run in mainthread in the background.
+    Last thread to start and last to stop then we  have no race conditions."""
     _instance = None
+
     def __init__(self):
         if GuiHandler._instance is not None:
             raise Exception("This class is a singleton!")
@@ -15,8 +20,9 @@ class GuiHandler:
             GuiHandler._instance = self
             self.root = tb.Window()
             self.root.title('Invisible Window(If you see me report me!)')
-# FIXME: Image not working!!
-            tmp = Image.open("viper_tray.ico")  # TODO: get a better image
+            # FIXME: Image not working!!
+
+            tmp = Image.open('src/viper_tray.ico')  # TODO: get a better image
             self.window_icon = ImageTk.PhotoImage(tmp)
             self.root.iconphoto = self.window_icon
 
@@ -27,9 +33,12 @@ class GuiHandler:
         self.root.mainloop()
 
     def stop(self):
+        # destroy child windows and then stop the mainloop for not having dead thread elements in cache
+        # or other bugs. Last to be called in a closing order.
+        childs = self.root.winfo_children()
+        for chil in childs:
+            chil.destroy()
         self.root.quit()
-        self.root.destroy()
-
 
     def sys_tray_manual_label(self):
 
@@ -37,6 +46,8 @@ class GuiHandler:
         win_height = 130
         taskbar_height = 70
         sys_tray_add_lbl_win = Toplevel(self.root)
+        sys_tray_add_lbl_win.withdraw()
+
         sys_tray_add_lbl_win.title('Sys Tray Add Label')
         sys_tray_add_lbl_win.iconphoto = self.window_icon
         s_width = sys_tray_add_lbl_win.winfo_screenwidth()
@@ -67,10 +78,12 @@ class GuiHandler:
         add_btn.grid_configure(row=2, column=0, sticky='sw', padx=10, pady=10)
         cancel_btn.grid_configure(row=2, column=1, sticky='nw', padx=10, pady=10)
 
-    # TODO: remove the temp top win
+        sys_tray_add_lbl_win.deiconify()  # shows the window again
+
+    # TODO: create a real main window
     def main_window(self, name: str = "Empty", geo="300x200"):
         n_win = Toplevel(self.root)
-        n_win.iconphoto =  self.window_icon
+        n_win.iconphoto = self.window_icon
         n_win.title(name)
         n_win.geometry(geo)
 
@@ -88,20 +101,39 @@ class GuiHandler:
 
         return cls._instance
 
+
 # # # # Helper functions for the widgets # # # #
-
-
-
 def win_close(win: Window):
     win.destroy()
 
-def sys_add(win:Window, label_text):
+
+def sys_add(win: Window, label_text):
     # TODO: Probably need to make this smoother, because circualr import if import on top
     from system_tray_handler import SystemTrayManager
     from window_tracker import Label
     Label(label_text.get(), manually=True)
     win_close(win)
     SystemTrayManager.get_instance().update_menu()
+
+
+# # # # External call functions for less import in other files # # # #
+
+def stop_gui():
+    GuiHandler.get_instance().stop()
+
+def init_root_gui():
+    GuiHandler.get_instance()
+
+def start_root_gui():
+    GuiHandler.get_instance().run()
+
+
+def sys_tray_manual_label():
+    GuiHandler.get_instance().sys_tray_manual_label()
+
+
+def open_main_gui():
+    GuiHandler.get_instance().main_window()
 
 if __name__ == "__main__":
     print("Please start with the main.py")

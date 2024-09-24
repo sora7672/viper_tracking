@@ -12,6 +12,7 @@ from threading import Thread, Event, Lock
 from time import time, sleep
 from pynput import mouse, keyboard
 
+from config_manager import threads_are_stopped, interval_inputs
 from db_connector import add_input_infos as db_add_input_infos
 
 
@@ -19,9 +20,8 @@ mouse_thread: Thread = None
 keyboard_thread: Thread = None
 input_writer_thread: Thread = None
 
-viper_settings = {"interval": 30}
 
-stop_event = Event()
+
 
 # Key lists for different types we want to handle different
 # Obvious directions and some keys that don't have the Key.char attribute, but should be counted as
@@ -158,7 +158,7 @@ def on_key_press(key) -> None | bool:
     but only calls the InputManagers add_input method (based on key type pressed)
     :return: Only false when thread closing got called, else None
     """
-    if stop_event.is_set():
+    if threads_are_stopped():
         return False
 
     # FOR PRIVACY CONCERNS:
@@ -181,7 +181,7 @@ def on_mouse_click(x, y, button, pressed) -> None | bool:
     but only calls the InputManagers add_input method (based on click button)
     :return: Only false when thread closing got called, else None
     """
-    if stop_event.is_set():
+    if threads_are_stopped():
         return False
 
     if pressed:
@@ -199,7 +199,7 @@ def on_mouse_scroll(x, y, dx, dy) -> None | bool:
     but only calls the InputManagers add_input method (without giving info on where the scroll happend)
     :return: Only false when thread closing got called, else None
     """
-    if stop_event.is_set():
+    if threads_are_stopped():
         return False
     InputManager.get_instance().add_input("mouse_scroll")
 
@@ -212,9 +212,10 @@ def mouse_tracker() -> None:
 
     """
     with mouse.Listener(on_click=on_mouse_click, on_scroll=on_mouse_scroll) as listener:
-        while not stop_event.is_set():
+        while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
+    print("end mouse")
 
 
 def keyboard_tracker() -> None:
@@ -223,9 +224,10 @@ def keyboard_tracker() -> None:
     Limited to 10 inputs per second.
     """
     with keyboard.Listener(on_press=on_key_press) as listener:
-        while not stop_event.is_set():
+        while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
+    print("end keyboard")
 
 
 def input_writer() -> None:
@@ -234,27 +236,32 @@ def input_writer() -> None:
     :return: None
     """
 
-    while not stop_event.is_set():
-        sleep(viper_settings["interval"])
-        if stop_event.is_set():
-            break
+    while not threads_are_stopped():
+        inter = interval_inputs()
+        if inter % 5 != 0:
+            raise Exception(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
+        fifth_timer = inter // 5
+        for i in range(fifth_timer):
+            sleep(5)
+            if threads_are_stopped():
+                break
         InputManager.get_instance().add_to_db()
+    print("end input writer")
 
-
-def stop() -> None:
+def stop_done() -> bool:
     """
     This function is called to stop the thread or better the input tracker.
     :return: None
     """
     global mouse_thread, keyboard_thread, input_writer_thread
-    stop_event.set()
 
     mouse_thread.join()
     keyboard_thread.join()
     input_writer_thread.join()
+    return True
 
 
-def start() -> None:
+def start_input_tracker() -> None:
     """
     Starts the manager thread, which will listen to all key inputs and mouse clicks/scrolls.
     :return:

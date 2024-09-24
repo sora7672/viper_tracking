@@ -2,7 +2,7 @@
 This module will write & read data from/into a MongoDB database.
 Authors: Sora_7672 and Vulnona
 """
-
+# TODO: Probably need to safe close the db connection on program exit, depends on DB i guess
 
 from pymongo import MongoClient
 from typing import Optional
@@ -156,6 +156,11 @@ def delete_label(label_id) -> None:
     result = m_db.label_collection.find_one_and_delete({{"_id": label_id}})
     if result is None:
         raise Warning(f"Could not delete label.[_id={label_id}]")
+
+
+# TODO: do what is needed to close the db connection properly
+def close_db_connection():
+    pass
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import threading
 
 # TODO: Minimize the imports!
 import win32gui
@@ -6,17 +7,16 @@ import psutil
 import db_connector
 from threading import Thread, Event, Lock
 from time import time, sleep
-from input_tracker import InputManager
+from config_manager import interval_windows, threads_are_stopped
 
 
 
-# boolean for stopping window readings loop, if set True window tracking stops
-stop_event = Event()
 
 window_thread: Thread = None
 
 # temp vars, later replaced with a configuration read in file
-viper_settings = {"interval": 5, "debug": False}
+# TODO: Add this to the config
+viper_settings = {"debug": False}
 removeable_title_segments = ["Mozilla Firefox"]  # TODO: Need this? Maybe cut the type and check for its words and remove?
 untracked_types = []
 repl_chars = "–—-"
@@ -42,10 +42,7 @@ class WinInfo:
     def __str__(self):
         return str(self.__dict__)
 
-
-
     def fill_self(self):
-
         a_win = win32gui.GetForegroundWindow()
         self.window_title = win32gui.GetWindowText(a_win)
         _, self.process_id = win32process.GetWindowThreadProcessId(a_win)
@@ -76,7 +73,6 @@ class WinInfo:
             self.set_labels()
             self.write_to_db()
 
-            # TODO: use class method to write into DB (window only)
 
     def set_labels(self):
         for lab in Label.get_all_labels():
@@ -199,9 +195,11 @@ class Label:
     and have methods to append & check these. Can have multiple conditions that need to be True to append.
     """
     _label_list = []
+    _lock = Lock()
 
     def __init__(self, name: str, manually: bool = False, db_id=None, condition_list: list[Condition] = None,
                  active: bool = True):
+        self.lock = Lock()
         self.name: str = name
         self.manually = manually
         self._active = active
@@ -211,15 +209,17 @@ class Label:
 
         if self._id is None and (len(self._condition_list) >= 1 or self.manually):
             self.add_to_db()
-        Label._label_list.append(self)
+        with Label._lock:
+            Label._label_list.append(self)
 
     def get_as_dict(self):
         """
         Just returns important attributes as a dict for further usage.
         :return: dict
         """
-        return {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
-                "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+        with self.lock:
+            return {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+                    "conditions": [cond.get_as_dict() for cond in self._condition_list]}
 
     def add_to_db(self):
         """
@@ -227,24 +227,26 @@ class Label:
         Enables chain method casting.
         :return: self
         """
-        if self._id is not None:
-            raise Exception("Label was already added to the database.")
-        if (self._condition_list is None or len(self._condition_list) == 0) and not self.manually:
-            raise ValueError("No conditions were provided.")
-        else:
-            dict_no_id = {"name": self.name, "manually": self.manually, "active": self._active,
-                          "conditions": [cond.get_as_dict() for cond in self._condition_list]}
-            self._id = db_connector.add_label(dict_no_id)
-            return self
+        with self.lock:
+            if self._id is not None:
+                raise Exception("Label was already added to the database.")
+            if (self._condition_list is None or len(self._condition_list) == 0) and not self.manually:
+                raise ValueError("No conditions were provided.")
+            else:
+                dict_no_id = {"name": self.name, "manually": self.manually, "active": self._active,
+                              "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+                self._id = db_connector.add_label(dict_no_id)
+                return self
 
     def update_in_db(self):
-        if self._id is not None and self._id != "":
-            dict_with_id = {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
-                            "conditions": [cond.get_as_dict() for cond in self._condition_list]}
-            db_connector.update_label(dict_with_id)
+        with self.lock:
+            if self._id is not None and self._id != "":
+                dict_with_id = {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+                                "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+                db_connector.update_label(dict_with_id)
 
-        else:
-            raise ValueError("update_in_db only works if the Label._id is properly set!")
+            else:
+                raise ValueError("update_in_db only works if the Label._id is properly set!")
 
     def enable(self):
         """
@@ -254,8 +256,9 @@ class Label:
         Enables chain method casting.
         :return: self
         """
-        self._active = True
-        return self
+        with self.lock:
+            self._active = True
+            return self
 
     def disable(self):
         """
@@ -265,8 +268,9 @@ class Label:
         Enables chain method casting.
         :return: self
         """
-        self._active = False
-        return self
+        with self.lock:
+            self._active = False
+            return self
 
     def add_conditions(self, *conditions: Condition):
         """
@@ -275,9 +279,10 @@ class Label:
         Can add multiple conditions with multiple methode calls.
         :return: self
         """
-        for cond in conditions:
-            self._condition_list.append(cond)
-        return self
+        with self.lock:
+            for cond in conditions:
+                self._condition_list.append(cond)
+            return self
 
     def check_and_add_to_window(self, window: WinInfo) -> None:
         """
@@ -285,22 +290,24 @@ class Label:
         :param window: WinInfo
         :return: None
         """
-        if self._active:
-            if self.manually:
-                window.add_label(self.name)
-            else:
-                set_label = True
-                for condition in self._condition_list:
-                    if condition.check(window):
-                        continue
-                    else:
-                        set_label = False
-                if set_label:
+        with self.lock:
+            if self._active:
+                if self.manually:
                     window.add_label(self.name)
+                else:
+                    set_label = True
+                    for condition in self._condition_list:
+                        if condition.check(window):
+                            continue
+                        else:
+                            set_label = False
+                    if set_label:
+                        window.add_label(self.name)
 
     @property
     def is_active(self):
-        return self._active
+        with self.lock:
+            return self._active
 
     @classmethod
     def get_all_labels(cls) -> list:
@@ -308,10 +315,11 @@ class Label:
         Returns all existing labels as list.
         :return: list[Label]
         """
-        return cls._label_list
+        with Label._lock:
+            return cls._label_list
 
     @classmethod
-    def init_all_label_from_db(cls):
+    def init_all_labels_from_db(cls):
         """
            This function is for initializing the Label objects from the database.
            :return: None
@@ -332,58 +340,23 @@ def tracker() -> None:
     :return: None
     """
 
-    while not stop_event.is_set():
-        sleep(viper_settings["interval"])
-        if stop_event.is_set():
+    while not threads_are_stopped():
+        inter = interval_windows()
+        if inter % 5 != 0:
+            raise Exception(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
+        fifth_timer = inter // 5
+        do_stop = False
+        for i in range(fifth_timer):
+            sleep(5)
+            if threads_are_stopped():
+                do_stop = True
+                break
+        if do_stop:
             break
         WinInfo().fill_self()
-#
-# # TODO: Maybe add this as instance methode to WinInfo ?
-# def win_track() -> None:
-#     """
-#     This is the function that checks for the foreground window infos
-#     and gathers the data from it and makes it useable for th MongoDB to save into.
-#     :return: None
-#     """
-#     tmp_win = WinInfo()
-#     a_win = win32gui.GetForegroundWindow()
-#     tmp_win.window_title = win32gui.GetWindowText(a_win)
-#     _, tmp_win.process_id = win32process.GetWindowThreadProcessId(a_win)
-#     tmp_win.window_type = psutil.Process(tmp_win.process_id).name()
-#
-#     if tmp_win.window_type not in untracked_types:
-#
-#         tmp_win.timestamp = time()
-#
-#         for r_char in repl_chars:
-#             tmp_win.window_title = tmp_win.window_title.replace(r_char, "-")
-#         tmp_segments = tmp_win.window_title.split(" - ")
-#         for i in range(len(tmp_segments)):
-#             tmp_segments[i] = tmp_segments[i].strip(removable_chars)
-#
-#         out_segments = [t_segm for t_segm in tmp_segments if not
-#                         any(r_title in t_segm for r_title in removeable_title_segments)]
-#
-#         win_words = out_segments.copy()
-#         for rem in removable_chars:
-#             tmp_segments = win_words.copy()
-#             win_words = []
-#             for t_segm in tmp_segments:
-#                 win_words.extend(t_segm.split(rem))
-#
-#         tmp_win.window_text_segments = list(dict.fromkeys(out_segments))
-#         tmp_win.window_text_words = list(dict.fromkeys(win_words))
-#
-#         for lab in Label.get_all_labels():
-#             lab.check_and_add_to_window(tmp_win)
-#
-#
-#         # TODO: use class method to write into DB (window only)
 
 
-
-
-def start() -> None:
+def start_window_tracker() -> None:
     """
     This function gets called from outside to start the window_tracker module thread.
     :return: None
@@ -394,23 +367,24 @@ def start() -> None:
     window_thread.start()
 
 
-def stop() -> None:
+# # # # External call functions for less import in other files # # # #
+def stop_done() -> bool:
     """
     This function gets called from outside to stop the window_tracker module thread.
     :return: None
     """
     global window_thread
-    stop_event.set()
     window_thread.join()
+    return True
 
-    # TODO: is it working with DB writing?
+
+def init_all_labels_from_db():
+    Label.init_all_labels_from_db()
+
+
+def update_all_labels_to_db():
     for lab in Label.get_all_labels():
         lab.update_in_db()
-
-
-
-
-
 
 
 if __name__ == "__main__":

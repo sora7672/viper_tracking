@@ -40,6 +40,8 @@ class GuiHandler:
             chil.destroy()
         self.root.quit()
 
+        print("end of gui stop handler")  # FIXME: shows only if quit is used, if destroy is used we wont see this
+
     def sys_tray_manual_label(self):
 
         win_width = 300

@@ -29,9 +29,8 @@ def start_program() -> None:
     start_window_tracker()
 
     start_systray_icon()
-
     start_root_gui()
-    print("is the program closed?")
+    print("Main loop properly finished")  # FIXME: shows only if destroy is used, if quit is used we wont see this
 
 
     # TODO: termination process handeling, like on errors

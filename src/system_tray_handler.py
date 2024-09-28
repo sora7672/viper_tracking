@@ -4,7 +4,7 @@ from pystray import Icon, Menu, MenuItem
 from PIL import Image, ImageDraw
 from random import randint
 
-from config_manager import stop_program_threads
+from config_manager import stop_program_threads, get_logger
 
 from input_tracker import stop_done as input_stop_done
 from window_tracker import Label, update_all_labels_to_db, stop_done as win_stop_done
@@ -54,22 +54,21 @@ class SystemTrayManager:
         stop_program_threads()
         # wait for threads to be done
         if input_stop_done():
-            print("Input threads finished")
+            get_logger().info("Input threads finished")
         if win_stop_done():
-            print("Window thread finished")
+            get_logger().info("Window threads finished")
 
         stop_gui()
-        print("gui finished")
+        get_logger().info("gui finished")
 
         update_all_labels_to_db()
-        print("Labels updated to db")
+        get_logger().info("Labels updated to db")
         close_db_connection()
-        print("Db connection closed")
+        get_logger().info("Db connection closed")
         self.icon.stop()
-        print("Icon stopped")
+        get_logger().info("Icon stopped")
         for th in threading.enumerate():
-            print(th)
-
+            get_logger().info(th)
 
     def update_menu(self):
         self.icon.menu = Menu(self._label_menu(),

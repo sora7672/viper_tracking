@@ -3,6 +3,8 @@ This file will include a singleton that holds all configs for all other files.
 It will NOT import from other modules, except non project modules like reader/csv/time
 """
 
+import logging
+from calendar import error
 from threading import Lock, Thread, Event
 import json
 from os import path
@@ -14,6 +16,41 @@ from warnings import warn
 
 
 _config_path = "config.json"
+
+
+class LoggingManager:
+    _instance = None
+    _lock = Lock()
+
+    def __new__(cls, *args, **kwargs):
+        """Override the object creation method to implement the Singleton pattern."""
+        if cls._instance is None:
+            with cls._lock:
+                cls._instance = super(cls, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        """Initialize the settings for the project."""
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
+            self.logger = logging.getLogger("viper_tracking")
+            self.logger.setLevel(logging.DEBUG)  # Set default logging level to DEBUG
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(logging.DEBUG)
+            console_handler.setFormatter(formatter)
+            self.logger.addHandler(console_handler)
+
+            info_handler = logging.FileHandler('info.log')
+            info_handler.setLevel(logging.INFO)
+            info_handler.setFormatter(formatter)
+            self.logger.addHandler(info_handler)
+
+            error_handler = logging.FileHandler('error.log')
+            error_handler.setLevel(logging.ERROR)
+            error_handler.setFormatter(formatter)
+            self.logger.addHandler(error_handler)
 
 
 class ConfigManager:
@@ -118,6 +155,10 @@ def initialize_config_manager():
 # TODO: Used when settings are updated, dont need to save in the end of program then
 def save_settings():
     ConfigManager.get_instance().save_settings()
+
+
+def get_logger():
+    return LoggingManager().logger
 
 
 if __name__ == '__main__':

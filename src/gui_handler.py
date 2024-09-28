@@ -5,6 +5,7 @@ from ttkbootstrap import Window
 from threading import Thread, Lock, Event
 from PIL import Image, ImageTk
 from os import path
+from config_manager import get_logger
 
 
 
@@ -40,7 +41,7 @@ class GuiHandler:
             chil.destroy()
         self.root.quit()
 
-        print("end of gui stop handler")  # FIXME: shows only if quit is used, if destroy is used we wont see this
+        get_logger().info("end of gui stop handler")  # FIXME: shows only if quit is used, if destroy is used we wont see this
 
     def sys_tray_manual_label(self):
 

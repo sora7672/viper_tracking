@@ -12,7 +12,7 @@ from threading import Thread, Event, Lock
 from time import time, sleep
 from pynput import mouse, keyboard
 
-from config_manager import threads_are_stopped, interval_inputs
+from config_manager import threads_are_stopped, interval_inputs, get_logger
 from db_connector import add_input_infos as db_add_input_infos
 
 
@@ -215,7 +215,7 @@ def mouse_tracker() -> None:
         while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
-    print("end mouse")
+    get_logger().info("end mouse")
 
 
 def keyboard_tracker() -> None:
@@ -227,7 +227,7 @@ def keyboard_tracker() -> None:
         while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
-    print("end keyboard")
+    get_logger().info("end keyboard")
 
 
 def input_writer() -> None:
@@ -246,7 +246,7 @@ def input_writer() -> None:
             if threads_are_stopped():
                 break
         InputManager.get_instance().add_to_db()
-    print("end input writer")
+    get_logger().info("end input writer")
 
 def stop_done() -> bool:
     """

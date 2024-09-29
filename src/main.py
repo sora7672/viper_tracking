@@ -4,6 +4,10 @@ from window_tracker import start as tracking_start, stop as tracking_stop, setup
 import input_tracker
 import window_tracker
 
+#flags
+tracking_active = False
+input_active = False
+
 # TODO:
 #   wenn was hinzugefügt, dann update des tracking threads/microservies/Prozess
 #   Auswertungen müssen per label, fenster typ, nach text suche, text/word segments
@@ -15,6 +19,7 @@ def start() -> None:
     The function to start all needed application modules.
     :return: None
     """
+    global tracking_active, input_active
     # First get the Label elements from the DB, needs to be called here once,
     # because the start function will be called in between on changes.
     setup_labels()
@@ -28,10 +33,10 @@ def start() -> None:
     label = tb.Label(root_window, text="Programm läuft", font=("Arial", 14))
     label.grid(row=0, column=0, padx=10, pady=10)
 
-    start_button = tb.Button(root_window, text="Start Tracking", command=tracking_start)
+    start_button = tb.Button(root_window, text="Start Tracking", command=lambda: start_tracking(label))
     start_button.grid(row=1, column=0, padx=10, pady=10)
 
-    stop_button = tb.Button(root_window, text="Stop Tracking", command=tracking_stop)
+    stop_button = tb.Button(root_window, text="Stop Tracking", command=lambda: stop_tracking(label))
     stop_button.grid(row=2, column=0, padx=10, pady=10)
 
     #Skalierbarkeit der GUI
@@ -48,6 +53,42 @@ def start() -> None:
     tracking_stop()
     input_stop()
 
+def start_tracking(label):
+    """Start Tracking Process"""
+    global tracking_active, input_active
+
+    if not tracking_active:
+        tracking_start()
+        label.config(text="Tracking gestartet")
+        tracking_active = True
+    else:
+        label.config(text="Tracking läuft bereits")
+
+    if not input_active:
+        input_start()
+        label.config(text="Input Tracking gestartet")
+        input_active = True
+    else:
+        label.config(text="Input Tracking läuft bereits")
+
+
+def stop_tracking(label):
+    """Stop Tracking Process"""
+    global tracking_active, input_active
+
+    if tracking_active:
+        tracking_stop()
+        label.config(text="Tracking gestoppt")
+        tracking_active = False
+    else:
+        label.config(text="Tracking war nicht aktiv")
+
+    if input_active:
+        input_stop()
+        label.config(text="Input Tracking gestoppt")
+        input_active = False
+    else:
+        label.config(text="Input Tracking war nicht aktiv")
 
 if __name__ == "__main__":
     start()

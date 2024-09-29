@@ -4,13 +4,15 @@ from pystray import Icon, Menu, MenuItem
 from PIL import Image, ImageDraw
 from random import randint
 
-from config_manager import stop_program_threads, get_logger
+from config_manager import stop_program_threads
+from log_handler import get_logger
 
-from input_tracker import stop_done as input_stop_done
-from window_tracker import Label, update_all_labels_to_db, stop_done as win_stop_done
-from gui_handler import sys_tray_manual_label, open_main_gui, stop_gui
+from input_manager import stop_done as input_stop_done
+from window_manager import Label, update_all_labels_to_db, stop_done as win_stop_done
+from gui_controller import sys_tray_manual_label, open_main_gui, stop_gui
 from db_connector import close_db_connection
 import threading
+from time import sleep
 
 
 class MultiFunction:
@@ -36,10 +38,13 @@ class SystemTrayManager:
             self.icon = Icon("Viper Tracking", Image.open("src/viper_tray.ico"))
             self.menu = None
             SystemTrayManager._instance = self
+            get_logger().debug("__init__ SystemTrayManager")
 
     def start_systray(self):
+
         self.update_menu()
         self.icon.run_detached()
+        get_logger().debug("started systray icon detached")
 
 
     def stop_program(self):
@@ -54,21 +59,23 @@ class SystemTrayManager:
         stop_program_threads()
         # wait for threads to be done
         if input_stop_done():
-            get_logger().info("Input threads finished")
+            get_logger().debug("input_stop_done()")
         if win_stop_done():
-            get_logger().info("Window threads finished")
+            get_logger().debug("win_stop_done()")
 
         stop_gui()
-        get_logger().info("gui finished")
-
+        get_logger().debug("stop_gui is done, init sleep...")
+        sleep(5)
+        get_logger().debug("Sleep 5 seconds done")
         update_all_labels_to_db()
-        get_logger().info("Labels updated to db")
+        get_logger().debug("update_all_labels_to_db() done")
         close_db_connection()
-        get_logger().info("Db connection closed")
+        get_logger().debug("close_db_connection() done")
         self.icon.stop()
-        get_logger().info("Icon stopped")
+        get_logger().debug("self.icon.stop() done, init sleep...")
+        sleep(5)
         for th in threading.enumerate():
-            get_logger().info(th)
+            get_logger().debug(f"Thread still open: {th}")
 
     def update_menu(self):
         self.icon.menu = Menu(self._label_menu(),

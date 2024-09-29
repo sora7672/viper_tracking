@@ -5,20 +5,20 @@ from ttkbootstrap import Window
 from threading import Thread, Lock, Event
 from PIL import Image, ImageTk
 from os import path
-from config_manager import get_logger
+from log_handler import get_logger
 
 
 
-class GuiHandler:
+class GuiController:
     """ Does not need to be trhead safe, because it will allways run in mainthread in the background.
     Last thread to start and last to stop then we  have no race conditions."""
     _instance = None
 
     def __init__(self):
-        if GuiHandler._instance is not None:
+        if GuiController._instance is not None:
             raise Exception("This class is a singleton!")
         else:
-            GuiHandler._instance = self
+            GuiController._instance = self
             self.root = tb.Window()
             self.root.title('Invisible Window(If you see me report me!)')
             # FIXME: Image not working!!
@@ -29,6 +29,7 @@ class GuiHandler:
 
             self.root.withdraw()
             self.lock = Lock()
+            get_logger().debug("__init__ from GuiHandler")
 
     def run(self):
         self.root.mainloop()
@@ -36,15 +37,24 @@ class GuiHandler:
     def stop(self):
         # destroy child windows and then stop the mainloop for not having dead thread elements in cache
         # or other bugs. Last to be called in a closing order.
+        get_logger().debug("methode stop from GuiHandler start")
         childs = self.root.winfo_children()
         for chil in childs:
             chil.destroy()
-        self.root.quit()
+        get_logger().debug("destroyed all childs from GuiHandler")
 
-        get_logger().info("end of gui stop handler")  # FIXME: shows only if quit is used, if destroy is used we wont see this
+        self.root.quit()
+        get_logger().debug("after root.quit")
+        self.root.destroy()
+        get_logger().debug("after root.destroy")
+
+
+        get_logger().debug("methode stop from GuiHandler end")
+
+        # FIXME: shows only if quit is used, if destroy is used we wont see this
 
     def sys_tray_manual_label(self):
-
+        get_logger().debug("sys_tray_manual_label start")
         win_width = 300
         win_height = 130
         taskbar_height = 70
@@ -82,14 +92,16 @@ class GuiHandler:
         cancel_btn.grid_configure(row=2, column=1, sticky='nw', padx=10, pady=10)
 
         sys_tray_add_lbl_win.deiconify()  # shows the window again
+        get_logger().debug("sys_tray_manual_label end")
 
     # TODO: create a real main window
     def main_window(self, name: str = "Empty", geo="300x200"):
+        get_logger().debug("main_window start")
         n_win = Toplevel(self.root)
         n_win.iconphoto = self.window_icon
         n_win.title(name)
         n_win.geometry(geo)
-
+        get_logger().debug("main_window end")
 
 
     @classmethod
@@ -112,31 +124,33 @@ def win_close(win: Window):
 
 def sys_add(win: Window, label_text):
     # TODO: Probably need to make this smoother, because circualr import if import on top
-    from system_tray_handler import SystemTrayManager
-    from window_tracker import Label
+    get_logger().debug("adding manual label by systray start")
+    from system_tray_manager import SystemTrayManager
+    from window_manager import Label
     Label(label_text.get(), manually=True)
     win_close(win)
     SystemTrayManager.get_instance().update_menu()
+    get_logger().debug("adding manual label by systray end")
 
 
 # # # # External call functions for less import in other files # # # #
 
 def stop_gui():
-    GuiHandler.get_instance().stop()
+    GuiController.get_instance().stop()
 
 def init_root_gui():
-    GuiHandler.get_instance()
+    GuiController.get_instance()
 
 def start_root_gui():
-    GuiHandler.get_instance().run()
+    GuiController.get_instance().run()
 
 
 def sys_tray_manual_label():
-    GuiHandler.get_instance().sys_tray_manual_label()
+    GuiController.get_instance().sys_tray_manual_label()
 
 
 def open_main_gui():
-    GuiHandler.get_instance().main_window()
+    GuiController.get_instance().main_window()
 
 if __name__ == "__main__":
     print("Please start with the main.py")

@@ -12,9 +12,9 @@ from threading import Thread, Event, Lock
 from time import time, sleep
 from pynput import mouse, keyboard
 
-from config_manager import threads_are_stopped, interval_inputs, get_logger
+from config_manager import threads_are_stopped, interval_inputs
 from db_connector import add_input_infos as db_add_input_infos
-
+from log_handler import get_logger
 
 mouse_thread: Thread = None
 keyboard_thread: Thread = None
@@ -55,6 +55,7 @@ class InputManager:
 
             self.lock = Lock()
             InputManager._instance = self
+            get_logger().debug("__init__ InputManager")
 
     def get_all(self) -> dict:
         """
@@ -64,6 +65,7 @@ class InputManager:
         "count_special_key_pressed", "count_char_key_pressed", "count_left_mouse_pressed", "count_right_mouse_pressed",
         "count_middle_mouse_pressed"]
         """
+        get_logger().debug("InputManager lock use")
         with self.lock:
             tmp_dict: dict = {"last_timestamp": self._last_activity_timestamp, "count_key_pressed": (
                          self._count_char_key_pressed + self._count_direction_key_pressed +
@@ -78,7 +80,8 @@ class InputManager:
                          "count_right_mouse_pressed": self._count_right_mouse_pressed,
                          "count_middle_mouse_pressed": self._count_middle_mouse_pressed}
             self.reset()
-            return tmp_dict
+        get_logger().debug("InputManager lock release")
+        return tmp_dict
 
     def reset(self) -> None:
         """
@@ -117,6 +120,7 @@ class InputManager:
         'left_mouse_press', 'right_mouse_press', 'middle_mouse_press', 'mouse_scroll']
         :return: None
         """
+        get_logger().debug("InputManager lock use")
         with self.lock:
             self._last_activity_timestamp = time()
             match user_input_type:
@@ -147,6 +151,7 @@ class InputManager:
 
                 case _:
                     raise Exception(f'Unexpected input type: {user_input_type}')
+        get_logger().debug("InputManager lock released")
 
 
 
@@ -159,6 +164,7 @@ def on_key_press(key) -> None | bool:
     :return: Only false when thread closing got called, else None
     """
     if threads_are_stopped():
+        get_logger().debug("on_key_press() stop event grabbed")
         return False
 
     # FOR PRIVACY CONCERNS:
@@ -182,6 +188,7 @@ def on_mouse_click(x, y, button, pressed) -> None | bool:
     :return: Only false when thread closing got called, else None
     """
     if threads_are_stopped():
+        get_logger().debug("on_mouse_click() stop event grabbed")
         return False
 
     if pressed:
@@ -200,6 +207,7 @@ def on_mouse_scroll(x, y, dx, dy) -> None | bool:
     :return: Only false when thread closing got called, else None
     """
     if threads_are_stopped():
+        get_logger().debug("on_mouse_scroll() stop event grabbed")
         return False
     InputManager.get_instance().add_input("mouse_scroll")
 
@@ -215,7 +223,7 @@ def mouse_tracker() -> None:
         while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
-    get_logger().info("end mouse")
+    get_logger().debug("mouse_tracker() end")
 
 
 def keyboard_tracker() -> None:
@@ -227,7 +235,7 @@ def keyboard_tracker() -> None:
         while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
-    get_logger().info("end keyboard")
+    get_logger().debug("keyboard_tracker() end")
 
 
 def input_writer() -> None:
@@ -246,7 +254,7 @@ def input_writer() -> None:
             if threads_are_stopped():
                 break
         InputManager.get_instance().add_to_db()
-    get_logger().info("end input writer")
+    get_logger().debug("input_writer() end")
 
 def stop_done() -> bool:
     """
@@ -272,8 +280,11 @@ def start_input_tracker() -> None:
     input_writer_thread = Thread(target=input_writer)
 
     mouse_thread.start()
+    get_logger().debug("mouse_thread.start()")
     keyboard_thread.start()
+    get_logger().debug("keyboard_thread.start()")
     input_writer_thread.start()
+    get_logger().debug("input_writer_thread.start()")
 
 
 if __name__ == "__main__":

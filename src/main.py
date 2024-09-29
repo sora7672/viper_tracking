@@ -1,9 +1,10 @@
 
-from input_tracker import start_input_tracker
-from window_tracker import start_window_tracker, init_all_labels_from_db
-from gui_handler import start_root_gui, init_root_gui
-from system_tray_handler import start_systray_icon
-from config_manager import initialize_config_manager, get_logger
+from input_manager import start_input_tracker
+from window_manager import start_window_tracker, init_all_labels_from_db
+from gui_controller import start_root_gui, init_root_gui
+from system_tray_manager import start_systray_icon
+from config_manager import initialize_config_manager
+from log_handler import get_logger, init_logging
 
 
 # TODO: in english
@@ -17,29 +18,30 @@ def start_program() -> None:
     The function to start all needed application modules.
     :return: None
     """
-# FIXME: also icon not accepted in ttkb windows?
+    # FIXME: also icon not accepted in ttkb windows?
 
-    get_logger().info("Logger started")
     initialize_config_manager()
-    get_logger().info("config_manager started")
+    init_logging()
+
+    get_logger().debug("config_manager init done & log_handler started")
     init_all_labels_from_db()
-    get_logger().info("imported Labels from DB")
+    get_logger().debug("imported from labels done")
 
     init_root_gui()
-    get_logger().info("init root gui")
+    get_logger().debug("init root gui done")
 
     start_input_tracker()
-    get_logger().info("started input tracker")
+    get_logger().debug("input tracker start done")
 
     start_window_tracker()
-    get_logger().info("started window tracker")
+    get_logger().debug("window tracker start done")
 
     start_systray_icon()
-    get_logger().info("started systray icon")
-    get_logger().info("start gui main loop")
+    get_logger().debug("started systray icon")
+    get_logger().debug("Now starting mainloop")
     start_root_gui()
-    get_logger().info("end root gui")
-    print("Main loop properly finished")  # FIXME: shows only if destroy is used, if quit is used we wont see this
+    get_logger().debug("Mainloop properly finished")
+    # FIXME: shows only if destroy is used, if quit is used we wont see this
 
 
     # TODO: termination process handeling, like on errors

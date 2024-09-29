@@ -7,10 +7,14 @@ Authors: Sora_7672 and Vulnona
 from pymongo import MongoClient
 from typing import Optional
 from os import getenv
+from log_handler import get_logger
 
 mongodb_host = getenv('MONGODB_HOST', 'localhost')
 mongodb_port = int(getenv('MONGODB_PORT', 27017))
+get_logger().debug(f"mongo_db_host: {mongodb_host} | mongodb_port: {mongodb_port}")
 
+# FIXME: Password missing?
+#  for soras setup not needed, maybe also not for TinyDB ?
 # Init the connection
 try:
     m_client = MongoClient(mongodb_host, mongodb_port)
@@ -32,7 +36,7 @@ def add_window_dict(window_dict: dict) -> Optional[str]:
         result = m_db.window_collection.insert_one(window_dict)
         return result.inserted_id
     else:
-        print("Invalid parameter type: Expected a dictionary.")
+        get_logger().error("add_window_dict(): Invalid parameter type: Expected a dictionary.")
         return None
 
 
@@ -141,10 +145,10 @@ def update_label(label_dict: dict) -> None:
             {"$set": label_dict}
         )
         if result is None:
-            raise Warning(f"Could not update label. Not found: _id={label_dict['_id']}")
+            get_logger().warning(f"Could not update label. Not found: _id={label_dict['_id']}")
 
     else:
-        raise Warning(f"Could not update label. _id is not set!")
+        get_logger().warning(f"Could not update label. _id is not set!")
 
 
 def delete_label(label_id) -> None:
@@ -155,7 +159,7 @@ def delete_label(label_id) -> None:
     """
     result = m_db.label_collection.find_one_and_delete({{"_id": label_id}})
     if result is None:
-        raise Warning(f"Could not delete label.[_id={label_id}]")
+        get_logger().warning(f"Could not delete label.[_id={label_id}]")
 
 
 # TODO: do what is needed to close the db connection properly

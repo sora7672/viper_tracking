@@ -3,12 +3,11 @@ This file will include a singleton that holds all configs for all other files.
 It will NOT import from other modules, except non project modules like reader/csv/time
 """
 
-import logging
-from calendar import error
+
 from threading import Lock, Thread, Event
 import json
-from os import path
 from warnings import warn
+from os import path
 
 # TODO: Probably when smth here is updated, the other threads need to
 #  read in infos new (like interval for input/window tracker)
@@ -16,42 +15,6 @@ from warnings import warn
 
 
 _config_path = "config.json"
-
-
-class LoggingManager:
-    _instance = None
-    _lock = Lock()
-
-    def __new__(cls, *args, **kwargs):
-        """Override the object creation method to implement the Singleton pattern."""
-        if cls._instance is None:
-            with cls._lock:
-                cls._instance = super(cls, cls).__new__(cls)
-        return cls._instance
-
-    def __init__(self):
-        """Initialize the settings for the project."""
-        if not hasattr(self, '_initialized'):
-            self._initialized = True
-            self.logger = logging.getLogger("viper_tracking")
-            self.logger.setLevel(logging.DEBUG)  # Set default logging level to DEBUG
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-            console_handler = logging.StreamHandler()
-            console_handler.setLevel(logging.DEBUG)
-            console_handler.setFormatter(formatter)
-            self.logger.addHandler(console_handler)
-
-            info_handler = logging.FileHandler('info.log')
-            info_handler.setLevel(logging.INFO)
-            info_handler.setFormatter(formatter)
-            self.logger.addHandler(info_handler)
-
-            error_handler = logging.FileHandler('error.log')
-            error_handler.setLevel(logging.ERROR)
-            error_handler.setFormatter(formatter)
-            self.logger.addHandler(error_handler)
-
 
 class ConfigManager:
     """
@@ -70,6 +33,7 @@ class ConfigManager:
             ConfigManager._instance = self
             self._interval_save_windows = 5
             self._interval_save_inputs = 30
+            self._debug = False
 
     def read_settings(self):
         unlock_and_save = False
@@ -83,10 +47,22 @@ class ConfigManager:
                     else:
                         try:
                             tmp = json.loads(content)
-                            self._interval_save_windows = tmp["interval_save_windows"]
-                            self._interval_save_inputs = tmp["interval_save_inputs"]
                         except json.JSONDecodeError:
                             warn(f"The file {_config_path} contains invalid JSON. Loading default settings.")
+                            unlock_and_save = True
+                        finally:
+                            if "interval_save_windows" in tmp:
+                                self._interval_save_windows = tmp["interval_save_windows"]
+                            else:
+                                unlock_and_save = True
+                            if "interval_save_inputs" in tmp:
+                                self._interval_save_inputs = tmp["interval_save_inputs"]
+                            else:
+                                unlock_and_save = True
+                            if "debug" in tmp:
+                                self._debug = tmp["debug"]
+                            else:
+                                unlock_and_save = True
             else:
                 warn(f"The file {_config_path} does not exist. Loading default settings.")
                 unlock_and_save = True
@@ -99,7 +75,8 @@ class ConfigManager:
         with ConfigManager._lock:
             global _config_path
             dict_to_save = {"interval_save_windows": self._interval_save_windows,
-                            "interval_save_inputs": self._interval_save_inputs
+                            "interval_save_inputs": self._interval_save_inputs,
+                            "debug": self._debug
                             }
             with open(_config_path, 'w') as json_file:
                 # dump with extra params makes it better readable
@@ -112,6 +89,17 @@ class ConfigManager:
     def get_interval_save_windows(self):
         with ConfigManager._lock:
             return self._interval_save_windows
+
+    def enable_debug(self):
+        with ConfigManager._lock:
+            self._debug = True
+
+    def disable_debug(self):
+        with ConfigManager._lock:
+            self._debug = False
+
+    def get_debug(self):
+        return self._debug
 
     @classmethod
     def get_instance(cls):
@@ -147,9 +135,13 @@ def interval_windows():
 def interval_inputs():
     return ConfigManager.get_instance().get_interval_save_inputs()
 
+def is_debug():
+    return ConfigManager.get_instance().get_debug()
 
 def initialize_config_manager():
     ConfigManager.get_instance().read_settings()
+    ConfigManager.get_instance().enable_debug()
+    print(is_debug())
 
 
 # TODO: Used when settings are updated, dont need to save in the end of program then
@@ -157,11 +149,6 @@ def save_settings():
     ConfigManager.get_instance().save_settings()
 
 
-def get_logger():
-    return LoggingManager().logger
 
-
-if __name__ == '__main__':
-    print("Please start the main.py!")
 
 

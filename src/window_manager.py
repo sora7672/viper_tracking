@@ -8,7 +8,7 @@ import db_connector
 from threading import Thread, Event, Lock
 from time import time, sleep
 from config_manager import interval_windows, threads_are_stopped
-
+from log_handler import get_logger
 
 
 
@@ -209,17 +209,23 @@ class Label:
 
         if self._id is None and (len(self._condition_list) >= 1 or self.manually):
             self.add_to_db()
+        get_logger().debug("(CLASS) LABEL lock use")
         with Label._lock:
             Label._label_list.append(self)
+        get_logger().debug("(CLASS) LABEL lock release")
 
     def get_as_dict(self):
         """
         Just returns important attributes as a dict for further usage.
         :return: dict
         """
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
-            return {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+             tmp_dict = {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
                     "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return tmp_dict
 
     def add_to_db(self):
         """
@@ -227,18 +233,21 @@ class Label:
         Enables chain method casting.
         :return: self
         """
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             if self._id is not None:
-                raise Exception("Label was already added to the database.")
+                get_logger().warning("Label was already added to the database.")
             if (self._condition_list is None or len(self._condition_list) == 0) and not self.manually:
-                raise ValueError("No conditions were provided.")
+                get_logger().error("No conditions were provided.")
             else:
                 dict_no_id = {"name": self.name, "manually": self.manually, "active": self._active,
                               "conditions": [cond.get_as_dict() for cond in self._condition_list]}
                 self._id = db_connector.add_label(dict_no_id)
-                return self
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return self
 
     def update_in_db(self):
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             if self._id is not None and self._id != "":
                 dict_with_id = {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
@@ -246,7 +255,9 @@ class Label:
                 db_connector.update_label(dict_with_id)
 
             else:
-                raise ValueError("update_in_db only works if the Label._id is properly set!")
+                get_logger().error("update_in_db only works if the Label._id is properly set!")
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return self
 
     def enable(self):
         """
@@ -256,9 +267,11 @@ class Label:
         Enables chain method casting.
         :return: self
         """
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             self._active = True
-            return self
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return self
 
     def disable(self):
         """
@@ -268,9 +281,11 @@ class Label:
         Enables chain method casting.
         :return: self
         """
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             self._active = False
-            return self
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return self
 
     def add_conditions(self, *conditions: Condition):
         """
@@ -279,10 +294,13 @@ class Label:
         Can add multiple conditions with multiple methode calls.
         :return: self
         """
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             for cond in conditions:
                 self._condition_list.append(cond)
-            return self
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return self
+
 
     def check_and_add_to_window(self, window: WinInfo) -> None:
         """
@@ -290,6 +308,7 @@ class Label:
         :param window: WinInfo
         :return: None
         """
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             if self._active:
                 if self.manually:
@@ -303,11 +322,15 @@ class Label:
                             set_label = False
                     if set_label:
                         window.add_label(self.name)
+        get_logger().debug(f"LABEL {self.name} lock release")
 
     @property
     def is_active(self):
+        get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
-            return self._active
+            tmp_bool = self._active
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return tmp_bool
 
     @classmethod
     def get_all_labels(cls) -> list:
@@ -315,8 +338,11 @@ class Label:
         Returns all existing labels as list.
         :return: list[Label]
         """
+        get_logger().debug("(CLASS) LABEL lock use")
         with Label._lock:
-            return cls._label_list
+            tmp_list = cls._label_list
+        get_logger().debug("(CLASS) LABEL lock release")
+        return tmp_list
 
     @classmethod
     def init_all_labels_from_db(cls):
@@ -334,7 +360,7 @@ class Label:
                                        for cond in label_dict["conditions"]])
 
 
-def tracker() -> None:
+def window_tracker() -> None:
     """
     This function is for adding to teh thread to run it properly.
     :return: None
@@ -354,6 +380,7 @@ def tracker() -> None:
         if do_stop:
             break
         WinInfo().fill_self()
+    get_logger().debug("window_tracker() end")
 
 
 def start_window_tracker() -> None:
@@ -363,8 +390,9 @@ def start_window_tracker() -> None:
     """
 
     global window_thread
-    window_thread = Thread(target=tracker)
+    window_thread = Thread(target=window_tracker)
     window_thread.start()
+    get_logger().debug("window_thread.start()")
 
 
 # # # # External call functions for less import in other files # # # #

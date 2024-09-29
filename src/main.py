@@ -1,5 +1,3 @@
-
-
 import ttkbootstrap as tb
 from input_tracker import start as input_start, stop as input_stop
 from window_tracker import start as tracking_start, stop as tracking_stop, setup_labels
@@ -26,8 +24,20 @@ def start() -> None:
     tracking_start()
 
     root_window = tb.Window()
-    root_window.geometry(f"{300}x{100}+{100}+{100}")
+    root_window.geometry(f"{400}x{200}+100+100")
+    label = tb.Label(root_window, text="Programm läuft", font=("Arial", 14))
+    label.grid(row=0, column=0, padx=10, pady=10)
+
+    start_button = tb.Button(root_window, text="Start Tracking", command=tracking_start)
+    start_button.grid(row=1, column=0, padx=10, pady=10)
+
+    stop_button = tb.Button(root_window, text="Stop Tracking", command=tracking_stop)
+    stop_button.grid(row=2, column=0, padx=10, pady=10)
+
+    #Skalierbarkeit der GUI
     root_window.grid_rowconfigure(0, weight=1)
+    root_window.grid_rowconfigure(1, weight=1)
+    root_window.grid_rowconfigure(2, weight=1)
     root_window.grid_columnconfigure(0, weight=1)
 
     # TODO: If there is a setting change, stop & start again the threads.

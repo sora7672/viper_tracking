@@ -64,16 +64,13 @@ class SystemTrayManager:
             get_logger().debug("win_stop_done()")
 
         stop_gui()
-        get_logger().debug("stop_gui is done, init sleep...")
-        sleep(5)
-        get_logger().debug("Sleep 5 seconds done")
+        get_logger().debug("stop_gui is done")
         update_all_labels_to_db()
         get_logger().debug("update_all_labels_to_db() done")
         close_db_connection()
         get_logger().debug("close_db_connection() done")
         self.icon.stop()
-        get_logger().debug("self.icon.stop() done, init sleep...")
-        sleep(5)
+        get_logger().debug("self.icon.stop() done)")
         for th in threading.enumerate():
             get_logger().debug(f"Thread still open: {th}")
 

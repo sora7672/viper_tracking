@@ -33,6 +33,10 @@ class GuiController:
 
     def run(self):
         self.root.mainloop()
+    def stop_helper(self):
+        # helper to properly call the stop when called form the systray
+        # otherwise you cant exit the mainloop properly! (it needs to be called form inside with .after)
+        self.root.after(100, self.stop)
 
     def stop(self):
         # destroy child windows and then stop the mainloop for not having dead thread elements in cache
@@ -42,11 +46,9 @@ class GuiController:
         for chil in childs:
             chil.destroy()
         get_logger().debug("destroyed all childs from GuiHandler")
-
         self.root.quit()
         get_logger().debug("after root.quit")
-        self.root.destroy()
-        get_logger().debug("after root.destroy")
+
 
 
         get_logger().debug("methode stop from GuiHandler end")
@@ -136,7 +138,7 @@ def sys_add(win: Window, label_text):
 # # # # External call functions for less import in other files # # # #
 
 def stop_gui():
-    GuiController.get_instance().stop()
+    GuiController.get_instance().stop_helper()
 
 def init_root_gui():
     GuiController.get_instance()

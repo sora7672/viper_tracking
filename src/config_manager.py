@@ -140,8 +140,6 @@ def is_debug():
 
 def initialize_config_manager():
     ConfigManager.get_instance().read_settings()
-    ConfigManager.get_instance().enable_debug()
-    print(is_debug())
 
 
 # TODO: Used when settings are updated, dont need to save in the end of program then

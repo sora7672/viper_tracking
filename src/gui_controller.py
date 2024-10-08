@@ -2,23 +2,25 @@
 import ttkbootstrap as tb
 from tkinter import Toplevel
 from ttkbootstrap import Window
-from threading import Thread, Lock, Event
+from threading import Lock
 from PIL import Image, ImageTk
-from os import path
 from log_handler import get_logger
 
 
-
 class GuiController:
-    """ Does not need to be trhead safe, because it will allways run in mainthread in the background.
+    """ Does not need to be thread safe, because it will allways run in main thread in the background.
     Last thread to start and last to stop then we  have no race conditions."""
     _instance = None
 
+    def __new__(cls, *args, **kwargs):
+
+        if cls._instance is None:
+            cls._instance = super(cls, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        if GuiController._instance is not None:
-            raise Exception("This class is a singleton!")
-        else:
-            GuiController._instance = self
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
             self.root = tb.Window()
             self.root.title('Invisible Window(If you see me report me!)')
             # FIXME: Image not working!!
@@ -33,6 +35,7 @@ class GuiController:
 
     def run(self):
         self.root.mainloop()
+
     def stop_helper(self):
         # helper to properly call the stop when called form the systray
         # otherwise you cant exit the mainloop properly! (it needs to be called form inside with .after)
@@ -48,12 +51,7 @@ class GuiController:
         get_logger().debug("destroyed all childs from GuiHandler")
         self.root.quit()
         get_logger().debug("after root.quit")
-
-
-
         get_logger().debug("methode stop from GuiHandler end")
-
-        # FIXME: shows only if quit is used, if destroy is used we wont see this
 
     def sys_tray_manual_label(self):
         get_logger().debug("sys_tray_manual_label start")
@@ -106,53 +104,43 @@ class GuiController:
         get_logger().debug("main_window end")
 
 
-    @classmethod
-    def get_instance(cls):
-        """
-        Returns the instance of the GuiHandler class.
-        Only way to access it.
-        :return: instance of GuiHandler
-        """
-        if cls._instance is None:
-            cls()
-
-        return cls._instance
-
-
 # # # # Helper functions for the widgets # # # #
 def win_close(win: Window):
     win.destroy()
 
 
 def sys_add(win: Window, label_text):
-    # TODO: Probably need to make this smoother, because circualr import if import on top
+    # TODO: Probably need to make this smoother, because circular import if import on top
     get_logger().debug("adding manual label by systray start")
     from system_tray_manager import SystemTrayManager
     from window_manager import Label
     Label(label_text.get(), manually=True)
     win_close(win)
-    SystemTrayManager.get_instance().update_menu()
+    SystemTrayManager().update_menu()
     get_logger().debug("adding manual label by systray end")
 
 
 # # # # External call functions for less import in other files # # # #
 
 def stop_gui():
-    GuiController.get_instance().stop_helper()
+    GuiController().stop_helper()
+
 
 def init_root_gui():
-    GuiController.get_instance()
+    GuiController()
+
 
 def start_root_gui():
-    GuiController.get_instance().run()
+    GuiController().run()
 
 
 def sys_tray_manual_label():
-    GuiController.get_instance().sys_tray_manual_label()
+    GuiController().sys_tray_manual_label()
 
 
 def open_main_gui():
-    GuiController.get_instance().main_window()
+    GuiController().main_window()
+
 
 if __name__ == "__main__":
     print("Please start with the main.py")

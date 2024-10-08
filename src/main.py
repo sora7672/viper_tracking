@@ -5,6 +5,7 @@ from gui_controller import start_root_gui, init_root_gui
 from system_tray_manager import start_systray_icon
 from config_manager import initialize_config_manager
 from log_handler import get_logger, init_logging
+from db_connector import start_db
 
 
 # TODO: in english
@@ -22,8 +23,11 @@ def start_program() -> None:
 
     initialize_config_manager()
     init_logging()
-
     get_logger().debug("config_manager init done & log_handler started")
+
+    start_db()
+    get_logger().debug("start_db done")
+
     init_all_labels_from_db()
     get_logger().debug("imported from labels done")
 
@@ -41,7 +45,7 @@ def start_program() -> None:
     get_logger().debug("Now starting mainloop")
     start_root_gui()
     get_logger().debug("Mainloop properly finished")
-    # FIXME: shows only if destroy is used, if quit is used we wont see this
+
 
 
     # TODO: termination process handeling, like on errors

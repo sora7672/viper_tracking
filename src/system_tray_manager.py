@@ -10,10 +10,9 @@ from log_handler import get_logger
 from input_manager import stop_done as input_stop_done
 from window_manager import Label, update_all_labels_to_db, stop_done as win_stop_done
 from gui_controller import sys_tray_manual_label, open_main_gui, stop_gui
-from db_connector import close_db_connection
+from db_connector import stop_db
 import threading
 from time import sleep
-
 
 class MultiFunction:
     def __init__(self, *functions):
@@ -31,10 +30,15 @@ class SystemTrayManager:
     """
     _instance = None
 
+    def __new__(cls, *args, **kwargs):
+
+        if cls._instance is None:
+            cls._instance = super(cls, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        if SystemTrayManager._instance is not None:
-            raise Exception("This class is a singleton!")
-        else:
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
             self.icon = Icon("Viper Tracking", Image.open("src/viper_tray.ico"))
             self.menu = None
             SystemTrayManager._instance = self
@@ -46,7 +50,6 @@ class SystemTrayManager:
         self.icon.run_detached()
         get_logger().debug("started systray icon detached")
 
-
     def stop_program(self):
         """
         This methode is the most important after the program start.
@@ -55,7 +58,6 @@ class SystemTrayManager:
 
         :return:
         """
-        # FIXME: Still not closing properly! Threads started without daemon properly?
         stop_program_threads()
         # wait for threads to be done
         if input_stop_done():
@@ -64,13 +66,21 @@ class SystemTrayManager:
             get_logger().debug("win_stop_done()")
 
         stop_gui()
+        sleep(0.5)
         get_logger().debug("stop_gui is done")
+
         update_all_labels_to_db()
+        sleep(0.5)
         get_logger().debug("update_all_labels_to_db() done")
-        close_db_connection()
+
+        stop_db()
+        sleep(0.5)
         get_logger().debug("close_db_connection() done")
+
         self.icon.stop()
+        sleep(0.5)
         get_logger().debug("self.icon.stop() done)")
+
         for th in threading.enumerate():
             get_logger().debug(f"Thread still open: {th}")
 
@@ -100,33 +110,13 @@ class SystemTrayManager:
         return tmp_menu
 
 
-
-    @classmethod
-    def get_instance(cls):
-        """
-        Returns the instance of the InputManager class.
-        Only way to access it.
-        :return:
-        """
-        if cls._instance is None:
-            cls()
-        return cls._instance
-
-
-def start_systray_icon():
-    # TODO: Remove!
-    ### tmp ###
-    # for num in range(1, 6):
-    #     Label(f"Label ({randint(0, 100)})", manually=True)
-    # Label(f"Label automatically", manually=False)
-    #######
-    SystemTrayManager.get_instance().start_systray()
-
-
 # # # # External call functions for less import in other files # # # #
+def start_systray_icon():
+    SystemTrayManager().start_systray()
+
 
 def stop_program():
-    SystemTrayManager.get_instance().stop_program()
+    SystemTrayManager().stop_program()
 
 
 if __name__ == "__main__":

@@ -29,7 +29,6 @@ class LogHandler:
             self.max_backups = 5
             self.debug = False
 
-
     def init_logging(self):
         self.debug = is_debug()
         debug_formatter = logging.Formatter('[%(asctime)s] [%(levelname)s] %(name)s - '
@@ -57,7 +56,6 @@ class LogHandler:
             error_handler.setLevel(logging.ERROR)
             error_handler.setFormatter(formatter)
             self.logger.addHandler(error_handler)
-
 
     def create_log_file(self, file_name_extra=""):
         log_file_path = path.join(self.log_path, f"{file_name_extra}{self.log_name}.log")

@@ -8,26 +8,18 @@ that we don't track what you input and only count stuff for analyzes.
 """
 
 
-from threading import Thread, Event, Lock
+from threading import Thread, Lock
 from time import time, sleep
 from pynput import mouse, keyboard
 
 from config_manager import threads_are_stopped, interval_inputs
-from db_connector import add_input_infos as db_add_input_infos
+from db_connector import DBHandler
 from log_handler import get_logger
 
 mouse_thread: Thread = None
 keyboard_thread: Thread = None
 input_writer_thread: Thread = None
 
-
-
-
-# Key lists for different types we want to handle different
-# Obvious directions and some keys that don't have the Key.char attribute, but should be counted as
-# char / write keys.
-direction_keys = [keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right]
-other_write_keys = [keyboard.Key.space, keyboard.Key.enter, keyboard.Key.backspace, keyboard.Key.delete]
 
 class InputManager:
     """
@@ -37,10 +29,15 @@ class InputManager:
     """
     _instance = None
 
+    def __new__(cls, *args, **kwargs):
+
+        if cls._instance is None:
+            cls._instance = super(cls, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        if InputManager._instance is not None:
-            raise Exception("This class is a singleton!")
-        else:
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
             self._count_char_key_pressed = 0
             self._count_direction_key_pressed = 0
             self._count_special_key_pressed = 0
@@ -67,7 +64,7 @@ class InputManager:
         """
         get_logger().debug("InputManager lock use")
         with self.lock:
-            tmp_dict: dict = {"last_timestamp": self._last_activity_timestamp, "count_key_pressed": (
+            tmp_dict: dict = {"last_activity_timestamp": self._last_activity_timestamp, "count_key_pressed": (
                          self._count_char_key_pressed + self._count_direction_key_pressed +
                          self._count_special_key_pressed),
                          "count_mouse_pressed": (self._count_left_mouse_pressed + self._count_right_mouse_pressed +
@@ -81,6 +78,7 @@ class InputManager:
                          "count_middle_mouse_pressed": self._count_middle_mouse_pressed}
             self.reset()
         get_logger().debug("InputManager lock release")
+        tmp_dict["timestamp"] = time()
         return tmp_dict
 
     def reset(self) -> None:
@@ -99,19 +97,7 @@ class InputManager:
         self._count_mouse_scrolls = 0
 
     def add_to_db(self):
-        db_add_input_infos(self.get_all())
-
-
-    @classmethod
-    def get_instance(cls):
-        """
-        Returns the instance of the InputManager class.
-        Only way to access it.
-        :return:
-        """
-        if cls._instance is None:
-            cls()
-        return cls._instance
+        DBHandler().add_input_log(self.get_all())
 
     def add_input(self, user_input_type) -> None:
         """
@@ -154,7 +140,11 @@ class InputManager:
         get_logger().debug("InputManager lock released")
 
 
-
+# Key lists for different types we want to handle different
+# Obvious directions and some keys that don't have the Key.char attribute, but should be counted as
+# char / write keys.
+direction_keys = [keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right]
+other_write_keys = [keyboard.Key.space, keyboard.Key.enter, keyboard.Key.backspace, keyboard.Key.delete]
 
 
 def on_key_press(key) -> None | bool:
@@ -171,14 +161,14 @@ def on_key_press(key) -> None | bool:
     # As you see, we only sort this based on the key type that is pressed,
     # we don't log any key/char that is pressed!
     if hasattr(key, 'char') and key.char is not None:
-        InputManager.get_instance().add_input("char_key")
+        InputManager().add_input("char_key")
     else:
         if key in direction_keys:
-            InputManager.get_instance().add_input("direction_key")
+            InputManager().add_input("direction_key")
         elif key in other_write_keys:
-            InputManager.get_instance().add_input("char_key")
+            InputManager().add_input("char_key")
         else:
-            InputManager.get_instance().add_input("special_key")
+            InputManager().add_input("special_key")
 
 
 def on_mouse_click(x, y, button, pressed) -> None | bool:
@@ -193,11 +183,11 @@ def on_mouse_click(x, y, button, pressed) -> None | bool:
 
     if pressed:
         if button == mouse.Button.left:
-            InputManager.get_instance().add_input("left_mouse")
+            InputManager().add_input("left_mouse")
         elif button == mouse.Button.right:
-            InputManager.get_instance().add_input("right_mouse")
+            InputManager().add_input("right_mouse")
         if button == mouse.Button.middle:
-            InputManager.get_instance().add_input("middle_mouse")
+            InputManager().add_input("middle_mouse")
 
 
 def on_mouse_scroll(x, y, dx, dy) -> None | bool:
@@ -209,7 +199,7 @@ def on_mouse_scroll(x, y, dx, dy) -> None | bool:
     if threads_are_stopped():
         get_logger().debug("on_mouse_scroll() stop event grabbed")
         return False
-    InputManager.get_instance().add_input("mouse_scroll")
+    InputManager().add_input("mouse_scroll")
 
 
 def mouse_tracker() -> None:
@@ -253,8 +243,9 @@ def input_writer() -> None:
             sleep(5)
             if threads_are_stopped():
                 break
-        InputManager.get_instance().add_to_db()
+        InputManager().add_to_db()
     get_logger().debug("input_writer() end")
+
 
 def stop_done() -> bool:
     """

@@ -4,20 +4,17 @@ import threading
 import win32gui
 import win32process
 import psutil
-import db_connector
-from threading import Thread, Event, Lock
+from db_connector import DBHandler
+from threading import Thread, Lock
 from time import time, sleep
 from config_manager import interval_windows, threads_are_stopped
 from log_handler import get_logger
-
 
 
 window_thread: Thread = None
 
 # temp vars, later replaced with a configuration read in file
 # TODO: Add this to the config
-viper_settings = {"debug": False}
-removeable_title_segments = ["Mozilla Firefox"]  # TODO: Need this? Maybe cut the type and check for its words and remove?
 untracked_types = []
 repl_chars = "–—-"
 removable_chars = "._-,!?;: "
@@ -34,10 +31,8 @@ class WinInfo:
         self.process_id: int = 0
         self.window_type: str = ""
         self.window_title: str = ""
-        self.window_text_segments: list[str] = []
         self.window_text_words: list[str] = []
         self._label_list: list[str] = []
-        self._activity: bool = False
 
     def __str__(self):
         return str(self.__dict__)
@@ -58,28 +53,23 @@ class WinInfo:
             for i in range(len(tmp_segments)):
                 tmp_segments[i] = tmp_segments[i].strip(removable_chars)
 
-            out_segments = [t_segm for t_segm in tmp_segments if not
-                            any(r_title in t_segm for r_title in removeable_title_segments)]
-
-            win_words = out_segments.copy()
+            win_words = tmp_segments.copy()
             for rem in removable_chars:
                 tmp_segments = win_words.copy()
                 win_words = []
                 for t_segm in tmp_segments:
                     win_words.extend(t_segm.split(rem))
 
-            self.window_text_segments = list(dict.fromkeys(out_segments))
             self.window_text_words = list(dict.fromkeys(win_words))
             self.set_labels()
             self.write_to_db()
-
 
     def set_labels(self):
         for lab in Label.get_all_labels():
             lab.check_and_add_to_window(self)
 
     def write_to_db(self):
-        db_connector.add_window_dict(self.get_as_dict())
+        DBHandler().add_window_log(self.get_as_dict())
 
     def add_label(self, value):
         """
@@ -98,9 +88,9 @@ class WinInfo:
         Just returns important attributes as a dict for further usage.
         :return: dict
         """
-        return dict({"timestamp": self.timestamp, "activity": self._activity, "process_id": self.process_id,
+        return dict({"timestamp": self.timestamp,
                      "window_type": self.window_type, "window_title": self.window_title,
-                     "window_text_segments": self.window_text_segments, "window_text_words": self.window_text_words,
+                     "window_text_words": self.window_text_words,
                      "label_list": self._label_list})
 
     @property
@@ -116,11 +106,11 @@ class Condition:
     """
     This conditions can be added to the Label objects.
     Its purpose is to make sure the checks allways run the same.
-    allowed condition_type = "window_type", "window_title", "window_text_segments", "window_text_words","timestamp"\n
+    allowed condition_type = "window_type", "window_title", "window_text_words","timestamp"\n
     allowed condition_check = "gt", "lt", "lte", "gte", "eq", "neq", "in", "nin"
     """
 
-    _possible_condition_types = ["window_type", "window_title", "window_text_segments", "window_text_words",
+    _possible_condition_types = ["window_type", "window_title","window_text_words",
                                  "timestamp"]
     _possible_condition_checks = ["gt", "lt", "lte", "gte", "eq", "neq", "in", "nin"]
 
@@ -198,13 +188,13 @@ class Label:
     _lock = Lock()
 
     def __init__(self, name: str, manually: bool = False, db_id=None, condition_list: list[Condition] = None,
-                 active: bool = True):
+                 active: bool = True, creation_timestamp=None):
         self.lock = Lock()
         self.name: str = name
         self.manually = manually
         self._active = active
         self._condition_list: list[Condition] = condition_list or []
-
+        self._creation_timestamp = time() if creation_timestamp is None else creation_timestamp
         self._id = db_id
 
         if self._id is None and (len(self._condition_list) >= 1 or self.manually):
@@ -221,8 +211,9 @@ class Label:
         """
         get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
-             tmp_dict = {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
-                    "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+            tmp_dict = {"id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+                        "conditions": [cond.get_as_dict() for cond in self._condition_list],
+                        "creation_timestamp": self._creation_timestamp}
 
         get_logger().debug(f"LABEL {self.name} lock release")
         return tmp_dict
@@ -242,7 +233,8 @@ class Label:
             else:
                 dict_no_id = {"name": self.name, "manually": self.manually, "active": self._active,
                               "conditions": [cond.get_as_dict() for cond in self._condition_list]}
-                self._id = db_connector.add_label(dict_no_id)
+                self._id = DBHandler().add_label(dict_no_id)
+
         get_logger().debug(f"LABEL {self.name} lock release")
         return self
 
@@ -250,9 +242,9 @@ class Label:
         get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             if self._id is not None and self._id != "":
-                dict_with_id = {"_id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+                dict_with_id = {"id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
                                 "conditions": [cond.get_as_dict() for cond in self._condition_list]}
-                db_connector.update_label(dict_with_id)
+                DBHandler().update_label(dict_with_id)
 
             else:
                 get_logger().error("update_in_db only works if the Label._id is properly set!")
@@ -300,7 +292,6 @@ class Label:
                 self._condition_list.append(cond)
         get_logger().debug(f"LABEL {self.name} lock release")
         return self
-
 
     def check_and_add_to_window(self, window: WinInfo) -> None:
         """
@@ -350,11 +341,11 @@ class Label:
            This function is for initializing the Label objects from the database.
            :return: None
            """
-        label_dicts = db_connector.get_label_list()
+        label_dicts = DBHandler().get_all_labels()
         for label_dict in label_dicts:
             # self, name: str, manually: bool = False, db_id = None, condition_list: list[Condition] = None):
-            tmp_label = Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["_id"],
-                              active=label_dict["active"])
+            tmp_label = Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
+                              active=label_dict["active"], creation_timestamp=label_dict["creation_timestamp"])
 
             tmp_label.add_conditions(*[Condition(cond["condition_type"], cond["condition_check"], cond["condition_value"])
                                        for cond in label_dict["conditions"]])
@@ -417,10 +408,5 @@ def update_all_labels_to_db():
 
 if __name__ == "__main__":
     print("Please start with the main.py")
-    # one time only test setup:
-    # Label("Mongo DB", condition_list=[Condition("window_title", "in", "mongo")])
-    # Label("Java", condition_list=[Condition("window_title", "in", "java")])
-    # Label("Python", condition_list=[Condition("window_title", "in", ".py")])
-    # Label("Python", condition_list=[Condition("window_title", "in", "python")])
-    # Label("Research", condition_list=[Condition("window_title", "in", "chatgpt")])
+
 

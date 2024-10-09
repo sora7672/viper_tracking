@@ -311,7 +311,7 @@ class DBHandler:
                               f"label_dict: {label_dict}")
             return None
         conditions = _to_json(label_dict["conditions"])
-        if not conditions:
+        if conditions is None:
             get_logger().warning(f"There is an error in the conditions dict!\n {label_dict}"
                                  f"\nNot added to the DB!")
             return None
@@ -431,25 +431,25 @@ class DBHandler:
         except Exception as e:
             get_logger().error(f"Unexpected error while getting all labels: {e}")
             return None
+        else:
+            labels = []
+            for row in rows:
+                label_dict = {
+                    "id": row[0],
+                    "name": row[1],
+                    "manually": bool(row[2]),
+                    "active": bool(row[3]),
+                    "creation_timestamp": row[5]
+                }
+                conds = _from_json(row[4])
+                if conds is None:
+                    get_logger().warning(f"There is an error in the conditions dict! {label_dict}")
+                    label_dict = None
+                else:
+                    label_dict["conditions"] = conds
+                labels.append(label_dict)
 
-        labels = []
-        for row in rows:
-            label_dict = {
-                "id": row[0],
-                "name": row[1],
-                "manually": row[2],
-                "active": row[3],
-                "creation_timestamp": row[5]
-            }
-            conds = _from_json(row[4])
-            if not conds:
-                get_logger().warning(f"There is an error in the conditions dict! {label_dict}")
-                label_dict = None
-            else:
-                label_dict["conditions"] = conds
-            labels.append(label_dict)
-
-        return labels
+            return labels
 
     def search_input_log(self, start_time: float = None, end_time: float = None, count_key_pressed: int = None,
                          count_mouse_pressed: int = None, count_direction_key_pressed: int = None,

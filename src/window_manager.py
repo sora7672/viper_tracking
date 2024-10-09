@@ -248,7 +248,8 @@ class Label:
                 get_logger().error("No conditions were provided.")
             else:
                 dict_no_id = {"name": self.name, "manually": self.manually, "active": self._active,
-                              "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+                              "conditions": [cond.get_as_dict() for cond in self._condition_list],
+                              "creation_timestamp": self._creation_timestamp}
                 self._id = DBHandler().add_label(dict_no_id)
 
         get_logger().debug(f"LABEL {self.name} lock release")
@@ -263,7 +264,8 @@ class Label:
         with self.lock:
             if self._id is not None and self._id != "":
                 dict_with_id = {"id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
-                                "conditions": [cond.get_as_dict() for cond in self._condition_list]}
+                                "conditions": [cond.get_as_dict() for cond in self._condition_list],
+                                "creation_timestamp": self._creation_timestamp}
                 DBHandler().update_label(dict_with_id)
 
             else:

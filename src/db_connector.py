@@ -1,5 +1,6 @@
 """
-
+This file includes all database related methods and helper functions.
+Each table has a search function that does the search based on positionable arguments input.
 Author: sora7672
 """
 import sqlite3
@@ -92,6 +93,9 @@ class DBHandler:
             self.lock = Lock()
 
     def check_db_path(self):
+        """
+        Just plain checks if path dir exists if not create it.
+        """
         if not path.exists(self.db_path):
             makedirs(self.db_path)
 

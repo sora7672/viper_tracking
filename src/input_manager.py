@@ -1,10 +1,11 @@
 """
 This file is part of Viper Tracking.
-It will have only the code that tracks inputs of the user.
+It will have only the code that tracks input actions of the user.
 
-I described every function, so even a not programmer can understand,
-that we don't track what you input and only count stuff for analyzes.
+I described every function, so even a non-programmer can understand it!
+We don't track what you input and only count stuff for analyzes.
 
+Author: sora7672
 """
 
 
@@ -16,6 +17,7 @@ from config_manager import threads_are_stopped, interval_inputs
 from db_connector import DBHandler
 from log_handler import get_logger
 
+# TODO: Maybe change global threads to a class/object based system
 mouse_thread: Thread = None
 keyboard_thread: Thread = None
 input_writer_thread: Thread = None
@@ -24,8 +26,9 @@ input_writer_thread: Thread = None
 class InputManager:
     """
     This class will handle the input grabbing of the program.
-    It will only track inputs based on type, not which keys exactly and when.
-    Mouse only click count.
+    It will only track inputs based on type, not which keys exactly got pushed.
+    We also don't save any order.
+    Mouse only click and scroll count.
     """
     _instance = None
 
@@ -96,7 +99,11 @@ class InputManager:
         self._count_middle_mouse_pressed = 0
         self._count_mouse_scrolls = 0
 
-    def add_to_db(self):
+    def add_to_db(self) -> None:
+        """
+        Simple calls the add to DB function of the DB module
+        for proper handling the data and easy changes.
+        """
         DBHandler().add_input_log(self.get_all())
 
     def add_input(self, user_input_type) -> None:
@@ -145,6 +152,8 @@ class InputManager:
 # char / write keys.
 direction_keys = [keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right]
 other_write_keys = [keyboard.Key.space, keyboard.Key.enter, keyboard.Key.backspace, keyboard.Key.delete]
+# TODO: maybe adding game keys ? WASD, space? esc?
+#  TEST also what happens if you game and log! (holding WASD longer and such)
 
 
 def on_key_press(key) -> None | bool:
@@ -247,6 +256,7 @@ def input_writer() -> None:
     get_logger().debug("input_writer() end")
 
 
+# # # # External call functions for less import in other files # # # #
 def stop_done() -> bool:
     """
     This function is called to stop the thread or better the input tracker.

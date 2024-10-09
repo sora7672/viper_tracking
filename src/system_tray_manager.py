@@ -1,8 +1,12 @@
-
+"""
+This module is handling all related to the systray icon.
+Looks and function calls of external modules, like gui.
+Author: sora7672
+"""
 
 from pystray import Icon, Menu, MenuItem
-from PIL import Image, ImageDraw
-from random import randint
+from PIL import Image
+
 
 from config_manager import stop_program_threads
 from log_handler import get_logger
@@ -15,6 +19,11 @@ import threading
 from time import sleep
 
 class MultiFunction:
+    """
+    This class is created to make it possible to call multiple functions
+    in one GUI or pystray event which normally would only accept one.
+    Also, you can properly hand over the arguments.
+    """
     def __init__(self, *functions):
         self.functions = functions
 
@@ -26,7 +35,10 @@ class MultiFunction:
 
 class SystemTrayManager:
     """
-    Does not need to be thread safe, because it runs detached adn will be closed by itself
+    This class handles all related to the systray icon.
+    It's running in detached mode, which creates a thread itself
+    and can be threadsafe gracefully closed with self.icon.stop()
+    It's a singleton.
     """
     _instance = None
 
@@ -44,19 +56,23 @@ class SystemTrayManager:
             SystemTrayManager._instance = self
             get_logger().debug("__init__ SystemTrayManager")
 
-    def start_systray(self):
-
+    def start_systray(self) -> None:
+        """
+        Just starts the systray icon and generates its menu before.
+        :return: None
+        """
         self.update_menu()
         self.icon.run_detached()
         get_logger().debug("started systray icon detached")
 
-    def stop_program(self):
+    def stop_program(self) -> None:
         """
         This methode is the most important after the program start.
-        It handles all that needs to be done when the program gets closed.
-        maybe the GUI can call it also, thats why tehre is a import/export function.
+        It handles all that needs to be done when the program should be closed.
+        There is an import/export function if the program should be stoppable
+        from another module also.
 
-        :return:
+        :return: None
         """
         stop_program_threads()
         # wait for threads to be done
@@ -84,13 +100,21 @@ class SystemTrayManager:
         for th in threading.enumerate():
             get_logger().debug(f"Thread still open: {th}")
 
-    def update_menu(self):
+    def update_menu(self) -> None:
+        """
+        This updates the systray menu.
+        """
         self.icon.menu = Menu(self._label_menu(),
                               MenuItem("Open GUI", open_main_gui),
                               MenuItem("Exit Viper Tracking", self.stop_program))
         self.icon.update_menu()
 
-    def _label_menu(self):
+    def _label_menu(self) -> MenuItem:
+        """
+        Helper for menu creation.
+        It creates the menu entries for the manually labels that
+        can be switched on/off or added a new manually label.
+        """
         all_label = Label.get_all_labels()
         menu_labels = []
         for label in all_label:
@@ -112,10 +136,17 @@ class SystemTrayManager:
 
 # # # # External call functions for less import in other files # # # #
 def start_systray_icon():
+    """
+    Starts the systray icon.
+    """
     SystemTrayManager().start_systray()
 
 
 def stop_program():
+    """
+    Stops the whole program with this call.
+    All external closes, away from systray should be using this fucntion too!
+    """
     SystemTrayManager().stop_program()
 
 

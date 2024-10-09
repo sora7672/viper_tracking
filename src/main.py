@@ -1,3 +1,10 @@
+"""
+This is the module that needs to be executed to run the program.
+It loads and initializes all other modules needed.
+
+Author: sora7672
+"""
+
 
 from input_manager import start_input_tracker
 from window_manager import start_window_tracker, init_all_labels_from_db
@@ -9,17 +16,17 @@ from db_connector import start_db
 
 
 # TODO: in english
-#   wenn was hinzugefügt, dann update des tracking threads/microservies/Prozess
-#   Auswertungen müssen per label, fenster typ, nach text suche, text/word segments
-#   oder irgendeiner kombnation dieser machbar sein
-#   Advanced conditions, wie z.B. wenn anwendung A hauptfenster & Anwendung B im Hintergrund, dann setz label
+#  We need analyzes that can combine different ways of searching infos from the database.
+#  also there needs to be time window pre choices like this week, last week, last 3 days whatsover
+#  maybe later advanced conditions for analyzes and labeling. Like background windows or system time (night/day etc)
+
 
 def start_program() -> None:
     """
     The function to start all needed application modules.
     :return: None
     """
-    # FIXME: also icon not accepted in ttkb windows?
+
 
     initialize_config_manager()
     init_logging()
@@ -46,10 +53,7 @@ def start_program() -> None:
     start_root_gui()
     get_logger().debug("Mainloop properly finished")
 
-
-
-    # TODO: termination process handeling, like on errors
-
+    # TODO: termination process handling, like on errors
 
 
 if __name__ == "__main__":

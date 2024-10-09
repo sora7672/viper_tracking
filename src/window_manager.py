@@ -1,9 +1,12 @@
-import threading
+"""
+
+Author: sora7672
+"""
 
 # TODO: Minimize the imports!
-import win32gui
-import win32process
-import psutil
+from win32gui import GetForegroundWindow, GetWindowText
+from win32process import GetWindowThreadProcessId
+from psutil import Process
 from db_connector import DBHandler
 from threading import Thread, Lock
 from time import time, sleep
@@ -13,7 +16,6 @@ from log_handler import get_logger
 
 window_thread: Thread = None
 
-# temp vars, later replaced with a configuration read in file
 # TODO: Add this to the config
 untracked_types = []
 repl_chars = "–—-"
@@ -38,10 +40,14 @@ class WinInfo:
         return str(self.__dict__)
 
     def fill_self(self):
-        a_win = win32gui.GetForegroundWindow()
-        self.window_title = win32gui.GetWindowText(a_win)
-        _, self.process_id = win32process.GetWindowThreadProcessId(a_win)
-        self.window_type = psutil.Process(self.process_id).name()
+        """
+        Grabs all infos needed from the active window.
+        Maybe later some extension with background windows too.
+        """
+        a_win = GetForegroundWindow()
+        self.window_title = GetWindowText(a_win)
+        _, self.process_id = GetWindowThreadProcessId(a_win)
+        self.window_type = Process(self.process_id).name()
 
         if self.window_type not in untracked_types:
 
@@ -65,16 +71,26 @@ class WinInfo:
             self.write_to_db()
 
     def set_labels(self):
+        """
+        Loops through all labels,
+        which loop through all their conditions to check
+        if the window is ok to have this label.
+        """
         for lab in Label.get_all_labels():
             lab.check_and_add_to_window(self)
 
     def write_to_db(self):
+        """
+        Simple call to add it to the database
+        """
         DBHandler().add_window_log(self.get_as_dict())
 
     def add_label(self, value):
         """
         Adds a new label to this object.
         No duplicated labels are added.
+        (Could happen if multiple conditions
+        for the same name are met)
         Enables chain method casting.
         :param value: str
         :return: self
@@ -239,6 +255,10 @@ class Label:
         return self
 
     def update_in_db(self):
+        """
+        Updates the label object in the database.
+        When its set inactive for example.
+        """
         get_logger().debug(f"LABEL {self.name} lock use")
         with self.lock:
             if self._id is not None and self._id != "":
@@ -390,18 +410,27 @@ def start_window_tracker() -> None:
 def stop_done() -> bool:
     """
     This function gets called from outside to stop the window_tracker module thread.
-    :return: None
+    :return: bool
     """
     global window_thread
     window_thread.join()
     return True
 
 
-def init_all_labels_from_db():
+def init_all_labels_from_db() -> None:
+    """
+    This function is for initializing the Label objects from the database.
+    :return: None
+    """
     Label.init_all_labels_from_db()
 
 
-def update_all_labels_to_db():
+def update_all_labels_to_db() -> None:
+    """
+    This imported function loops through all labels and updates them in the database.
+    Was created in case we want to save all labels in DB on exit of the app.
+    :return: None
+    """
     for lab in Label.get_all_labels():
         lab.update_in_db()
 

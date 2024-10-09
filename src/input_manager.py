@@ -1,32 +1,46 @@
 """
 This file is part of Viper Tracking.
-It will have only the code that tracks inputs of the user.
+It will have only the code that tracks input actions of the user.
 
-I described every function, so even a not programmer can understand,
-that we don't track what you input and only count stuff for analyzes.
+I described every function, so even a non-programmer can understand it!
+We don't track what you input and only count stuff for analyzes.
 
+Author: sora7672
 """
 
 
-from threading import Thread, Event, Lock
+from threading import Thread, Lock
 from time import time, sleep
 from pynput import mouse, keyboard
 
+from config_manager import threads_are_stopped, interval_inputs
+from db_connector import DBHandler
+from log_handler import get_logger
+
+# TODO: Maybe change global threads to a class/object based system
 mouse_thread: Thread = None
 keyboard_thread: Thread = None
+input_writer_thread: Thread = None
+
 
 class InputManager:
     """
     This class will handle the input grabbing of the program.
-    It will only track inputs based on type, not which keys exactly and when.
-    Mouse only click count.
+    It will only track inputs based on type, not which keys exactly got pushed.
+    We also don't save any order.
+    Mouse only click and scroll count.
     """
     _instance = None
 
+    def __new__(cls, *args, **kwargs):
+
+        if cls._instance is None:
+            cls._instance = super(cls, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        if InputManager._instance is not None:
-            raise Exception("This class is a singleton!")
-        else:
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
             self._count_char_key_pressed = 0
             self._count_direction_key_pressed = 0
             self._count_special_key_pressed = 0
@@ -41,6 +55,7 @@ class InputManager:
 
             self.lock = Lock()
             InputManager._instance = self
+            get_logger().debug("__init__ InputManager")
 
     def get_all(self) -> dict:
         """
@@ -50,8 +65,9 @@ class InputManager:
         "count_special_key_pressed", "count_char_key_pressed", "count_left_mouse_pressed", "count_right_mouse_pressed",
         "count_middle_mouse_pressed"]
         """
+        get_logger().debug("InputManager lock use")
         with self.lock:
-            tmp_dict: dict = {"last_timestamp": self._last_activity_timestamp, "count_key_pressed": (
+            tmp_dict: dict = {"last_activity_timestamp": self._last_activity_timestamp, "count_key_pressed": (
                          self._count_char_key_pressed + self._count_direction_key_pressed +
                          self._count_special_key_pressed),
                          "count_mouse_pressed": (self._count_left_mouse_pressed + self._count_right_mouse_pressed +
@@ -64,7 +80,9 @@ class InputManager:
                          "count_right_mouse_pressed": self._count_right_mouse_pressed,
                          "count_middle_mouse_pressed": self._count_middle_mouse_pressed}
             self.reset()
-            return tmp_dict
+        get_logger().debug("InputManager lock release")
+        tmp_dict["timestamp"] = time()
+        return tmp_dict
 
     def reset(self) -> None:
         """
@@ -81,17 +99,12 @@ class InputManager:
         self._count_middle_mouse_pressed = 0
         self._count_mouse_scrolls = 0
 
-
-    @classmethod
-    def get_instance(cls):
+    def add_to_db(self) -> None:
         """
-        Returns the instance of the InputManager class.
-        Only way to access it.
-        :return:
+        Simple calls the add to DB function of the DB module
+        for proper handling the data and easy changes.
         """
-        if InputManager._instance is None:
-            InputManager()
-        return InputManager._instance
+        DBHandler().add_input_log(self.get_all())
 
     def add_input(self, user_input_type) -> None:
         """
@@ -100,6 +113,7 @@ class InputManager:
         'left_mouse_press', 'right_mouse_press', 'middle_mouse_press', 'mouse_scroll']
         :return: None
         """
+        get_logger().debug("InputManager lock use")
         with self.lock:
             self._last_activity_timestamp = time()
             match user_input_type:
@@ -130,16 +144,16 @@ class InputManager:
 
                 case _:
                     raise Exception(f'Unexpected input type: {user_input_type}')
+        get_logger().debug("InputManager lock released")
 
-
-# handler for stopping input readings
-stop_event = Event()
 
 # Key lists for different types we want to handle different
 # Obvious directions and some keys that don't have the Key.char attribute, but should be counted as
 # char / write keys.
 direction_keys = [keyboard.Key.up, keyboard.Key.down, keyboard.Key.left, keyboard.Key.right]
 other_write_keys = [keyboard.Key.space, keyboard.Key.enter, keyboard.Key.backspace, keyboard.Key.delete]
+# TODO: maybe adding game keys ? WASD, space? esc?
+#  TEST also what happens if you game and log! (holding WASD longer and such)
 
 
 def on_key_press(key) -> None | bool:
@@ -148,21 +162,22 @@ def on_key_press(key) -> None | bool:
     but only calls the InputManagers add_input method (based on key type pressed)
     :return: Only false when thread closing got called, else None
     """
-    if stop_event.is_set():
+    if threads_are_stopped():
+        get_logger().debug("on_key_press() stop event grabbed")
         return False
 
     # FOR PRIVACY CONCERNS:
     # As you see, we only sort this based on the key type that is pressed,
     # we don't log any key/char that is pressed!
     if hasattr(key, 'char') and key.char is not None:
-        InputManager.get_instance().add_input("char_key")
+        InputManager().add_input("char_key")
     else:
         if key in direction_keys:
-            InputManager.get_instance().add_input("direction_key")
+            InputManager().add_input("direction_key")
         elif key in other_write_keys:
-            InputManager.get_instance().add_input("char_key")
+            InputManager().add_input("char_key")
         else:
-            InputManager.get_instance().add_input("special_key")
+            InputManager().add_input("special_key")
 
 
 def on_mouse_click(x, y, button, pressed) -> None | bool:
@@ -171,16 +186,17 @@ def on_mouse_click(x, y, button, pressed) -> None | bool:
     but only calls the InputManagers add_input method (based on click button)
     :return: Only false when thread closing got called, else None
     """
-    if stop_event.is_set():
+    if threads_are_stopped():
+        get_logger().debug("on_mouse_click() stop event grabbed")
         return False
 
     if pressed:
         if button == mouse.Button.left:
-            InputManager.get_instance().add_input("left_mouse")
+            InputManager().add_input("left_mouse")
         elif button == mouse.Button.right:
-            InputManager.get_instance().add_input("right_mouse")
+            InputManager().add_input("right_mouse")
         if button == mouse.Button.middle:
-            InputManager.get_instance().add_input("middle_mouse")
+            InputManager().add_input("middle_mouse")
 
 
 def on_mouse_scroll(x, y, dx, dy) -> None | bool:
@@ -189,57 +205,87 @@ def on_mouse_scroll(x, y, dx, dy) -> None | bool:
     but only calls the InputManagers add_input method (without giving info on where the scroll happend)
     :return: Only false when thread closing got called, else None
     """
-    if stop_event.is_set():
+    if threads_are_stopped():
+        get_logger().debug("on_mouse_scroll() stop event grabbed")
         return False
-    InputManager.get_instance().add_input("mouse_scroll")
+    InputManager().add_input("mouse_scroll")
 
 
-def start_mouse_listener() -> None:
+def mouse_tracker() -> None:
     """ Used for starting the event listener in a thread
     Calls the on_mouse_click function every time a button of the mouse is pressed
     and the on_mouse_scroll function  every time the user scrolls
+    Limited to 10 inputs per second.
 
     """
     with mouse.Listener(on_click=on_mouse_click, on_scroll=on_mouse_scroll) as listener:
-        while not stop_event.is_set():
+        while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
+    get_logger().debug("mouse_tracker() end")
 
 
-def start_keyboard_listener() -> None:
+def keyboard_tracker() -> None:
     """ Used for starting the event listener in a thread
     Calls the on_key_press function every time a key is pressed on keyboard
+    Limited to 10 inputs per second.
     """
     with keyboard.Listener(on_press=on_key_press) as listener:
-        while not stop_event.is_set():
+        while not threads_are_stopped():
             sleep(0.1)
         listener.stop()
+    get_logger().debug("keyboard_tracker() end")
 
 
-def stop() -> None:
+def input_writer() -> None:
+    """
+    This function is for adding to the thread to run it properly.
+    :return: None
+    """
+
+    while not threads_are_stopped():
+        inter = interval_inputs()
+        if inter % 5 != 0:
+            raise Exception(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
+        fifth_timer = inter // 5
+        for i in range(fifth_timer):
+            sleep(5)
+            if threads_are_stopped():
+                break
+        InputManager().add_to_db()
+    get_logger().debug("input_writer() end")
+
+
+# # # # External call functions for less import in other files # # # #
+def stop_done() -> bool:
     """
     This function is called to stop the thread or better the input tracker.
     :return: None
     """
-    global keyboard_thread
-    global mouse_thread
-    stop_event.set()
+    global mouse_thread, keyboard_thread, input_writer_thread
 
     mouse_thread.join()
     keyboard_thread.join()
+    input_writer_thread.join()
+    return True
 
 
-def start() -> None:
+def start_input_tracker() -> None:
     """
     Starts the manager thread, which will listen to all key inputs and mouse clicks/scrolls.
     :return:
     """
-    global mouse_thread
-    mouse_thread = Thread(target=start_mouse_listener)
+    global mouse_thread, keyboard_thread, input_writer_thread
+    mouse_thread = Thread(target=mouse_tracker)
+    keyboard_thread = Thread(target=keyboard_tracker)
+    input_writer_thread = Thread(target=input_writer)
+
     mouse_thread.start()
-    global keyboard_thread
-    keyboard_thread = Thread(target=start_keyboard_listener)
+    get_logger().debug("mouse_thread.start()")
     keyboard_thread.start()
+    get_logger().debug("keyboard_thread.start()")
+    input_writer_thread.start()
+    get_logger().debug("input_writer_thread.start()")
 
 
 if __name__ == "__main__":

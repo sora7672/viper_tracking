@@ -6,4 +6,6 @@
 *scribble*
 *settings.json
 __pycache__/
-test.*
+database/
+*test.*
+config.json

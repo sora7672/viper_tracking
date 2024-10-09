@@ -36,6 +36,7 @@ but you have watched 3 hours "minecraft" videos in between)
 - pywin32 version: 306
 - psutil  version: 6.0.0
 - ttkbootstrap  version: 1.10.1
+- pystray version: 0.19.5
 
 You need to configure the mongodb login properly in the db_connector.py
 The application will be started via the main.py and there we will include

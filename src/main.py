@@ -1,43 +1,61 @@
+"""
+This is the module that needs to be executed to run the program.
+It loads and initializes all other modules needed.
+
+Author: sora7672
+"""
 
 
-import ttkbootstrap as tb
-from input_tracker import start as input_start, stop as input_stop
-from window_tracker import start as tracking_start, stop as tracking_stop, setup_labels
-import input_tracker
-import window_tracker
+from input_manager import start_input_tracker
+from window_manager import start_window_tracker, init_all_labels_from_db
+from gui_controller import start_root_gui, init_root_gui
+from system_tray_manager import start_systray_icon
+from config_manager import initialize_config_manager
+from log_handler import get_logger, init_logging
+from db_connector import start_db
 
-# TODO:
-#   wenn was hinzugefügt, dann update des tracking threads/microservies/Prozess
-#   Auswertungen müssen per label, fenster typ, nach text suche, text/word segments
-#   oder irgendeiner kombnation dieser machbar sein
-#   Advanced conditions, wie z.B. wenn anwendung A hauptfenster & Anwendung B im Hintergrund, dann setz label
 
-def start() -> None:
+# TODO: in english
+#  We need analyzes that can combine different ways of searching infos from the database.
+#  also there needs to be time window pre choices like this week, last week, last 3 days whatsover
+#  maybe later advanced conditions for analyzes and labeling. Like background windows or system time (night/day etc)
+
+# FIXME: Not saving manually labels properly or maybe not loading in on restart!
+#  What about auto labels?
+
+def start_program() -> None:
     """
     The function to start all needed application modules.
     :return: None
     """
-    # First get the Label elements from the DB, needs to be called here once,
-    # because the start function will be called in between on changes.
-    setup_labels()
-    # start thread for tracking mouse and keyboard signals (only counting & timestamp)
-    input_start()
-    # start the thread for reading windows
-    tracking_start()
 
-    root_window = tb.Window()
-    root_window.geometry(f"{300}x{100}+{100}+{100}")
-    root_window.grid_rowconfigure(0, weight=1)
-    root_window.grid_columnconfigure(0, weight=1)
+    initialize_config_manager()
+    init_logging()
+    get_logger().debug("config_manager init done & log_handler started")
 
-    # TODO: If there is a setting change, stop & start again the threads.
-    root_window.mainloop()
+    start_db()
+    get_logger().debug("start_db done")
 
-    # TODO: termination process handeling
-    # Stop the inputmanager & window tracker thread if the program gets terminated
-    tracking_stop()
-    input_stop()
+    init_all_labels_from_db()
+    get_logger().debug("imported from labels done")
+
+    init_root_gui()
+    get_logger().debug("init root gui done")
+
+    start_input_tracker()
+    get_logger().debug("input tracker start done")
+
+    start_window_tracker()
+    get_logger().debug("window tracker start done")
+
+    start_systray_icon()
+    get_logger().debug("started systray icon")
+    get_logger().debug("Now starting mainloop")
+    start_root_gui()
+    get_logger().debug("Mainloop properly finished")
+
+    # TODO: termination process handling, like on errors
 
 
 if __name__ == "__main__":
-    start()
+    start_program()

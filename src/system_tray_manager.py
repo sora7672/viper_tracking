@@ -13,8 +13,9 @@ from log_handler import get_logger
 
 from input_manager import stop_done as input_stop_done
 from window_manager import Label, update_all_labels_to_db, stop_done as win_stop_done
-from gui_controller import sys_tray_manual_label, open_main_gui, stop_gui
+from gui_controller import stop_gui
 from db_connector import stop_db
+from gui_views import open_main_window, open_systray_label
 import threading
 from time import sleep
 
@@ -82,19 +83,19 @@ class SystemTrayManager:
             get_logger().debug("win_stop_done()")
 
         stop_gui()
-        sleep(0.5)
+        sleep(0.3)
         get_logger().debug("stop_gui is done")
 
         update_all_labels_to_db()
-        sleep(0.5)
+        sleep(0.3)
         get_logger().debug("update_all_labels_to_db() done")
 
         stop_db()
-        sleep(0.5)
+        sleep(0.3)
         get_logger().debug("close_db_connection() done")
 
         self.icon.stop()
-        sleep(0.5)
+        sleep(0.3)
         get_logger().debug("self.icon.stop() done)")
 
         for th in threading.enumerate():
@@ -105,7 +106,7 @@ class SystemTrayManager:
         This updates the systray menu.
         """
         self.icon.menu = Menu(self._label_menu(),
-                              MenuItem("Open GUI", open_main_gui),
+                              MenuItem("Open GUI", open_main_window),
                               MenuItem("Exit Viper Tracking", self.stop_program))
         self.icon.update_menu()
 
@@ -128,7 +129,7 @@ class SystemTrayManager:
                     MenuItem("Deactivate", disable_action, visible=label.is_active)
                 )))
 
-        menu_labels.append(MenuItem("Add & start new Label", sys_tray_manual_label))
+        menu_labels.append(MenuItem("Add & start new Label", open_systray_label))
 
         tmp_menu = MenuItem("Manual Labels", Menu(*menu_labels))
         return tmp_menu

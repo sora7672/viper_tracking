@@ -135,38 +135,54 @@ class ViewController:
 
         # set_standard_focus_on_window(n_win)
     def update_settings_tab(self, tab):
-        tab.grid_rowconfigure(0, weight=1)  # Upper half
-        tab.grid_rowconfigure(1, weight=1)  # Lower half
-        tab.grid_columnconfigure(0, weight=1)
         upper_frame = Frame(tab, borderwidth=2, relief="solid")
         lower_frame = Frame(tab, borderwidth=2, relief="solid")
 
-        upper_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=5)
-        lower_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        upper_frame.pack(side="top", fill="both", expand=True, padx=10, pady=5)
+        lower_frame.pack(side="bottom", fill="both", expand=True, padx=10, pady=5)
 
-
-        # TODO: Outsource to settings
-
-
-        list_themes = GuiController().root.style.theme_names()
-        dropdown_themes = tb.Combobox(upper_frame, values=list_themes, state="readonly")
-        dropdown_themes.set(GuiController().root.style.theme_use())
-        dropdown_themes.pack()
+        # Dropdown for resolution placed at the top-left (absolute positioning)
         d_res_values = [f"{key}: {value[0]}x{value[1]}" for key, value in dict_resolution.items()]
         dropdown_resolution = tb.Combobox(upper_frame, values=d_res_values, state="readonly")
         dropdown_resolution.current(0)
-        dropdown_resolution.pack()
+        dropdown_resolution.place(x=10, y=10)  # Absolute position at the top-left corner
 
-        apply_button = tb.Button(upper_frame, text="APPLY",
-                                 command=lambda: self.apply_changes(dict_resolution, dropdown_resolution,
-                                                                   dropdown_themes))
-        apply_button.pack()
-
+        # Save button placed at the bottom-left (absolute positioning)
         save_button = tb.Button(upper_frame, text="SAVE CHANGES",
-                                command=lambda: self.save_changes(dict_resolution, dropdown_resolution, dropdown_themes))
-        save_button.pack()
+                                command=lambda: self.save_changes(dropdown_resolution, dropdown_themes))
+        save_button.place(x=10, rely=0.98, anchor="sw")  # Position at bottom-left corner
 
-    def apply_changes(self, dict_resolution, dropdown_resolution, dropdown_themes):
+        # Right frame holding the example frame, dropdown, and apply button
+        right_frame = Frame(upper_frame)
+        right_frame.pack(side="right", anchor="ne", padx=10, pady=5)
+
+        # Example frame inside right frame
+        example_frame = Frame(right_frame, borderwidth=2, relief="solid")
+        example_frame.pack(side="top", fill="both", expand=False, padx=5, pady=5)
+
+        # Populate the example frame with various widgets (showcasing styles)
+        tb.Label(example_frame, text="Dummy Label (info)", bootstyle="info").pack(padx=10, pady=10)
+        tb.Checkbutton(example_frame, text="Check me (success)", bootstyle="success").pack(padx=10, pady=10)
+        tb.Radiobutton(example_frame, text="Option 1 (warning)", bootstyle="warning").pack(padx=10, pady=10)
+        tb.Radiobutton(example_frame, text="Option 2 (danger)", bootstyle="danger").pack(padx=10, pady=10)
+        dropdown_demo = tb.Combobox(example_frame, values=["Option 1", "Option 2"], bootstyle="primary")
+        dropdown_demo.pack(padx=10, pady=10)
+        tb.Button(example_frame, text="Action Button (primary)", bootstyle="primary").pack(padx=10, pady=10)
+
+        # Dropdown for themes inside right_frame, below example_frame
+        list_themes = GuiController().root.style.theme_names()
+        dropdown_themes = tb.Combobox(right_frame, values=list_themes, state="readonly")
+        dropdown_themes.set(GuiController().root.style.theme_use())
+        dropdown_themes.pack(side="left", padx=10, pady=5)
+
+        # Apply button next to the dropdown (on the right)
+        apply_button = tb.Button(right_frame, text="APPLY",
+                                 command=lambda: self.apply_changes(dropdown_resolution, dropdown_themes))
+        apply_button.pack(side="left", padx=10, pady=5)
+
+
+
+    def apply_changes(self, dropdown_resolution, dropdown_themes):
         GuiController().root.style.theme_use(dropdown_themes.get())
         ind = dropdown_resolution.current()
 
@@ -175,7 +191,7 @@ class ViewController:
 
         center_window(self._main_window, width, height)
 
-    def save_changes(self, dict_resolution, dropdown_resolution, dropdown_themes):
+    def save_changes(self, dropdown_resolution, dropdown_themes):
         new_theme = dropdown_themes.get()
         ind = dropdown_resolution.current()
 

@@ -8,10 +8,11 @@ Author: sora7672
 
 
 import ttkbootstrap as tb
-from tkinter import Toplevel, PhotoImage, Widget
+from tkinter import Toplevel, PhotoImage, Widget, ttk
 from ttkbootstrap import Window
-from threading import Lock
+from window_manager import Label
 from ttkbootstrap import Frame
+from ttkbootstrap.dialogs import Messagebox
 
 from log_handler import get_logger
 from os import path
@@ -21,6 +22,24 @@ from gui_controller import GuiController
 # GuiController().root
 # will be used to create
 # new_window = Toplevel(GuiController().root)
+
+dict_resolution: dict[str, tuple[int, int]] = {
+            "VGA(4:3)": (640, 480),
+            "SVGA(4:3)": (800, 600),
+            "XGA(4:3)": (1024, 768),
+            "HD(16:9)": (1280, 720),
+            "WXGA(16:10)": (1280, 800),
+            "HD Ready(16:9)": (1366, 768),
+            "WXGA+(16:10)": (1440, 900),
+            "HD+(16:9)": (1600, 900),
+            "WSXGA+(16:10)": (1680, 1050),
+            "FULL HD (16:9)": (1920, 1080),
+            "WUXGA(16:10)": (1920, 1200),
+            "QHD/2K(16:9)": (2560, 1440),
+            "WQXGA(16:10)": (2560, 1600),
+            "4K UHD(16:9)": (3840, 2160),
+            "5K(16:9)": (5120, 2880),
+            "8K(16:9)": (7680, 4320)}
 
 
 # TODO: windows should allways work with a main window.
@@ -41,59 +60,135 @@ class ViewController:
     def __init__(self):
         if not hasattr(self, '_initialized'):
             self._initialized = True
+            self._main_window = None
 
     def main_window(self):
         get_logger().debug("main_window start")
 
         # Create the Toplevel window
-        n_win = Toplevel(GuiController().root)
-        n_win.iconphoto(True, GuiController().icon_image)
-        n_win.title("Viper Tracking - Main View")
+        self._main_window = Toplevel(GuiController().root)
+        self._main_window.iconphoto(True, GuiController().icon_image)
+        self._main_window.title("Viper Tracking")
+        win_width = 800
+        win_height = 600
+        self._main_window.minsize(win_width, win_height)
+        center_window(self._main_window, win_width, win_height)
 
-        # Set the minimum size of the window
-        n_win.minsize(400, 400)  # Minimum size of the window (can be changed)
+        notebook = ttk.Notebook(self._main_window)
+        notebook.bind("<<NotebookTabChanged>>", self.update_tab)
+        main_tab = ttk.Frame(notebook)
+        analysis_tab = ttk.Frame(notebook)
+        settings_tab = ttk.Frame(notebook)
 
-        # Get the correct geometry to position the window in the center of the screen
-        center_window(n_win, 400, 400)
+        notebook.add(main_tab, text="Overview")
+        notebook.add(analysis_tab, text="Analysis")
+        notebook.add(settings_tab, text="Settings")
+        notebook.pack(expand=True, fill="both", padx=0, pady=0)
+        self.update_main_tab(main_tab)
 
-        # Configure dynamic row/column resizing for the main window
-        n_win.grid_rowconfigure(0, weight=1)  # Upper half
-        n_win.grid_rowconfigure(1, weight=1)  # Lower half
-        n_win.grid_columnconfigure(0, weight=1)
+    def update_tab(self, event):
+        nb = event.widget
+        tab_index = event.widget.index("current")  # Get the index of the selected tab
+        match tab_index:
+
+            case 0:  # MainTab
+                self.update_main_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+            case 1:  # AnalysisTab
+                self.update_analysis_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+            case 2:  # SettingsTab
+                self.update_settings_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+
+
+    def update_main_tab(self, tab):
+        tab.grid_rowconfigure(0, weight=1)  # Upper half
+        tab.grid_rowconfigure(1, weight=1)  # Lower half
+        tab.grid_columnconfigure(0, weight=1)
 
         # Create upper and lower half frames
-        upper_frame = Frame(n_win, borderwidth=2, relief="solid")
-        lower_frame = Frame(n_win, borderwidth=2, relief="solid")
+        upper_frame = Frame(tab, borderwidth=2, relief="solid")
+        lower_frame = Frame(tab, borderwidth=2, relief="solid")
 
-        # Place the frames using grid for dynamic sizing
         upper_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=5)
         lower_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
 
-        # Configure dynamic resizing for the lower frame
         lower_frame.grid_columnconfigure(0, weight=1)  # Left half
         lower_frame.grid_columnconfigure(1, weight=1)  # Right half
         lower_frame.grid_rowconfigure(0, weight=1)
 
         # Create left and right frames in the lower half
-        left_frame = Frame(lower_frame, borderwidth=2, relief="solid")
-        right_frame = Frame(lower_frame, borderwidth=2, relief="solid")
+        low_left_frame = Frame(lower_frame, borderwidth=2, relief="solid")
+        low_right_frame = Frame(lower_frame, borderwidth=2, relief="solid")
+        low_left_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        low_right_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        left_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        right_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-
-        # Configure dynamic resizing for the 2x2 grid inside the left frame
+        left_frames_list = []
         for r in range(2):
             for c in range(2):
-                inner_frame = Frame(left_frame, borderwidth=2, relief="solid")
+                inner_frame = Frame(low_left_frame, borderwidth=2, relief="solid")
                 inner_frame.grid(row=r, column=c, padx=5, pady=5, sticky="nsew")
+                left_frames_list.append(inner_frame)
 
-        left_frame.grid_rowconfigure(0, weight=1)
-        left_frame.grid_rowconfigure(1, weight=1)
-        left_frame.grid_columnconfigure(0, weight=1)
-        left_frame.grid_columnconfigure(1, weight=1)
+        low_left_frame.grid_rowconfigure(0, weight=1)
+        low_left_frame.grid_rowconfigure(1, weight=1)
+        low_left_frame.grid_columnconfigure(0, weight=1)
+        low_left_frame.grid_columnconfigure(1, weight=1)
 
         # set_standard_focus_on_window(n_win)
+    def update_settings_tab(self, tab):
+        tab.grid_rowconfigure(0, weight=1)  # Upper half
+        tab.grid_rowconfigure(1, weight=1)  # Lower half
+        tab.grid_columnconfigure(0, weight=1)
+        upper_frame = Frame(tab, borderwidth=2, relief="solid")
+        lower_frame = Frame(tab, borderwidth=2, relief="solid")
 
+        upper_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=5)
+        lower_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+
+
+        # TODO: Outsource to settings
+
+
+        list_themes = GuiController().root.style.theme_names()
+        dropdown_themes = tb.Combobox(upper_frame, values=list_themes, state="readonly")
+        dropdown_themes.set(GuiController().root.style.theme_use())
+        dropdown_themes.pack()
+        d_res_values = [f"{key}: {value[0]}x{value[1]}" for key, value in dict_resolution.items()]
+        dropdown_resolution = tb.Combobox(upper_frame, values=d_res_values, state="readonly")
+        dropdown_resolution.current(0)
+        dropdown_resolution.pack()
+
+        apply_button = tb.Button(upper_frame, text="APPLY",
+                                 command=lambda: self.apply_changes(dict_resolution, dropdown_resolution,
+                                                                   dropdown_themes))
+        apply_button.pack()
+
+        save_button = tb.Button(upper_frame, text="SAVE CHANGES",
+                                command=lambda: self.save_changes(dict_resolution, dropdown_resolution, dropdown_themes))
+        save_button.pack()
+
+    def apply_changes(self, dict_resolution, dropdown_resolution, dropdown_themes):
+        GuiController().root.style.theme_use(dropdown_themes.get())
+        ind = dropdown_resolution.current()
+
+        selected_key = list(dict_resolution.keys())[ind]
+        width, height = dict_resolution[selected_key]
+
+        center_window(self._main_window, width, height)
+
+    def save_changes(self, dict_resolution, dropdown_resolution, dropdown_themes):
+        new_theme = dropdown_themes.get()
+        ind = dropdown_resolution.current()
+
+        selected_key = list(dict_resolution.keys())[ind]
+        reso = dict_resolution[selected_key]
+
+        # TODO: save to settings
+        self.apply_changes(dict_resolution, dropdown_resolution, dropdown_themes)
+
+    def update_analysis_tab(self, tab):
+        print(tab)
+        print("analysis")
+        pass
 
     def sys_tray_manual_label(self):
         """
@@ -108,6 +203,7 @@ class ViewController:
         sys_tray_win = Toplevel(GuiController().root, height=0, width=0)
         sys_tray_win.overrideredirect(True)
         sys_tray_win.withdraw()
+
 
         sys_tray_win.title('Sys Tray Add Label')
         sys_tray_win.iconphoto(True, GuiController().icon_image)
@@ -141,6 +237,7 @@ class ViewController:
         cancel_btn.grid_configure(row=2, column=1, sticky='nw', padx=10, pady=10)
 
         sys_tray_win.deiconify()  # shows the window again
+        sys_tray_win.focus_force()
         label_name.focus()
         get_logger().debug("sys_tray_manual_label end")
 
@@ -171,9 +268,14 @@ def center_window(window, width, height):
     screen_width = window.winfo_screenwidth()
     screen_height = window.winfo_screenheight()
 
-    x = int((screen_width / 2) - (width / 2))
-    y = int((screen_height / 2) - (height / 2))
-    window.geometry(f'{width}x{height}+{x}+{y}')
+    if screen_width <= width or screen_height <= height:
+        window.state('zoomed')
+        Messagebox.show_info("Your resolution is bigger than your screen.\nWe set the window to maximized instead.",
+                             "Warning", parent=window)
+    else:
+        x = int((screen_width / 2) - (width / 2))
+        y = int((screen_height / 2) - (height / 2))
+        window.geometry(f'{width}x{height}+{x}+{y}')
 
 
 def sys_add(win: Window, label_text):
@@ -183,7 +285,7 @@ def sys_add(win: Window, label_text):
     # TODO: Probably need to make this smoother, because circular import if import on top
     get_logger().debug("adding manual label by systray start")
     from system_tray_manager import SystemTrayManager
-    from window_manager import Label
+
     Label(label_text.get(), manually=True)
     win_close(win)
     SystemTrayManager().update_menu()
@@ -194,8 +296,10 @@ def sys_add(win: Window, label_text):
 def open_main_window():
     ViewController().main_window()
 
+
 def open_systray_label():
     ViewController().sys_tray_manual_label()
+
 
 if __name__ == "__main__":
     print("Please start with the main.py")

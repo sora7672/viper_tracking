@@ -49,6 +49,49 @@ class WinInfo:
         _, self.process_id = GetWindowThreadProcessId(a_win)
         self.window_type = Process(self.process_id).name()
 
+        # FIXME: If the application gets closed in the time between grabbing the process ID and checking it, results in this error:
+        #
+        #     Exception in thread Thread-6 (window_tracker):
+        #     Traceback (most recent call last):
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 727, in wrapper
+        #         return fun(self, *args, **kwargs)
+        #                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 989, in create_time
+        #         _user, _system, created = cext.proc_times(self.pid)
+        #                                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+        #     ProcessLookupError: [Errno 3] assume no such process (originated from OpenProcess -> ERROR_INVALID_PARAMETER)
+        #
+        #     During handling of the above exception, another exception occurred:
+        #
+        #     Traceback (most recent call last):
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 355, in _init
+        #         self.create_time()
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 757, in create_time
+        #         self._create_time = self._proc.create_time()
+        #                             ^^^^^^^^^^^^^^^^^^^^^^^^
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 729, in wrapper
+        #         raise convert_oserror(err, pid=self.pid, name=self._name)
+        #     psutil.NoSuchProcess: process no longer exists (pid=1963797664)
+        #
+        #     During handling of the above exception, another exception occurred:
+        #
+        #     Traceback (most recent call last):
+        #       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+        #         self.run()
+        #       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+        #         self._target(*self._args, **self._kwargs)
+        #       File "C:\git\python\viper_tracking\src\window_manager.py", line 417, in window_tracker
+        #         WinInfo().fill_self()
+        #       File "C:\git\python\viper_tracking\src\window_manager.py", line 50, in fill_self
+        #         self.window_type = Process(self.process_id).name()
+        #                            ^^^^^^^^^^^^^^^^^^^^^^^^
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
+        #         self._init(pid)
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
+        #         raise NoSuchProcess(pid, msg=msg)
+        #     psutil.NoSuchProcess: process PID not found (pid=1963797664)
+        #
+
         if self.window_type not in untracked_types:
 
             self.timestamp = time()
@@ -194,6 +237,13 @@ class Condition:
         return {"condition_type": self.condition_type, "condition_check": self.condition_check,
                 "condition_value": self.condition_value}
 
+    @staticmethod
+    def get_condition_types() -> list[str]:
+        return Condition._possible_condition_types
+
+    @staticmethod
+    def get_condition_checks() -> list[str]:
+        return Condition._possible_condition_checks
 
 class Label:
     """
@@ -203,6 +253,7 @@ class Label:
     _label_list = []
     _lock = Lock()
 
+    # FIXME: all attributes need to be protected and have a method to return, for thread safety
     def __init__(self, name: str, manually: bool = False, db_id=None, condition_list: list[Condition] = None,
                  active: bool = True, creation_timestamp=None):
         self.lock = Lock()
@@ -336,6 +387,20 @@ class Label:
                     if set_label:
                         window.add_label(self.name)
         get_logger().debug(f"LABEL {self.name} lock release")
+
+    def get_creation_timestamp(self):
+        get_logger().debug(f"LABEL {self.name} lock use")
+        with self.lock:
+            tmp_date = self._creation_timestamp
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return tmp_date
+
+    def get_condition_list(self):
+        get_logger().debug(f"LABEL {self.name} lock use")
+        with self.lock:
+            tmp_list = self._condition_list
+        get_logger().debug(f"LABEL {self.name} lock release")
+        return tmp_list
 
     @property
     def is_active(self):

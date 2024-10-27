@@ -6,26 +6,21 @@ Diagrams & calculation will happen in analysis_and_diagrams.py
 Author: sora7672
 """
 
-
+from os import path
+from datetime import datetime
 import ttkbootstrap as tb
-from tkinter import Toplevel, PhotoImage, Widget, ttk
-from ttkbootstrap import Window
-from window_manager import Label
-from ttkbootstrap import Frame
+from ttkbootstrap import Frame, Window
 from ttkbootstrap.dialogs import Messagebox
+from tkinter import Toplevel, PhotoImage, Widget, ttk, IntVar, BooleanVar, StringVar, Canvas, TclError
 
 from log_handler import get_logger
-from os import path
-
+from window_manager import Label, Condition
 from gui_controller import GuiController
 
-# GuiController().root
-# will be used to create
-# new_window = Toplevel(GuiController().root)
 
 dict_resolution: dict[str, tuple[int, int]] = {
-            "VGA(4:3)": (640, 480),
-            "SVGA(4:3)": (800, 600),
+           # "VGA(4:3)": (640, 480),
+           # "SVGA(4:3)": (800, 600),
             "XGA(4:3)": (1024, 768),
             "HD(16:9)": (1280, 720),
             "WXGA(16:10)": (1280, 800),
@@ -42,10 +37,172 @@ dict_resolution: dict[str, tuple[int, int]] = {
             "8K(16:9)": (7680, 4320)}
 
 
-# TODO: windows should allways work with a main window.
-#  if its not existing, because of close, it should create a new toplevel win
-#  otherwise only all widgets on the window should be destroyed and rebuild what needed
-# TODO: style change menu, which will change this theme. Also save it in user settings.
+class ScrollableFrame(tb.Frame):
+    # TODO: weirdly build up frame, needs some refining, because it seems like there is some DUPES
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        # Create a canvas for scrolling
+        self.canvas = Canvas(self)
+        self.canvas.pack(side="left", fill="both", expand=True)
+
+        # Add a vertical scrollbar linked to the canvas
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        self.scrollbar.pack(side="right", fill="y")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        # Create a frame within the canvas to hold scrollable content
+        self.scrollable_frame = tb.Frame(self.canvas)
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+
+        # Update the scroll region whenever the scrollable frame changes size
+        self.scrollable_frame.bind("<Configure>", self.update_scroll_region)
+
+        # Bind the mouse scroll event to the canvas
+        self.bind_mouse_scroll()
+
+    def update_scroll_region(self, event=None):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+
+    def bind_mouse_scroll(self):
+        self.canvas.bind_all("<MouseWheel>", self.on_mouse_scroll)
+
+    def on_mouse_scroll(self, event):
+        if event.num == 5 or event.delta == -120:
+            self.canvas.yview_scroll(1, "units")  # Scroll down
+        elif event.num == 4 or event.delta == 120:
+            self.canvas.yview_scroll(-1, "units")  # Scroll up
+
+class ConditionFrame(Frame):
+    def __init__(self, parent, with_remove=False, condition:Condition = None):
+        super().__init__(parent)
+        self.with_remove = with_remove
+        self.condition = condition
+        self.create_widgets()
+        self.pack(fill="x", padx=5, pady=5)
+
+    def create_widgets(self):
+        # Dropdown "Condition Type"
+        condition_types = Condition.get_condition_types()
+        max_chars = max([len(c) for c in condition_types]) + 1
+        tb.Label(self, text="Condition Type").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.condition_type = tb.Combobox(self, values=condition_types, state="readonly", width=max_chars)
+        self.condition_type.grid(row=0, column=1, padx=3, pady=5)
+
+        # Dropdown "Condition Check"
+        condition_checks = Condition.get_condition_checks()
+        max_chars = max([len(c) for c in condition_checks]) + 1
+        tb.Label(self, text="Condition Check").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        self.condition_check = tb.Combobox(self, values=condition_checks, state="readonly", width=max_chars)
+        self.condition_check.grid(row=0, column=3, padx=3, pady=5)
+
+        # Entry "Condition Value"
+        tb.Label(self, text="Condition Value").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        self.condition_value = tb.Entry(self)
+        self.condition_value.grid(row=0, column=5, padx=3, pady=5)
+
+        # "+" Button to add new condition frame at the same level
+        self.add_button = tb.Button(self, text="+", width=2, command=self.add_condition)
+        self.add_button.grid(row=0, column=6, padx=3, pady=5)
+
+        # "-" Button to remove the condition frame
+        if self.with_remove:
+            self.remove_button = tb.Button(self, text="-", width=2, command=self.delete_self)
+            self.remove_button.grid(row=0, column=7, padx=3, pady=5)
+
+    def add_condition(self):
+        parent = self.master
+        if isinstance(parent, Frame): # FIXME: labeled frame shoudl be used here
+            ConditionFrame(parent, with_remove=True)
+        else:
+            print("Error on adding condition frame woth add function")
+
+    def delete_self(self):
+        self.destroy()
+
+class LabelFrame(tb.Frame):
+    def __init__(self, parent, label = None):
+        super().__init__(parent, borderwidth=2, relief="solid")
+        if label is None:
+            self.label = None
+            self.label_name = StringVar(value="")
+            self.manually_var = BooleanVar(value=False)
+            self.active_var = BooleanVar(value=False)
+        else:
+            self.label = label
+            self.label_name = StringVar(value=label.name)
+            self.manually_var = BooleanVar(value=label.manually)
+            self.active_var = BooleanVar(value=label.is_active)
+        self.create_widgets()
+
+
+    def create_widgets(self):
+        # Upper Frame for Label Name, Manually, Active Checkboxes, and Datetime Label
+        upper_frame = Frame(self)
+        upper_frame.pack(fill="x", padx=5, pady=5)
+
+        # Entry field for "Label name"
+        tb.Label(upper_frame, text="Label name:").grid(row=0, column=0, padx=(5, 0), pady=5, sticky="w")
+        self.label_entry = tb.Entry(upper_frame, textvariable=self.label_name)
+        self.label_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+
+        # Checkbox for "Manually"
+        manually_checkbox = tb.Checkbutton(upper_frame, text="Manually", variable=self.manually_var, command=self.toggle_conditions)
+        manually_checkbox.grid(row=0, column=2, padx=5, pady=5)
+
+        # Checkbox for "Active"
+        active_checkbox = tb.Checkbutton(upper_frame, text="Active", variable=self.active_var)
+        active_checkbox.grid(row=0, column=3, padx=5, pady=5)
+
+        # Datetime Label
+        if self.label is None:
+            dt_object = datetime.now()
+        else:
+            dt_object = datetime.fromtimestamp(self.label.get_creation_timestamp())
+
+        formatted_date = dt_object.strftime("%d.%m.%y - %H:%M")
+        datetime_label = tb.Label(upper_frame, text=f"Created {formatted_date}")
+        datetime_label.grid(row=0, column=4, padx=(5, 0), pady=5)
+
+        # Lower Frame for "Automatically Conditions" Section
+        lower_frame = Frame(self)
+        lower_frame.pack(fill="x", padx=5, pady=0)
+
+        # Label for "Automatically Conditions" Section
+        tb.Label(lower_frame, text="Automatically Conditions").pack(anchor="w", padx=5, pady=5)
+
+        # Container for all condition frames
+        # TODO: add labeled frame for automatic conditions + check for this methods here, feels wrong
+        self.all_condition_frame = Frame(lower_frame)
+        self.all_condition_frame.pack(fill="x", padx=5, pady=5)
+        c_list = []
+        if self.label is not None:
+            c_list = self.label.get_condition_list()
+        if len(c_list) > 0:
+            first = True
+            for condition in c_list:
+                if first:
+                    first = False
+                    ConditionFrame(self.all_condition_frame, with_remove=False, condition = condition)
+                else:
+                    ConditionFrame(self.all_condition_frame,  condition=condition)
+        else:
+            ConditionFrame(self.all_condition_frame)
+        self.toggle_conditions()
+
+
+    def toggle_conditions(self):
+        state = "disabled" if self.manually_var.get() else "normal"
+        for frame in self.all_condition_frame.winfo_children():
+            for child in frame.winfo_children():
+                try:
+                    if isinstance(child, tb.Combobox) and state == "normal":
+                        child.config(state="readonly")
+                    else:
+                        child.config(state=state)
+                except (AttributeError, TclError):
+                    pass #  Ignore error
 
 class ViewController:
     """ Does not need to be thread safe, because it will allways run in main thread in the background.
@@ -69,8 +226,7 @@ class ViewController:
         self._main_window = Toplevel(GuiController().root)
         self._main_window.iconphoto(True, GuiController().icon_image)
         self._main_window.title("Viper Tracking")
-        win_width = 800
-        win_height = 600
+        win_width, win_height = 1024, 768
         self._main_window.minsize(win_width, win_height)
         center_window(self._main_window, win_width, win_height)
 
@@ -78,10 +234,12 @@ class ViewController:
         notebook.bind("<<NotebookTabChanged>>", self.update_tab)
         main_tab = ttk.Frame(notebook)
         analysis_tab = ttk.Frame(notebook)
+        label_tab = ttk.Frame(notebook)
         settings_tab = ttk.Frame(notebook)
 
         notebook.add(main_tab, text="Overview")
         notebook.add(analysis_tab, text="Analysis")
+        notebook.add(label_tab, text="Label")
         notebook.add(settings_tab, text="Settings")
         notebook.pack(expand=True, fill="both", padx=0, pady=0)
         self.update_main_tab(main_tab)
@@ -89,17 +247,31 @@ class ViewController:
     def update_tab(self, event):
         nb = event.widget
         tab_index = event.widget.index("current")  # Get the index of the selected tab
+        child_tabs = event.widget.winfo_children()
+        for tabs in child_tabs:
+            frame_childs = tabs.winfo_children()
+            for child in frame_childs:
+                child.destroy()
         match tab_index:
-
             case 0:  # MainTab
                 self.update_main_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
             case 1:  # AnalysisTab
                 self.update_analysis_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
-            case 2:  # SettingsTab
+            case 2:  # LabelTab
+                self.update_label_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+            case 3:  # SettingsTab
                 self.update_settings_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
 
 
     def update_main_tab(self, tab):
+        # TODO: Content of the tab
+        #  Base analysis graph, with update button(F5 shortcut)
+        #  Some basic stats, which are configurable as user settings
+        #  Possible stats: activity time, pc online time, average key pushes (per time window),
+        #  Average activity time (weekday based), ...
+        #  Some more advanced features later, like creating own querrys per field that should be shown.
+        #
+
         tab.grid_rowconfigure(0, weight=1)  # Upper half
         tab.grid_rowconfigure(1, weight=1)  # Lower half
         tab.grid_columnconfigure(0, weight=1)
@@ -133,8 +305,62 @@ class ViewController:
         low_left_frame.grid_columnconfigure(0, weight=1)
         low_left_frame.grid_columnconfigure(1, weight=1)
 
-        # set_standard_focus_on_window(n_win)
+
+
+    def update_analysis_tab(self, tab):
+        # TODO: This should make user choosable what kind of stuff they want to analys
+        #  They should be able to create and access querrys from here,
+        #  to analyze their favorite activitys /behaviour.
+        #  It will allways include standard analysis, like per label and/or multiple labels,
+        #  Weekdays, weeks, daytime, time window
+        label_list = Label.get_all_labels()
+
+        label_dropdown = tb.Combobox(tab, values=[f"{lab.name} ({"Manually" if lab.manually else "Automatic"})"
+                                                  for lab in label_list], state="readonly")
+        label_dropdown.current(0)
+        label_dropdown.pack(padx=10, pady=10)
+
+
+    def update_label_tab(self, tab):
+        # TODO: This will show all labels
+        #  Make it possible to add new labels, change automated label rules
+        #  We need each label one frame, that is filled with infos of tha label and below the conditions
+        #  There needs to be a add and a delete condition button
+        #  Also a add label button which needs to be shown as last widget allways
+
+        scrollable_frame = ScrollableFrame(tab)
+        scrollable_frame.pack(fill="both", expand=True)
+
+
+        label_list = Label.get_all_labels()
+        for lab in label_list:
+            lab_frame = LabelFrame(parent=scrollable_frame.scrollable_frame, label=lab)
+            lab_frame.pack(fill="x", padx=5, pady=5)
+
+        new_label_button = tb.Button(scrollable_frame.scrollable_frame, text="Add new Label")
+        new_label_button.config(command=lambda btn=new_label_button:
+                                     self.add_new_label(btn))
+
+        new_label_button.pack(padx=10, pady=5)
+
+    def add_new_label(self, btn=None):
+        if btn is None:
+            print("error no button provied")
+        else:
+
+            parent = btn.master
+            btn.pack_forget()
+            n_lab = LabelFrame(parent=parent)
+            n_lab.pack(fill="x", padx=10, pady=5)
+            btn.pack(padx=10, pady=5)
+
+
+
     def update_settings_tab(self, tab):
+
+
+        # TODO: Maybe adding here some feature request area for users, which will send
+        #  an email to us/me for adding some features & a support button for our discord or website or so.
         upper_frame = Frame(tab, borderwidth=2, relief="solid")
         lower_frame = Frame(tab, borderwidth=2, relief="solid")
 
@@ -160,12 +386,25 @@ class ViewController:
         example_frame = Frame(right_frame, borderwidth=2, relief="solid")
         example_frame.pack(side="top", fill="both", expand=False, padx=5, pady=5)
 
-        # Populate the example frame with various widgets (showcasing styles)
+        # Some show off examples
+        check_var = BooleanVar()
+        check_var.set(True)
+        radio_var = IntVar()
+        radio_var.set(0)
         tb.Label(example_frame, text="Dummy Label (info)", bootstyle="info").pack(padx=10, pady=10)
-        tb.Checkbutton(example_frame, text="Check me (success)", bootstyle="success").pack(padx=10, pady=10)
-        tb.Radiobutton(example_frame, text="Option 1 (warning)", bootstyle="warning").pack(padx=10, pady=10)
-        tb.Radiobutton(example_frame, text="Option 2 (danger)", bootstyle="danger").pack(padx=10, pady=10)
+        tb.Checkbutton(example_frame, text="Check me (success)", bootstyle="success", variable=check_var).pack(padx=10,
+                                                                                                               pady=10)
+        tb.Checkbutton(example_frame, text="Check me (primary)", variable=check_var).pack(padx=10, pady=10)
+        tb.Radiobutton(example_frame, text="Option 1 (primary)", variable=radio_var, value=0).pack(padx=10, pady=10)
+        tb.Radiobutton(example_frame, text="Option 2 (success)", variable=radio_var, value=0, bootstyle="success").pack(
+            padx=10, pady=10)
+        tb.Radiobutton(example_frame, text="Option 3 (warning)", variable=radio_var, value=0, bootstyle="warning").pack(
+            padx=10, pady=10)
+        tb.Radiobutton(example_frame, text="Option 4 (danger)", variable=radio_var, value=0, bootstyle="danger").pack(
+            padx=10, pady=10)
+
         dropdown_demo = tb.Combobox(example_frame, values=["Option 1", "Option 2"], bootstyle="primary")
+        dropdown_demo.current(0)
         dropdown_demo.pack(padx=10, pady=10)
         tb.Button(example_frame, text="Action Button (primary)", bootstyle="primary").pack(padx=10, pady=10)
 
@@ -179,8 +418,6 @@ class ViewController:
         apply_button = tb.Button(right_frame, text="APPLY",
                                  command=lambda: self.apply_changes(dropdown_resolution, dropdown_themes))
         apply_button.pack(side="left", padx=10, pady=5)
-
-
 
     def apply_changes(self, dropdown_resolution, dropdown_themes):
         GuiController().root.style.theme_use(dropdown_themes.get())
@@ -199,12 +436,7 @@ class ViewController:
         reso = dict_resolution[selected_key]
 
         # TODO: save to settings
-        self.apply_changes(dict_resolution, dropdown_resolution, dropdown_themes)
-
-    def update_analysis_tab(self, tab):
-        print(tab)
-        print("analysis")
-        pass
+        self.apply_changes(dropdown_resolution, dropdown_themes)
 
     def sys_tray_manual_label(self):
         """

@@ -90,8 +90,47 @@ class WinInfo:
         #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
         #         raise NoSuchProcess(pid, msg=msg)
         #     psutil.NoSuchProcess: process PID not found (pid=1963797664)
+        # FIXME: same problem with negative PIDs, probably also cuz of closed window
+        # Exception in thread
+        # Thread - 6(window_tracker):
+        # Traceback(most
+        # recent
+        # call
+        # last):
+        # File
+        # "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line
+        # 1073, in _bootstrap_inner
+        # self.run()
         #
+        # File
+        # "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line
+        # 1010, in run
+        # self._target(*self._args, **self._kwargs)
 
+        #
+        # File
+        # "C:\git\python\viper_tracking\src\window_manager.py", line
+        # 530, in window_tracker
+        # WinInfo().fill_self()
+        # File
+        # "C:\git\python\viper_tracking\src\window_manager.py", line
+        # 50, in fill_self
+        # self.window_type = Process(self.process_id).name()
+        # ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+        # File
+        # "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line
+        # 319, in __init__
+        # self._init(pid)
+        # File
+        # "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line
+        # 330, in _init
+        # raise ValueError(msg)
+        # ValueError: pid
+        # must
+        # be
+        # a
+        # positive
+        # integer(got - 1827508448)
         if self.window_type not in untracked_types:
 
             self.timestamp = time()

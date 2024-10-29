@@ -164,7 +164,7 @@ class ConditionFrame(Frame):
 
     def add_condition(self):
         parent = self.master
-        if isinstance(parent, Frame): # FIXME: labeled frame shoudl be used here
+        if isinstance(parent, ttk.LabelFrame):
             ConditionFrame(parent, with_remove=True)
         else:
             print("Error on adding condition frame with add function")
@@ -221,15 +221,12 @@ class LabelFrame(tb.Frame):
         delete_btn.bind("<Button-1>", self.delete_label)
 
 
-        # Lower Frame for "Automatically Conditions" Section
-        auto_frame = ttk.LabelFrame(self, text="Automatically Conditions")
-        auto_frame.pack(padx=20, pady=20, fill="both", expand=True)
 
 
 
         # Container for all condition frames
-        # TODO: add labeled frame for automatic conditions + check for this methods here, feels wrong
-        self.all_condition_frame = Frame(auto_frame)
+        # TODO: check for this methods here, feels wrong
+        self.all_condition_frame = ttk.LabelFrame(self, text="Automatically Conditions")
         self.all_condition_frame.name = "all_conditions"
         self.all_condition_frame.pack(fill="x", padx=5, pady=5)
         c_list = []

@@ -399,6 +399,39 @@ class DBHandler:
             get_logger().error(f"Unexpected error during label update: {e}")
             self.conn.rollback()
 
+    def delete_label_by_id(self, label_id: int) -> None:
+        """
+        This methode deletes the label based on the id provided.
+        :param self: DBHandler
+        :param label_id: int
+        :return: None
+        """
+
+
+        # TODO: need to add some better error handling, more visual for the user + the normal log writing
+        try:
+            with self.lock:
+                self.cursor.execute('''
+                    DELETE FROM labels 
+                    WHERE id = ?
+                ''', (label_id,))
+
+                self.conn.commit()
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while deleting label ID {label_id}: {e}")
+            self.conn.rollback()
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error during deleting label ID {label_id}: {e}")
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while deleting label ID {label_id}: {e}")
+            self.conn.rollback()
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error during deleting label ID {label_id}: {e}")
+            self.conn.rollback()
+
     def get_all_labels(self) -> None | list[dict]:
         """
         This method returns all labels in the database.

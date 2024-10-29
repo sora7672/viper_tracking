@@ -169,7 +169,7 @@ class Condition:
     allowed condition_check = "gt", "lt", "lte", "gte", "eq", "neq", "in", "nin"
     """
 
-    _possible_condition_types = ["window_type", "window_title","window_text_words",
+    _possible_condition_types = ["window_type", "window_title", "window_text_words",
                                  "timestamp"]
     _possible_condition_checks = ["gt", "lt", "lte", "gte", "eq", "neq", "in", "nin"]
 
@@ -218,12 +218,20 @@ class Condition:
                     return True
 
             case "in":
-                if str(self.condition_value).lower() in getattr(window, self.condition_type).lower():
-                    return True
+                if isinstance(getattr(window, self.condition_type), list):
+                    if self.condition_value in getattr(window, self.condition_type):
+                        return True
+                else:
+                    if str(self.condition_value).lower() in getattr(window, self.condition_type).lower():
+                        return True
 
             case "nin":
-                if str(self.condition_value).lower() not in getattr(window, self.condition_type).lower():
-                    return True
+                if isinstance(getattr(window, self.condition_type), list):
+                    if self.condition_value not in getattr(window, self.condition_type):
+                        return True
+                else:
+                    if str(self.condition_value).lower() not in getattr(window, self.condition_type).lower():
+                        return True
 
             case _:
                 raise ValueError("Condition check was provided with wrong values.")
@@ -253,36 +261,89 @@ class Label:
     _label_list = []
     _lock = Lock()
 
-    # FIXME: all attributes need to be protected and have a method to return, for thread safety
-    def __init__(self, name: str, manually: bool = False, db_id=None, condition_list: list[Condition] = None,
-                 active: bool = True, creation_timestamp=None):
+    def __init__(self, name: str, manually: bool = False, condition_list: list[Condition] = None,
+                 active: bool = True, creation_timestamp=None, db_id=None):
         self.lock = Lock()
-        self.name: str = name
-        self.manually = manually
+        self._name: str = name
+        self._manually = manually
         self._active = active
         self._condition_list: list[Condition] = condition_list or []
         self._creation_timestamp = time() if creation_timestamp is None else creation_timestamp
         self._id = db_id
 
-        if self._id is None and (len(self._condition_list) >= 1 or self.manually):
+        if self._id is None and (len(self._condition_list) >= 1 or self._manually):
             self.add_to_db()
         get_logger().debug("(CLASS) LABEL lock use")
         with Label._lock:
             Label._label_list.append(self)
         get_logger().debug("(CLASS) LABEL lock release")
 
+
+    @property
+    def condition_list(self) -> list[Condition]:
+        with self.lock:
+            condition_list = self._condition_list
+
+        return condition_list
+
+    @condition_list.setter
+    def condition_list(self, condition_list: list[Condition] | None):
+        with self.lock:
+            self._condition_list = condition_list if condition_list is not None else []
+
+    @property
+    def id(self):
+        with self.lock:
+            id = self._id
+
+        return id
+
+    @property
+    def name(self):
+        with self.lock:
+            name = self._name
+
+        return name
+
+    @name.setter
+    def name(self, name: str):
+        with self.lock:
+            self._name = name
+
+    @property
+    def manually(self):
+        with self.lock:
+            manually = self._manually
+        return manually
+
+    @manually.setter
+    def manually(self, manually: bool):
+        with self.lock:
+            self._manually = manually
+
+    @property
+    def active(self):
+        with self.lock:
+            active = self._active
+        return active
+
+    @active.setter
+    def active(self, active: bool):
+        with self.lock:
+            self._active = active
+
     def get_as_dict(self):
         """
         Just returns important attributes as a dict for further usage.
         :return: dict
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
-            tmp_dict = {"id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+            tmp_dict = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
                         "conditions": [cond.get_as_dict() for cond in self._condition_list],
                         "creation_timestamp": self._creation_timestamp}
 
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return tmp_dict
 
     def add_to_db(self):
@@ -291,19 +352,19 @@ class Label:
         Enables chain method casting.
         :return: self
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._id is not None:
                 get_logger().warning("Label was already added to the database.")
-            if (self._condition_list is None or len(self._condition_list) == 0) and not self.manually:
+            if (self._condition_list is None or len(self._condition_list) == 0) and not self._manually:
                 get_logger().error("No conditions were provided.")
             else:
-                dict_no_id = {"name": self.name, "manually": self.manually, "active": self._active,
+                dict_no_id = {"name": self._name, "manually": self._manually, "active": self._active,
                               "conditions": [cond.get_as_dict() for cond in self._condition_list],
                               "creation_timestamp": self._creation_timestamp}
                 self._id = DBHandler().add_label(dict_no_id)
 
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
     def update_in_db(self):
@@ -311,18 +372,26 @@ class Label:
         Updates the label object in the database.
         When its set inactive for example.
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._id is not None and self._id != "":
-                dict_with_id = {"id": self._id, "name": self.name, "manually": self.manually, "active": self._active,
+                dict_with_id = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
                                 "conditions": [cond.get_as_dict() for cond in self._condition_list],
                                 "creation_timestamp": self._creation_timestamp}
                 DBHandler().update_label(dict_with_id)
 
             else:
                 get_logger().error("update_in_db only works if the Label._id is properly set!")
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
+
         return self
+    def delete_in_db(self):
+        DBHandler().delete_label_by_id(self._id)
+        with Label._lock:
+            Label._label_list.remove(self)
+        with self.lock:
+            del self
+
 
     def enable(self):
         """
@@ -332,10 +401,10 @@ class Label:
         Enables chain method casting.
         :return: self
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             self._active = True
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
     def disable(self):
@@ -346,10 +415,10 @@ class Label:
         Enables chain method casting.
         :return: self
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             self._active = False
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
     def add_conditions(self, *conditions: Condition):
@@ -359,11 +428,11 @@ class Label:
         Can add multiple conditions with multiple methode calls.
         :return: self
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             for cond in conditions:
                 self._condition_list.append(cond)
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
     def check_and_add_to_window(self, window: WinInfo) -> None:
@@ -372,11 +441,11 @@ class Label:
         :param window: WinInfo
         :return: None
         """
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._active:
-                if self.manually:
-                    window.add_label(self.name)
+                if self._manually:
+                    window.add_label(self._name)
                 else:
                     set_label = True
                     for condition in self._condition_list:
@@ -385,29 +454,30 @@ class Label:
                         else:
                             set_label = False
                     if set_label:
-                        window.add_label(self.name)
-        get_logger().debug(f"LABEL {self.name} lock release")
+                        window.add_label(self._name)
+        get_logger().debug(f"LABEL {self._name} lock release")
 
     def get_creation_timestamp(self):
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             tmp_date = self._creation_timestamp
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return tmp_date
 
     def get_condition_list(self):
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             tmp_list = self._condition_list
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return tmp_list
 
+    # TODO: replace all label.active calls to label.is_active, or better remove the field and do it in one
     @property
     def is_active(self):
-        get_logger().debug(f"LABEL {self.name} lock use")
+        get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             tmp_bool = self._active
-        get_logger().debug(f"LABEL {self.name} lock release")
+        get_logger().debug(f"LABEL {self._name} lock release")
         return tmp_bool
 
     @classmethod
@@ -490,7 +560,9 @@ def init_all_labels_from_db() -> None:
     :return: None
     """
     Label.init_all_labels_from_db()
-
+    # Label(name="python learning", manually = False, db_id=None, condition_list=[
+    #     Condition("window_text_words", "in", "W3Schools"),
+    # Condition("window_text_words", "in", "python")])
 
 def update_all_labels_to_db() -> None:
     """

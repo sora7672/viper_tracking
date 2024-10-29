@@ -120,7 +120,7 @@ class SystemTrayManager:
         menu_labels = []
         for label in all_label:
             if label.manually:
-
+                # TODO: remove the enable/disable and make it to set the value.
                 disable_action = MultiFunction(label.disable, self.update_menu)
                 enable_action = MultiFunction(label.enable, self.update_menu)
 

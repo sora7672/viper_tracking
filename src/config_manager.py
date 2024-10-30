@@ -16,6 +16,10 @@ from os import path
 #  Make sure intervals are allways a multiple of 5! cuz checking regularly on
 
 
+# TODO: refactor this to a property setup instead of weird method names.
+#  make booleans smarter to read
+#  make config path absolute with OS path
+
 class ConfigManager:
     """
     This class will hold all settings related to a project.

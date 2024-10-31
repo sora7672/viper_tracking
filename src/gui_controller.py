@@ -10,6 +10,7 @@ from threading import Lock
 from log_handler import get_logger
 from os import path
 
+from settings_manager import UserSettingsManager
 
 class GuiController:
     """ Does not need to be thread safe, because it will allways run in main thread in the background.
@@ -25,7 +26,7 @@ class GuiController:
         if not hasattr(self, '_initialized'):
             self._initialized = True
             # TODO: read in config for style from user settings
-            self.root = tb.Window(themename="sandstone")
+            self.root = tb.Window(themename=UserSettingsManager().gui_theme)
             self.root.withdraw()
 
             self.root.title('Invisible Window(If you see me report me!)')

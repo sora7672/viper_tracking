@@ -17,7 +17,7 @@ from tkinter import Toplevel, PhotoImage, Widget, ttk, IntVar, BooleanVar, Strin
 from log_handler import get_logger
 from window_manager import Label, Condition
 from gui_controller import GuiController
-
+from settings_manager import UserSettingsManager
 
 dict_resolution: dict[str, tuple[int, int]] = {
            # "VGA(4:3)": (640, 480),
@@ -317,7 +317,7 @@ class ViewController:
         self._main_window = Toplevel(GuiController().root)
         self._main_window.iconphoto(True, GuiController().icon_image)
         self._main_window.title("Viper Tracking")
-        win_width, win_height = 1024, 768
+        win_width, win_height = UserSettingsManager().gui_resolution
         self._main_window.minsize(win_width, win_height)
         center_window(self._main_window, win_width, win_height)
 
@@ -546,12 +546,12 @@ class ViewController:
 
     def save_changes(self, dropdown_resolution, dropdown_themes):
         new_theme = dropdown_themes.get()
-        ind = dropdown_resolution.current()
+        selected_reso = list(dict_resolution.keys())[dropdown_resolution.current()]
+        reso = dict_resolution[selected_reso]
 
-        selected_key = list(dict_resolution.keys())[ind]
-        reso = dict_resolution[selected_key]
-
-        # TODO: save to settings
+        UserSettingsManager().gui_theme = new_theme
+        UserSettingsManager().gui_resolution = list(reso)
+        UserSettingsManager().save_settings()
         self.apply_changes(dropdown_resolution, dropdown_themes)
 
     def sys_tray_manual_label(self):

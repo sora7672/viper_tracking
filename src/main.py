@@ -13,7 +13,7 @@ from system_tray_manager import start_systray_icon
 from config_manager import initialize_config_manager
 from log_handler import get_logger, init_logging
 from db_connector import start_db
-
+from settings_manager import init_user_settings
 
 # TODO: in english
 #  We need analyzes that can combine different ways of searching infos from the database.
@@ -29,10 +29,13 @@ def start_program() -> None:
     :return: None
     """
 
+    # TODO: add settings manager init
     initialize_config_manager()
     init_logging()
     get_logger().debug("config_manager init done & log_handler started")
 
+    init_user_settings()
+    get_logger().debug("user_settings init done")
     start_db()
     get_logger().debug("start_db done")
 

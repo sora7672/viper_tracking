@@ -12,10 +12,20 @@ from os import path, makedirs
 import inspect
 
 
+class AttributeTypeError(Exception):
+    def __init__(self, message: str = None, error_code=None, needed_type=None, received_type=None):
+        message = message or f"Type Error on setting atribute: {needed_type} != {received_type}"
+        super().__init__(message)
+        self.error_code = error_code
+
+
 
 class UserSettingsManager:
     """
-
+    You can add a new attribute to the project specific attributes
+    or add one to properly to the config and it gets loaded in.
+    Every accessible attribute will be accessible via the property without "_" or "__".
+    You cant have a "_attr" and "__attr" taht would make an error!
     """
     _instance = None
     _ignored_attributes = ["_initialized", "_settings_path", "_settings_file_name", "_settings_file_path", "_lock"]
@@ -37,14 +47,12 @@ class UserSettingsManager:
 
             # Project specific attributes
             # Set base values here
-            #self._gui_theme = "darkly"
+            self._gui_theme = "darkly"
             self._gui_resolution: list[int] = [800, 600]
-
 
     def init_all_properties(self):
         for ky, vl in self.get_attributes_as_dict().items():
             self.init_property(ky, vl)
-
 
     def init_property(self, property_name, property_default_value):
         # TODO: new personal exception/error class for setter !
@@ -67,12 +75,10 @@ class UserSettingsManager:
                 if isinstance(value, property_type):
                     setattr(self, f"_{property_name}", value)
                 else:
-                    raise Exception(f"Property value must be of type {property_type}")
-
+                    raise AttributeTypeError(needed_type=property_type, received_type=type(value))
 
         setattr(self.__class__, property_name, property(getter, setter))
         setattr(self, f"_{property_name}", getattr(self, property_name))
-
 
     def check_path(self):
         if not path.exists(self._settings_path):

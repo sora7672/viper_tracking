@@ -12,8 +12,9 @@ from threading import Thread, Lock
 from time import time, sleep
 from config_manager import interval_windows, threads_are_stopped
 from log_handler import get_logger
+from conditions import ObjectCondition, ConditionList
 
-
+from datetime import datetime
 window_thread: Thread = None
 
 # TODO: Add this to the config
@@ -29,7 +30,7 @@ class WinInfo:
     and have the same structure all time.
     """
     def __init__(self):
-        self.timestamp: float = 0
+        self.creation_datetime: datetime = datetime.now()
         self.process_id: int = 0
         self.window_type: str = ""
         self.window_title: str = ""
@@ -133,7 +134,6 @@ class WinInfo:
         # integer(got - 1827508448)
         if self.window_type not in untracked_types:
 
-            self.timestamp = time()
 
             for r_char in repl_chars:
                 self.window_title = self.window_title.replace(r_char, "-")
@@ -165,7 +165,7 @@ class WinInfo:
         """
         Simple call to add it to the database
         """
-        DBHandler().add_window_log(self.get_as_dict())
+        DBHandler().add_window_log(self.as_dict())
 
     def add_label(self, value):
         """
@@ -181,12 +181,12 @@ class WinInfo:
             self._label_list.append(value)
         return self
 
-    def get_as_dict(self) -> dict:
+    def as_dict(self) -> dict:
         """
         Just returns important attributes as a dict for further usage.
         :return: dict
         """
-        return dict({"timestamp": self.timestamp,
+        return dict({"creation_datetime": self.creation_datetime,
                      "window_type": self.window_type, "window_title": self.window_title,
                      "window_text_words": self.window_text_words,
                      "label_list": self._label_list})
@@ -200,98 +200,6 @@ class WinInfo:
         return self._label_list
 
 
-class Condition:
-    """
-    This conditions can be added to the Label objects.
-    Its purpose is to make sure the checks allways run the same.
-    allowed condition_type = "window_type", "window_title", "window_text_words","timestamp"\n
-    allowed condition_check = "gt", "lt", "lte", "gte", "eq", "neq", "in", "nin"
-    """
-
-    _possible_condition_types = ["window_type", "window_title", "window_text_words",
-                                 "timestamp"]
-    _possible_condition_checks = ["gt", "lt", "lte", "gte", "eq", "neq", "in", "nin"]
-
-    def __init__(self, condition_type: str, condition_check: str, condition_value: any):
-        self.condition_type = condition_type if condition_type in self._possible_condition_types else None
-        self.condition_check = condition_check if condition_check in self._possible_condition_checks else None
-        self.condition_value = condition_value
-
-        if self.condition_type is None or self.condition_check is None:
-            raise ValueError("Condition type and/or condition check were provided with wrong values.")
-        if self.condition_type == "timestamp" and self.condition_check not in self._possible_condition_checks[0:3]:
-            raise ValueError("Timestamp condition_type was provided with wrong condition_check.")
-        elif self.condition_type != "timestamp" and self.condition_check in self._possible_condition_checks[0:3]:
-            raise ValueError("Text checks cant be done with gt,lt,lte,gte!")
-
-    def check(self, window: WinInfo) -> bool:
-        """
-        Check on a WinInfo object, if the set condition are correct and
-        return True or False based on that.
-        :param window: WinInfo object
-        :return: bool
-        """
-        match self.condition_check:
-            case "gt":
-                if getattr(window, self.condition_type) < self.condition_value:
-                    return True
-
-            case "lt":
-                if getattr(window, self.condition_type) > self.condition_value:
-                    return True
-
-            case "lte":
-                if getattr(window, self.condition_type) <= self.condition_value:
-                    return True
-
-            case "gte":
-                if getattr(window, self.condition_type) >= self.condition_value:
-                    return True
-
-            case "eq":
-                if getattr(window, self.condition_type) == self.condition_value:
-                    return True
-
-            case "neq":
-                if getattr(window, self.condition_type) != self.condition_value:
-                    return True
-
-            case "in":
-                if isinstance(getattr(window, self.condition_type), list):
-                    if self.condition_value in getattr(window, self.condition_type):
-                        return True
-                else:
-                    if str(self.condition_value).lower() in getattr(window, self.condition_type).lower():
-                        return True
-
-            case "nin":
-                if isinstance(getattr(window, self.condition_type), list):
-                    if self.condition_value not in getattr(window, self.condition_type):
-                        return True
-                else:
-                    if str(self.condition_value).lower() not in getattr(window, self.condition_type).lower():
-                        return True
-
-            case _:
-                raise ValueError("Condition check was provided with wrong values.")
-        return False
-
-    def get_as_dict(self):
-        """
-         Just returns important attributes as a dict for further usage.
-         :return: dict
-         """
-        return {"condition_type": self.condition_type, "condition_check": self.condition_check,
-                "condition_value": self.condition_value}
-
-    @staticmethod
-    def get_condition_types() -> list[str]:
-        return Condition._possible_condition_types
-
-    @staticmethod
-    def get_condition_checks() -> list[str]:
-        return Condition._possible_condition_checks
-
 class Label:
     """
     This class objects hold information about when to apply a Label to a WinInfo object
@@ -300,49 +208,48 @@ class Label:
     _label_list = []
     _lock = Lock()
 
-    def __init__(self, name: str, manually: bool = False, condition_list: list[Condition] = None,
-                 active: bool = True, creation_timestamp=None, db_id=None):
+    def __init__(self, name: str, manually: bool = False, condition_list: ConditionList = None,
+                 active: bool = True, creation_datetime=None, db_id=None):
         self.lock = Lock()
         self._name: str = name
         self._manually = manually
         self._active = active
-        self._condition_list: list[Condition] = condition_list or []
-        self._creation_timestamp = time() if creation_timestamp is None else creation_timestamp
+        self._condition_list: ConditionList = condition_list or None
+        self._creation_datetime = datetime.now() if creation_datetime is None else creation_datetime
         self._id = db_id
 
-        if self._id is None and (len(self._condition_list) >= 1 or self._manually):
+        if self._id is None and (self._condition_list is not None or self._manually):
             self.add_to_db()
         get_logger().debug("(CLASS) LABEL lock use")
         with Label._lock:
             Label._label_list.append(self)
         get_logger().debug("(CLASS) LABEL lock release")
 
-
     @property
-    def condition_list(self) -> list[Condition]:
+    def condition_list(self) -> ConditionList | ObjectCondition:
         with self.lock:
-            condition_list = self._condition_list
-
-        return condition_list
+            return self._condition_list
 
     @condition_list.setter
-    def condition_list(self, condition_list: list[Condition] | None):
+    def condition_list(self, condition: ConditionList | ObjectCondition | None) -> None:
+
         with self.lock:
-            self._condition_list = condition_list if condition_list is not None else []
+            if isinstance(self._condition_list, ObjectCondition):
+                self._condition_list = ConditionList(condition)
+            else:
+                self._condition_list = condition
 
     @property
     def id(self):
         with self.lock:
-            id = self._id
+            return self._id
 
-        return id
 
     @property
     def name(self):
         with self.lock:
-            name = self._name
+            return self._name
 
-        return name
 
     @name.setter
     def name(self, name: str):
@@ -352,25 +259,48 @@ class Label:
     @property
     def manually(self):
         with self.lock:
-            manually = self._manually
-        return manually
+            return self._manually
 
     @manually.setter
     def manually(self, manually: bool):
         with self.lock:
             self._manually = manually
 
+    # FIXME: replace all label.active calls to label.is_active, or better remove the field and do it in one
     @property
     def active(self):
         with self.lock:
-            active = self._active
-        return active
+            return self._active
+
 
     @active.setter
     def active(self, active: bool):
         with self.lock:
             self._active = active
 
+    @property
+    def creation_datetime(self):
+        with self.lock:
+            return  self._creation_datetime
+
+
+    def enable(self):
+        """
+        :return: self
+        """
+        with self.lock:
+            self.active = True
+        return self
+
+    def disable(self):
+        """
+        :return: self
+        """
+        with self.lock:
+            self.active = False
+        return self
+
+    # FIXME: check all propertys to be used properly, changed a lot of them
     def get_as_dict(self):
         """
         Just returns important attributes as a dict for further usage.
@@ -379,8 +309,8 @@ class Label:
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             tmp_dict = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
-                        "conditions": [cond.get_as_dict() for cond in self._condition_list],
-                        "creation_timestamp": self._creation_timestamp}
+                        "conditions": self._condition_list.to_dict(),
+                        "creation_datetime": self._creation_datetime}
 
         get_logger().debug(f"LABEL {self._name} lock release")
         return tmp_dict
@@ -395,12 +325,12 @@ class Label:
         with self.lock:
             if self._id is not None:
                 get_logger().warning("Label was already added to the database.")
-            if (self._condition_list is None or len(self._condition_list) == 0) and not self._manually:
+            if self._condition_list and not self._manually:
                 get_logger().error("No conditions were provided.")
             else:
                 dict_no_id = {"name": self._name, "manually": self._manually, "active": self._active,
-                              "conditions": [cond.get_as_dict() for cond in self._condition_list],
-                              "creation_timestamp": self._creation_timestamp}
+                              "conditions": self._condition_list.to_dict(),
+                              "creation_datetime": self._creation_datetime}
                 self._id = DBHandler().add_label(dict_no_id)
 
         get_logger().debug(f"LABEL {self._name} lock release")
@@ -415,15 +345,15 @@ class Label:
         with self.lock:
             if self._id is not None and self._id != "":
                 dict_with_id = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
-                                "conditions": [cond.get_as_dict() for cond in self._condition_list],
-                                "creation_timestamp": self._creation_timestamp}
+                                "conditions": self._condition_list.to_dict(),
+                                "creation_datetime": self._creation_datetime}
                 DBHandler().update_label(dict_with_id)
 
             else:
                 get_logger().error("update_in_db only works if the Label._id is properly set!")
         get_logger().debug(f"LABEL {self._name} lock release")
-
         return self
+
     def delete_in_db(self):
         DBHandler().delete_label_by_id(self._id)
         with Label._lock:
@@ -431,36 +361,7 @@ class Label:
         with self.lock:
             del self
 
-
-    def enable(self):
-        """
-        Sets the label active for checking.
-        Purpose of this is, to create multiple labels,
-        that can be turned on and off for adding to the WinInfo object.
-        Enables chain method casting.
-        :return: self
-        """
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            self._active = True
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return self
-
-    def disable(self):
-        """
-        Sets the label inactive for checking.
-        Purpose of this is, to create multiple labels,
-        that can be turned on and off for adding to the WinInfo object.
-        Enables chain method casting.
-        :return: self
-        """
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            self._active = False
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return self
-
-    def add_conditions(self, *conditions: Condition):
+    def add_conditions(self, *conditions: ObjectCondition | ConditionList):
         """
         Adds a condition to the Label object.
         Enables chain method casting.
@@ -469,55 +370,22 @@ class Label:
         """
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
-            for cond in conditions:
-                self._condition_list.append(cond)
+            self._condition_list.add(*conditions)
         get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
-    def check_and_add_to_window(self, window: WinInfo) -> None:
+    def check_and_add_to_window(self, win_info: WinInfo) -> None:
         """
         Runs all Condition checks from the Label Object on the WinInfo object.
-        :param window: WinInfo
+        :param win_info: WinInfo
         :return: None
         """
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
-            if self._active:
-                if self._manually:
-                    window.add_label(self._name)
-                else:
-                    set_label = True
-                    for condition in self._condition_list:
-                        if condition.check(window):
-                            continue
-                        else:
-                            set_label = False
-                    if set_label:
-                        window.add_label(self._name)
-        get_logger().debug(f"LABEL {self._name} lock release")
+            if self._active and (self._manually or self._condition_list.is_true(win_info)):
+                win_info.add_label(self._name)
 
-    def get_creation_timestamp(self):
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            tmp_date = self._creation_timestamp
         get_logger().debug(f"LABEL {self._name} lock release")
-        return tmp_date
-
-    def get_condition_list(self):
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            tmp_list = self._condition_list
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return tmp_list
-
-    # TODO: replace all label.active calls to label.is_active, or better remove the field and do it in one
-    @property
-    def is_active(self):
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            tmp_bool = self._active
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return tmp_bool
 
     @classmethod
     def get_all_labels(cls) -> list:
@@ -539,12 +407,10 @@ class Label:
            """
         label_dicts = DBHandler().get_all_labels()
         for label_dict in label_dicts:
-            # self, name: str, manually: bool = False, db_id = None, condition_list: list[Condition] = None):
-            tmp_label = Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
-                              active=label_dict["active"], creation_timestamp=label_dict["creation_timestamp"])
 
-            tmp_label.add_conditions(*[Condition(cond["condition_type"], cond["condition_check"], cond["condition_value"])
-                                       for cond in label_dict["conditions"]])
+            tmp_label = Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
+                              active=label_dict["active"], creation_datetime=label_dict["creation_datetime"],
+                              conditions=label_dict["conditions"])
 
 
 def window_tracker() -> None:
@@ -552,13 +418,13 @@ def window_tracker() -> None:
     This function is for adding to teh thread to run it properly.
     :return: None
     """
-
+    do_stop = False
     while not threads_are_stopped():
         inter = interval_windows()
         if inter % 5 != 0:
-            raise Exception(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
+            raise ValueError(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
         fifth_timer = inter // 5
-        do_stop = False
+
         for i in range(fifth_timer):
             sleep(5)
             if threads_are_stopped():

@@ -26,7 +26,7 @@ class GuiController:
         if not hasattr(self, '_initialized'):
             self._initialized = True
             # TODO: read in config for style from user settings
-            self.root = tb.Window(themename=UserSettingsManager().gui_theme)
+            self.root = tb.Window(themename="darkly")
             self.root.withdraw()
 
             self.root.title('Invisible Window(If you see me report me!)')
@@ -39,7 +39,6 @@ class GuiController:
                 self.root.iconphoto(False, self.icon_image)
             except Exception as e:
                 get_logger().error(f"Failed to set icon. Error: {e}")
-
             self.lock = Lock()
             get_logger().debug("__init__ from GuiHandler")
 

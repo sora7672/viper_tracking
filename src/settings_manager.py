@@ -62,7 +62,7 @@ class UserSettingsManager:
             property_name = property_name[1:]
         elif property_name[0:2] == "__":
             property_name = property_name[2:]
-        elif property_name in self._ignored_attributes:
+        elif property_name in UserSettingsManager._ignored_attributes:
             return
         property_type = type(property_default_value)
 

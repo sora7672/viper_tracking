@@ -9,8 +9,29 @@ import json
 from time import time
 from log_handler import get_logger
 from os import path, makedirs
+from datetime import datetime, timedelta
 
-# FIXME: DB is not getting written any table!
+from conditions import ObjectCondition, ConditionList
+
+
+class DateTimeTypeError(Exception):
+    """Custom exception for invalid datetime format."""
+    pass
+
+def string_to_iso_datetime(date_string):
+    """
+    Validate if the input string is in ISO 8601 format.
+    Args:
+        date_string (str): The string to validate.
+    Raises:
+        DateTimeTypeError: If the string is not in ISO 8601 format.
+    """
+    try:
+        return datetime.fromisoformat(date_string)
+    except ValueError:
+        raise DateTimeTypeError(f"Invalid ISO 8601 format: '{date_string}'")
+
+
 # # # # Helper functions internal # # # #
 def _make_searchable(text: str) -> str:
     """
@@ -116,14 +137,14 @@ class DBHandler:
                     window_title TEXT NOT NULL COLLATE NOCASE,
                     word_list TEXT NOT NULL COLLATE NOCASE,
                     label_list TEXT COLLATE NOCASE,
-                    timestamp INTEGER
+                    creation_datetime TEXT NOT NULL
                 )
             ''')
             self.conn.commit()
             self.cursor.execute('''
                        CREATE TABLE IF NOT EXISTS input_log (
                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                           last_activity_timestamp INTEGER,
+                           last_activity_datetime TEXT,
                            count_key_pressed INTEGER,
                            count_mouse_pressed INTEGER,
                            count_direction_key_pressed INTEGER,
@@ -133,7 +154,7 @@ class DBHandler:
                            count_left_mouse_pressed INTEGER,
                            count_right_mouse_pressed INTEGER,
                            count_middle_mouse_pressed INTEGER,
-                           timestamp INTEGER
+                           creation_datetime TEXT NOT NULL
                        )
                    ''')
             self.conn.commit()
@@ -144,7 +165,7 @@ class DBHandler:
                                 manually boolean NOT NULL,
                                 active boolean NOT NULL,
                                 conditions TEXT,
-                                creation_timestamp INTEGER NOT NULL 
+                                creation_datetime TEXT NOT NULL 
                                )
                            ''')
             self.conn.commit()
@@ -208,7 +229,6 @@ class DBHandler:
         """
         # Connect to the database with WAL mode enabled
         try:
-            # Try connecting to the SQLite database
             self.conn = sqlite3.connect(path.join(self.db_path, self.db_name), check_same_thread=False)
             self.cursor = self.conn.cursor()
             get_logger().info("Database connection established successfully.")
@@ -242,75 +262,106 @@ class DBHandler:
         """
         This method writes a window dictionary into the database.
         The keys the dictionary needs are:
-        window_type, window_title, word_list, label_list, timestamp
+        window_type, window_title, word_list, label_list, creation_datetime
         :param self: DBHandler
         :param window_dict: dict
         :return: None
         """
-        keys_needed = ['window_type', 'window_title', 'window_text_words', 'label_list', 'timestamp']
+        keys_needed = ['window_type', 'window_title', 'window_text_words', 'label_list', 'creation_datetime']
         if not all(key in window_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
                               f"window_dict: {window_dict}")
             return None
 
-        words = ",".join(window_dict["window_text_words"])
-        labels = ",".join(window_dict["label_list"])
+        if isinstance(window_dict["window_text_words"], (list,tuple,set,frozenset)):
+            words = ",".join(window_dict["window_text_words"])
+        else:
+            raise ValueError("(window_dict['window_text_words'] not a (list,tuple,set,frozenset)")
+
+        if isinstance(window_dict["label_list"], (list,tuple,set,frozenset)):
+            labels = ",".join(window_dict["label_list"])
+        else:
+            raise ValueError("window_dict['label_list'] not a (list,tuple,set,frozenset)")
+
+        if isinstance(window_dict["creation_datetime"], datetime):
+            creation_datetime = window_dict["creation_datetime"].isoformat()
+        else:
+            raise ValueError("window_dict['creation_datetime'] not a (datetime)")
+
         with self.lock:
             self.cursor.execute('''
-                INSERT INTO window_log (window_type, window_title, word_list, label_list, timestamp)
+                INSERT INTO window_log (window_type, window_title, word_list, label_list, creation_datetime)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (window_dict["window_type"], window_dict["window_title"], words, labels, window_dict["timestamp"]))
+            ''', (window_dict["window_type"], window_dict["window_title"], words, labels, creation_datetime))
             self.conn.commit()
 
     def add_input_log(self, input_dict: dict) -> None:
         """
         This method writes an input dictionary into the database.
         The keys the dictionary needs are:
-        last_activity_timestamp, count_key_pressed, count_mouse_pressed,
+        last_activity_datetime, count_key_pressed, count_mouse_pressed,
         count_direction_key_pressed, count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls,
-        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, timestamp
+        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime
         :param self: DBHandler
         :param input_dict: dict
         :return: None
         """
-        keys_needed = ["last_activity_timestamp", "count_key_pressed", "count_mouse_pressed",
+        keys_needed = ["last_activity_datetime", "count_key_pressed", "count_mouse_pressed",
                        "count_direction_key_pressed", "count_char_key_pressed", "count_special_key_pressed",
                        "count_mouse_scrolls", "count_left_mouse_pressed", "count_right_mouse_pressed",
-                       "count_middle_mouse_pressed", "timestamp"]
+                       "count_middle_mouse_pressed", "creation_datetime"]
         if not all(key in input_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
                               f"input_dict: {input_dict}")
             return None
 
+        if isinstance(input_dict["creation_datetime"], datetime):
+            creation_datetime = input_dict["creation_datetime"].isoformat()
+        else:
+            raise ValueError("input_dict['creation_datetime'] not a (datetime)")
+
+        if isinstance(input_dict["last_activity_datetime"], datetime):
+            last_activity_datetime = input_dict["last_activity_datetime"].isoformat()
+        else:
+            raise ValueError("input_dict['last_activity_datetime'] not a (datetime)")
+
+
         with self.lock:
             self.cursor.execute('''
-                INSERT INTO input_log (last_activity_timestamp, count_key_pressed, count_mouse_pressed, 
+                INSERT INTO input_log (last_activity_datetime, count_key_pressed, count_mouse_pressed, 
                 count_direction_key_pressed, count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls,
-                 count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, timestamp)
+                 count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (input_dict["last_activity_timestamp"], input_dict["count_key_pressed"],
+            ''', (last_activity_datetime, input_dict["count_key_pressed"],
                   input_dict["count_mouse_pressed"], input_dict["count_direction_key_pressed"],
                   input_dict["count_char_key_pressed"], input_dict["count_special_key_pressed"],
                   input_dict["count_mouse_scrolls"], input_dict["count_left_mouse_pressed"],
                   input_dict["count_right_mouse_pressed"], input_dict["count_middle_mouse_pressed"],
-                  input_dict["timestamp"]))
+                  creation_datetime))
             self.conn.commit()
 
     def add_label(self, label_dict: dict) -> None | int:
         """
         This method writes a label dictionary into the database.
         The keys the dictionary needs are:
-        name, manually, active, conditions, creation_timestamp
+        name, manually, active, conditions, creation_datetime
         :param self: DBHandler
         :param label_dict: dict
         :return: None
         """
-        keys_needed = ["name", "manually", "active", "conditions", "creation_timestamp"]
+        keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
         if not all(key in label_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
                               f"label_dict: {label_dict}")
             return None
-        conditions = _to_json(label_dict["conditions"])
+
+        conditions = label_dict["conditions"].json()
+
+        if isinstance(label_dict["creation_datetime"], datetime):
+            creation_datetime = label_dict["creation_datetime"].isoformat()
+        else:
+            raise ValueError("label_dict['creation_datetime'] not a datetime")
+
         if conditions is None:
             get_logger().warning(f"There is an error in the conditions dict!\n {label_dict}"
                                  f"\nNot added to the DB!")
@@ -320,10 +371,10 @@ class DBHandler:
         try:
             with self.lock:
                 self.cursor.execute('''
-                    INSERT INTO labels (name, manually, active, conditions, creation_timestamp)
+                    INSERT INTO labels (name, manually, active, conditions, creation_datetime)
                     VALUES (?, ?, ?, ?, ?)
                 ''', (label_dict["name"], label_dict["manually"], label_dict["active"],
-                      conditions, label_dict["creation_timestamp"]))
+                      conditions, creation_datetime))
 
                 new_id = self.cursor.lastrowid
                 self.conn.commit()
@@ -356,32 +407,37 @@ class DBHandler:
         """
         This method updates a label in the database.
         The keys the dictionary needs are:
-        name, manually, active, conditions, creation_timestamp
+        name, manually, active, conditions, creation_datetime
         :param self: DBHandler
         :param label_dict: dict
         :return: None
         """
-        keys_needed = ["name", "manually", "active", "conditions", "creation_timestamp"]
+        keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
         if not all(key in label_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
                               f"label_dict: {label_dict}")
             return None
-        conditions = _to_json(label_dict["conditions"])
+
+        conditions = label_dict["conditions"].json()
         if not conditions:
             get_logger().warning(f"There is an error in the conditions dict!\n {label_dict}"
                                  f"\nNot added to the DB!")
             return None
 
+        if isinstance(label_dict["creation_datetime"], datetime):
+            creation_datetime = label_dict["creation_datetime"].isoformat()
+        else:
+            raise ValueError("label_dict['creation_datetime'] not a datetime")
 
         # TODO: need to add some better error handling, more visual for the user + the normal log writing
         try:
             with self.lock:
                 self.cursor.execute('''
                     UPDATE labels 
-                    SET name = ?, manually = ?, active = ?, conditions = ?, creation_timestamp = ?
+                    SET name = ?, manually = ?, active = ?, conditions = ?, creation_datetime = ?
                     WHERE id = ?
                 ''', (label_dict["name"], label_dict["manually"], label_dict["active"],
-                      conditions, label_dict["creation_timestamp"], label_dict["id"]))
+                      conditions, creation_datetime, label_dict["id"]))
 
                 self.conn.commit()
         except sqlite3.IntegrityError as e:
@@ -436,16 +492,16 @@ class DBHandler:
         """
         This method returns all labels in the database.
         Each in the form of a dictionary with the following keys:
-        name, manually, active, conditions, creation_timestamp
+        name, manually, active, conditions, creation_datetime
         :self: DBHandler
         :return: None | list[dict]
         """
         try:
             with self.lock:
                 self.cursor.execute('''
-                    SELECT id, name, manually, active, conditions, creation_timestamp
+                    SELECT id, name, manually, active, conditions, creation_datetime
                     FROM labels
-                    ORDER BY creation_timestamp
+                    ORDER BY creation_datetime
                 ''')
                 rows = self.cursor.fetchall()
 
@@ -472,9 +528,9 @@ class DBHandler:
                     "name": row[1],
                     "manually": bool(row[2]),
                     "active": bool(row[3]),
-                    "creation_timestamp": row[5]
+                    "creation_datetime": string_to_iso_datetime(row[5])
                 }
-                conds = _from_json(row[4])
+                conds = ConditionList.from_json(row[4])
                 if conds is None:
                     get_logger().warning(f"There is an error in the conditions dict! {label_dict}")
                     label_dict = None
@@ -484,23 +540,23 @@ class DBHandler:
 
             return labels
 
-    def search_input_log(self, start_time: float = None, end_time: float = None, count_key_pressed: int = None,
+    def search_input_log(self, start_time: datetime = None, end_time: datetime = None, count_key_pressed: int = None,
                          count_mouse_pressed: int = None, count_direction_key_pressed: int = None,
                          count_char_key_pressed: int = None, count_special_key_pressed: int = None,
                          count_mouse_scrolls: int = None, count_left_mouse_pressed: int = None,
                          count_right_mouse_pressed: int = None, count_middle_mouse_pressed: int = None):
         """
         Returns a list of input dicts with these keys:
-        id, last_activity_timestamp,  count_key_pressed, count_mouse_pressed, count_direction_key_pressed,
+        id, last_activity_datetime, count_key_pressed, count_mouse_pressed, count_direction_key_pressed,
         count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls, count_left_mouse_pressed,
-        count_right_mouse_pressed, count_middle_mouse_pressed, timestamp
+        count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime
         Default parameters will return the last 24 hours input log.
         All parameter except end_time are searched as greater equal then.
         end_time is the only that is searched as less equal then.
         All parameters which are set will be searched as a AND condition.
         If you need a OR you need to run this function 2 times and combine the arrays programmatically.
-        :param start_time: float
-        :param end_time: float
+        :param start_time: datetime
+        :param end_time: datetime
         :param count_key_pressed: int
         :param count_mouse_pressed: int
         :param count_direction_key_pressed: int
@@ -513,18 +569,20 @@ class DBHandler:
         """
 
         if start_time is None:
-            start_time = time() - 86400  # 24 hours = 86400 seconds
+            start_time = datetime.now() - timedelta(days=1)  # 24 hours ago
+
         if end_time is None:
-            end_time = time()
+            end_time = datetime.now()
+
 
         query = '''
-            SELECT id, last_activity_timestamp,  count_key_pressed, count_mouse_pressed, count_direction_key_pressed,    
+            SELECT id, last_activity_datetime,  count_key_pressed, count_mouse_pressed, count_direction_key_pressed,    
                         count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls, 
-                        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, timestamp         
+                        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime         
             FROM input_log
-            WHERE timestamp >= ? AND timestamp <= ?
+            WHERE creation_datetime >= ? AND creation_datetime <= ?
         '''
-        params = [start_time, end_time]
+        params = [start_time.isoformat(), end_time.isoformat()]
 
         # Work smart not hard ^^
         def add_gt_condition(field_name, value):
@@ -544,7 +602,7 @@ class DBHandler:
         add_gt_condition("count_middle_mouse_pressed", count_middle_mouse_pressed)
 
 
-        query += " ORDER BY timestamp ASC"
+        query += " ORDER BY creation_datetime ASC"
 
         try:
             with self.lock:
@@ -555,7 +613,7 @@ class DBHandler:
                 for row in rows:
                     out.append({
                         "id": row[0],
-                        "last_activity_timestamp": row[1],
+                        "last_activity_datetime": string_to_iso_datetime(row[1]),
                         "count_key_pressed": row[2],
                         "count_mouse_pressed": row[3],
                         "count_direction_key_pressed": row[4],
@@ -565,7 +623,7 @@ class DBHandler:
                         "count_left_mouse_pressed": row[8],
                         "count_right_mouse_pressed": row[9],
                         "count_middle_mouse_pressed": row[10],
-                        "timestamp": row[11]
+                        "creation_datetime": string_to_iso_datetime(row[11])
                     })
 
         except sqlite3.IntegrityError as e:
@@ -588,36 +646,35 @@ class DBHandler:
 
     def search_window_log(self, window_type: str = None, window_title: str | list[str] = None,
                           word_list: str | list[str] = None, label_list: str | list[str] = None,
-                          start_time: float = None, end_time: float = None):
+                          start_time: datetime = None, end_time: datetime = None):
         """
           Returns a list of window dicts with these keys:
-          id, window_type, window_title, word_list, label_list, timestamp
+          id, window_type, window_title, word_list, label_list, creation_datetime
           Default parameters will return the last 24 hours input log.
           All parameter except end_time are searched as greater equal then.
           end_time is the only that is searched as less equal then.
           All parameters which are set will be searched as a AND condition.
           If you need a OR you need to run this function 2 times and combine the arrays programmatically.
-          :param start_time: float
-          :param end_time: float
+          :param start_time: datetime
+          :param end_time: datetime
           :param window_type: str
           :param window_title: str | list[str]
           :param word_list: str | list[str]
           :param label_list: str | list[str]
 
         """
-        # Set default time to the last 24 hours
         if start_time is None:
-            start_time = time() - 86400  # 86400 seconds = 24 hours
+            start_time = datetime.now() - timedelta(days=1)  # 24 hours ago
         if end_time is None:
-            end_time = time()
+            end_time = datetime.now()
 
 
         query = '''
-            SELECT id, window_type, window_title, word_list, label_list, timestamp
+            SELECT id, window_type, window_title, word_list, label_list, creation_datetime
             FROM window_log
-            WHERE timestamp >= ? AND timestamp <= ?
+            WHERE creation_datetime >= ? AND creation_datetime <= ?
         '''
-        params = [start_time, end_time]
+        params = [start_time.isoformat(), end_time.isoformat()]
 
         if window_type:
             query += " AND window_type LIKE ?"
@@ -650,7 +707,7 @@ class DBHandler:
                 query += " AND label_list LIKE ?"
                 params.append(f"%{_make_searchable(label_list)}%")
 
-        query += " ORDER BY timestamp ASC"
+        query += " ORDER BY creation_datetime ASC"
 
         try:
             with self.lock:
@@ -665,7 +722,7 @@ class DBHandler:
                     "window_title": row[2],
                     "word_list": row[3].split(","),
                     "label_list": row[4].split(","),
-                    "timestamp": row[5]
+                    "creation_datetime": string_to_iso_datetime(row[5])
                 })
 
         except sqlite3.IntegrityError as e:

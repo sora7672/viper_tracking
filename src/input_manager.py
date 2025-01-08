@@ -10,9 +10,9 @@ Author: sora7672
 
 
 from threading import Thread, Lock
-from time import time, sleep
+from time import sleep
 from pynput import mouse, keyboard
-
+from datetime import datetime, timedelta
 from config_manager import threads_are_stopped, interval_inputs
 from db_connector import DBHandler
 from log_handler import get_logger
@@ -50,8 +50,8 @@ class InputManager:
             self._count_middle_mouse_pressed = 0
             self._count_mouse_scrolls = 0
 
-            self._last_mouse_scroll_timestamp = None
-            self._last_activity_timestamp = None
+            self._last_mouse_scroll_datetime = None
+            self._last_activity_datetime = None
 
             self.lock = Lock()
             InputManager._instance = self
@@ -59,15 +59,15 @@ class InputManager:
 
     def get_all(self) -> dict:
         """
-        Creates a dictionary with all counters and last timestamp.
+        Creates a dictionary with all counters and last_activity_datetime.
         Resets the object back to its original state at the end.
-        :return: dict ["last_timestamp", "count_key_pressed", "count_mouse_pressed "count_direction_key_pressed",
+        :return: dict ["last_activity_datetime", "count_key_pressed", "count_mouse_pressed "count_direction_key_pressed",
         "count_special_key_pressed", "count_char_key_pressed", "count_left_mouse_pressed", "count_right_mouse_pressed",
         "count_middle_mouse_pressed"]
         """
         get_logger().debug("InputManager lock use")
         with self.lock:
-            tmp_dict: dict = {"last_activity_timestamp": self._last_activity_timestamp, "count_key_pressed": (
+            tmp_dict: dict = {"last_activity_datetime": self._last_activity_datetime, "count_key_pressed": (
                          self._count_char_key_pressed + self._count_direction_key_pressed +
                          self._count_special_key_pressed),
                          "count_mouse_pressed": (self._count_left_mouse_pressed + self._count_right_mouse_pressed +
@@ -81,13 +81,13 @@ class InputManager:
                          "count_middle_mouse_pressed": self._count_middle_mouse_pressed}
             self.reset()
         get_logger().debug("InputManager lock release")
-        tmp_dict["timestamp"] = time()
+        tmp_dict["creation_datetime"] = datetime.now()
         return tmp_dict
 
     def reset(self) -> None:
         """
         Resets the input manager to its initial state.
-        Except last activity timestamp.
+        Except last activity datetime.
         :return: None
         """
         self._count_char_key_pressed = 0
@@ -115,7 +115,7 @@ class InputManager:
         """
         get_logger().debug("InputManager lock use")
         with self.lock:
-            self._last_activity_timestamp = time()
+            self._last_activity_datetime = datetime.now()
             match user_input_type:
                 case 'char_key':
                     self._count_char_key_pressed += 1
@@ -136,11 +136,11 @@ class InputManager:
                     self._count_middle_mouse_pressed += 1
 
                 case 'mouse_scroll':
-                    current_time = time()
-                    if self._last_mouse_scroll_timestamp is not None \
-                            and (current_time - self._last_mouse_scroll_timestamp) >= 0.3:
+                    current_datetime = datetime.now()
+                    if self._last_mouse_scroll_datetime is not None \
+                            and (current_datetime - self._last_mouse_scroll_datetime) >= timedelta(seconds=0.3):
                         self._count_mouse_scrolls += 1
-                    self._last_mouse_scroll_timestamp = current_time
+                    self._last_mouse_scroll_datetime = current_datetime
 
                 case _:
                     raise Exception(f'Unexpected input type: {user_input_type}')

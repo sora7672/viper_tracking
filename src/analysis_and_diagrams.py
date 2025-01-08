@@ -5,8 +5,12 @@ or value lists/dataframes (whatever we will use)
 
 Author: sora7672
 """
+# TODO: list modules in requirements.txt
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
 
-
+from db_connector import DBHandler
 
 
 

@@ -22,6 +22,8 @@ from conditions import ObjectCondition, ConditionList
 from gui_controller import GuiController
 from settings_manager import UserSettingsManager
 
+
+# TODO: Styles and such infos need to be initialized properly with a function or on the gui_controller
 dict_resolution: dict[str, tuple[int, int]] = {
            # "VGA(4:3)": (640, 480),
            # "SVGA(4:3)": (800, 600),
@@ -40,8 +42,8 @@ dict_resolution: dict[str, tuple[int, int]] = {
             "5K(16:9)": (5120, 2880),
             "8K(16:9)": (7680, 4320)}
 
-Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
-Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
+# Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
+# Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
 
 
 class FormValidationError(Exception):
@@ -753,11 +755,4 @@ def open_systray_label():
 
 
 if __name__ == "__main__":
-    from gui_controller import init_root_gui, start_root_gui
-    from settings_manager import init_user_settings
-
-    init_user_settings()
-    init_root_gui()
-    open_main_window()
-    #start_root_gui()
     print("Please start with the main.py")

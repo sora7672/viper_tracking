@@ -355,17 +355,12 @@ class DBHandler:
                               f"label_dict: {label_dict}")
             return None
 
-        conditions = label_dict["conditions"].json()
+        conditions = _to_json(label_dict["conditions"]) if label_dict["conditions"] else "{}"
 
         if isinstance(label_dict["creation_datetime"], datetime):
             creation_datetime = label_dict["creation_datetime"].isoformat()
         else:
             raise ValueError("label_dict['creation_datetime'] not a datetime")
-
-        if conditions is None:
-            get_logger().warning(f"There is an error in the conditions dict!\n {label_dict}"
-                                 f"\nNot added to the DB!")
-            return None
 
         # TODO: need to add some better error handeling, more visual for the user + the normal log writing
         try:
@@ -418,7 +413,7 @@ class DBHandler:
                               f"label_dict: {label_dict}")
             return None
 
-        conditions = label_dict["conditions"].json()
+        conditions = _to_json(label_dict["conditions"]) if label_dict["conditions"] else "{}"
         if not conditions:
             get_logger().warning(f"There is an error in the conditions dict!\n {label_dict}"
                                  f"\nNot added to the DB!")
@@ -528,14 +523,9 @@ class DBHandler:
                     "name": row[1],
                     "manually": bool(row[2]),
                     "active": bool(row[3]),
+                    "condition_json": row[4],
                     "creation_datetime": string_to_iso_datetime(row[5])
                 }
-                conds = ConditionList.from_json(row[4])
-                if conds is None:
-                    get_logger().warning(f"There is an error in the conditions dict! {label_dict}")
-                    label_dict = None
-                else:
-                    label_dict["conditions"] = conds
                 labels.append(label_dict)
 
             return labels
@@ -600,7 +590,6 @@ class DBHandler:
         add_gt_condition("count_left_mouse_pressed", count_left_mouse_pressed)
         add_gt_condition("count_right_mouse_pressed", count_right_mouse_pressed)
         add_gt_condition("count_middle_mouse_pressed", count_middle_mouse_pressed)
-
 
         query += " ORDER BY creation_datetime ASC"
 

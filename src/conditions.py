@@ -39,8 +39,9 @@ class ObjectCondition:
         if comp_operator not in self._accepted_comp_operators:
             raise ValueError("Comp operators not supported")
 
-        self._attribute_name: str = attribute_name
+        self._value_type = value_type
         self._comp_operator: str = comp_operator
+        self._attribute_name: str = attribute_name
 
         match value_type:
             case "str":
@@ -76,7 +77,7 @@ class ObjectCondition:
             case _:
                 raise ValueError(f"Invalid value type {value_type}")
 
-        self._value_type = value_type
+
         self.lock = Lock()
 
     @property
@@ -118,12 +119,21 @@ class ObjectCondition:
             raise TypeError(f"Condition evaluation error.\nObject ({obj}) attribute type {type(test_value)} "
                             f"is not type {type(self._attribute_value)}")
 
+
+
         match self._comp_operator:
+            # FIXME: seems to not working properly anyhow?
             case "in":
-                return self._attribute_value in test_value
+                if isinstance(test_value, str):
+                    return self._attribute_value.lower() in test_value.lower()
+                else:
+                    return self._attribute_value.lower() in [item.lower() for item in test_value]
 
             case "not in":
-                return self._attribute_value not in test_value
+                if isinstance(test_value, str):
+                    return self._attribute_value.lower() not in test_value.lower()
+                else:
+                    return self._attribute_value.lower() not in [item.lower() for item in test_value]
 
             case "<":
                 return self._attribute_value < test_value
@@ -138,10 +148,16 @@ class ObjectCondition:
                 return self._attribute_value >= test_value
 
             case "==":
-                return test_value == self._attribute_value
+                if isinstance(test_value, str):
+                    return test_value.lower() == self._attribute_value.lower()
+                else:
+                    return test_value == self._attribute_value
 
             case "!=":
-                return test_value != self._attribute_value
+                if isinstance(test_value, str):
+                    return test_value.lower() != self._attribute_value.lower()
+                else:
+                    return test_value != self._attribute_value
 
             case _:
                 raise Exception(f"Unknown comparison operator {self._comp_operator}")

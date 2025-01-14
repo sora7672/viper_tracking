@@ -25,23 +25,24 @@ from settings_manager import UserSettingsManager
 
 # TODO: Styles and such infos need to be initialized properly with a function or on the gui_controller
 dict_resolution: dict[str, tuple[int, int]] = {
-           # "VGA(4:3)": (640, 480),
-           # "SVGA(4:3)": (800, 600),
-            "XGA(4:3)": (1024, 768),
-            "HD(16:9)": (1280, 720),
-            "WXGA(16:10)": (1280, 800),
-            "HD Ready(16:9)": (1366, 768),
-            "WXGA+(16:10)": (1440, 900),
-            "HD+(16:9)": (1600, 900),
-            "WSXGA+(16:10)": (1680, 1050),
-            "FULL HD (16:9)": (1920, 1080),
-            "WUXGA(16:10)": (1920, 1200),
-            "QHD/2K(16:9)": (2560, 1440),
-            "WQXGA(16:10)": (2560, 1600),
-            "4K UHD(16:9)": (3840, 2160),
-            "5K(16:9)": (5120, 2880),
-            "8K(16:9)": (7680, 4320)}
-
+                                               # "VGA(4:3)": (640, 480),
+                                               # "SVGA(4:3)": (800, 600),
+                                               "XGA(4:3)": (1024, 768),
+                                               "HD(16:9)": (1280, 720),
+                                               "WXGA(16:10)": (1280, 800),
+                                               "HD Ready(16:9)": (1366, 768),
+                                               "WXGA+(16:10)": (1440, 900),
+                                               "HD+(16:9)": (1600, 900),
+                                               "WSXGA+(16:10)": (1680, 1050),
+                                               "FULL HD (16:9)": (1920, 1080),
+                                               "WUXGA(16:10)": (1920, 1200),
+                                               "QHD/2K(16:9)": (2560, 1440),
+                                               "WQXGA(16:10)": (2560, 1600),
+                                               "4K UHD(16:9)": (3840, 2160),
+                                               "5K(16:9)": (5120, 2880),
+                                               "8K(16:9)": (7680, 4320)
+                                                }
+# FIXME: styl needs to be created inside the mainloop anyhow
 # Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
 # Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
 
@@ -52,7 +53,6 @@ class FormValidationError(Exception):
                                    f"{faulty_fields}")
         super().__init__(message)
         self.error_code = error_code
-
 
 
 class ScrollableFrame(Frame):
@@ -87,81 +87,104 @@ class ScrollableFrame(Frame):
         self.canvas.bind_all("<MouseWheel>", self.on_mouse_scroll)
 
     def on_mouse_scroll(self, event):
-        if event.num == 5 or event.delta == -120:
-            self.canvas.yview_scroll(1, "units")  # Scroll down
-        elif event.num == 4 or event.delta == 120:
-            self.canvas.yview_scroll(-1, "units")  # Scroll up
+        notebook = self.master.master
+        selected_tab_id = notebook.select()
+        selected_tab_widget = notebook.nametowidget(selected_tab_id)
 
-
+        if self.master == selected_tab_widget:
+            if event.num == 5 or event.delta == -120:
+                self.canvas.yview_scroll(1, "units")  # Scroll down
+            elif event.num == 4 or event.delta == 120:
+                self.canvas.yview_scroll(-1, "units")  # Scroll up
 
 
 class ConditionListFrame(Frame):
-    def __init__(self, parent, with_remove=False, condition_list:ConditionList = None):
-        super().__init__(parent)
+    def __init__(self, parent, condition_list:ConditionList = None, top_list=False, first_element=False):
+        super().__init__(parent, relief="solid", borderwidth=2)
         self.configure(style="AndConditionList.TFrame")
-        self.with_remove = with_remove
+        self.top_list = top_list
+        self.first_element = first_element
         self.condition_list = condition_list
         self.name = "conditionlist"
-        self.with_remove = with_remove
 
-        self.pack(fill="x", padx=5, pady=5)
+        self.pack(fill="x", padx=(5, 3), pady=(5, 3))
         self._create_widgets()
 
     def _create_widgets(self):
-        # TODO: fill shit
 
-        self.bool_operator_dropdown = Combobox(self, values=["AND", "OR"])
-        self.bool_operator_dropdown.current(0)
-        self.bool_operator_dropdown.bind("<<ComboboxSelected>>", self._updated_operator)
+        if self.top_list:
+            and_info = tb.Label(self, text="AND")
+            and_info.pack(padx=(5, 0), pady=0, side="top", anchor="w")
 
-        self.bool_operator_dropdown.pack()
-        if not self.with_remove:
-            self.bool_operator_dropdown.config(state="readonly")
+        else:
+            self.operator_frame = tb.Frame(self)
+            self.operator_frame.pack(anchor="w", padx=0, pady=0)
+            self.operator_frame.columnconfigure(2, weight=1)
+            self.operator_frame.rowconfigure(0, weight=1)
+
+            self.bool_operator_dropdown = Combobox(self.operator_frame, values=["AND", "OR"], width=4, state="readonly")
+            self.bool_operator_dropdown.current(0)
+            self.bool_operator_dropdown.bind("<<ComboboxSelected>>", self._updated_operator)
+            self.bool_operator_dropdown.grid(row=0, column=0, padx=(5, 0))
+
+            self.transform_button = tb.Button(self.operator_frame, text="🔄", width=3, command=self.transform)
+            self.transform_button.grid(row=0, column=1, padx=(5, 0))
+            if not self.first_element:
+                self.remove_btn = tb.Button(self.operator_frame, text="-", width=2, bootstyle="danger",
+                                            command=self.remove_self)
+                self.remove_btn.grid(row=0, column=2, padx=(5, 0))
 
         if self.condition_list:
-            first_condition = True
+            first_condition = True if self.top_list else False
             for cond in self.condition_list.conditions:
                 if isinstance(cond, ObjectCondition):
                     if first_condition:
-                        ConditionFrame(self, False, cond)
+                        ConditionFrame(self, condition=cond, first_element=True)
                         first_condition = False
                     else:
-                        ConditionFrame(self, True, cond)
+                        ConditionFrame(self, condition=cond)
                 elif isinstance(cond, ConditionList):
-                    ConditionListFrame(self,True, cond)
+                    if first_condition:
+                        ConditionListFrame(self, condition_list=cond, first_element=True)
+                    else:
+                        ConditionListFrame(self, condition_list=cond)
                 else:
                     raise ValueError(f"Invalid condition type: {type(cond)}")
         else:
-            ConditionFrame(self, False)
+            ConditionFrame(self, first_element=True)
 
-        self.button_frame = Frame(self)
-        self.button_frame.pack(fill="x", padx=5, pady=5)
+    def toggle_state(self):
+        if not self.top_list:
+            if str(self.bool_operator_dropdown.cget("state")) == "disabled":
+                self.bool_operator_dropdown["state"] = "readonly"
+                self.transform_button["state"] = "normal"
+                self.remove_btn["state"] = "normal"
+            else:
+                self.bool_operator_dropdown["state"] = "disabled"
+                self.transform_button["state"] = "disabled"
+                self.remove_btn["state"] = "disabled"
 
-        self.remove_button = tb.Button(self.button_frame, text="-", command=self.remove_self)
-        self.remove_button.pack()
-        if not self.with_remove:
-            self.remove_button.config(state="disabled")
+        for cframe in self.winfo_children():
+            if isinstance(cframe, (ConditionFrame, ConditionListFrame)):
+                cframe.toggle_state()
 
-        self.add_condition_list_button = tb.Button(self.button_frame, text="Add new condition list",
-                                                   command=self.add_condition_list)
-        self.add_condition_list_button.pack()
+    def transform(self):
+        parent = self.master
+        self.pack_forget()
+        self.destroy()
+        ConditionFrame(parent, first_element=self.first_element)
 
-    def add_condition_list(self, event=None):
-        # unpack remove & add button
-        if event is None:
-            print("error no button provided")
-        else:
-            self.button_frame.pack_forget()
-            ConditionListFrame(self, with_remove=True)
-
-            self.button_frame.pack(fill="x", padx=5, pady=5)
 
     def get_as_object(self):
         cond_list = []
         for child in self.winfo_children():
             if isinstance(child, (ConditionListFrame, ConditionFrame)):
                 cond_list.append(child.get_as_object())
-        op = self.bool_operator_dropdown.get()
+        if self.top_list:
+            op = "AND"
+
+        else:
+            op = self.bool_operator_dropdown.get()
         return ConditionList(*cond_list, operator=op)
 
     def _updated_operator(self, event=None):
@@ -180,38 +203,38 @@ class ConditionFrame(Frame):
     _text_checks = ObjectCondition.get_operators_for_string()
     _all_checks = _number_checks + _text_checks
     _condition_types = ["window_type", "window_title", "window_text_words", "timestamp"]
-    def __init__(self, parent, with_remove=False, condition:ObjectCondition = None):
+    def __init__(self, parent, condition:ObjectCondition = None,  first_element=False):
         super().__init__(parent)
-        self.with_remove = with_remove
+
+        self.first_element = first_element
         self.condition = condition
         self.name = "condition"
 
-
-        self.pack(fill="x", padx=5, pady=5)
+        self.pack(fill="x", padx=(5, 3), pady=3)
         self._create_widgets()
 
     def _create_widgets(self):
         # Dropdown "Condition Type"
 
         max_chars = max([len(c) for c in ConditionFrame._condition_types]) + 1
-        tb.Label(self, text="Condition Type").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        tb.Label(self, text="Condition Type").grid(row=0, column=0, padx=(5, 0), pady=(5, 0), sticky="w")
         self.condition_type = tb.Combobox(self, values=ConditionFrame._condition_types, state="readonly", width=max_chars)
         self.condition_type.set(ConditionFrame._condition_types[0])
-        self.condition_type.grid(row=0, column=1, padx=3, pady=5)
+        self.condition_type.grid(row=0, column=1, padx=(3, 0), pady=(5, 0))
 
 
         # Dropdown "Condition Check"
         max_chars = max([len(c) for c in ConditionFrame._all_checks]) + 1
-        tb.Label(self, text="Condition Check").grid(row=0, column=2, padx=5, pady=5, sticky="w")
+        tb.Label(self, text="Condition Check").grid(row=0, column=2, padx=(5, 0), pady=(5, 0), sticky="w")
         self.condition_check = tb.Combobox(self, values=ConditionFrame._text_checks, state="readonly", width=max_chars)
         self.condition_check.set(ConditionFrame._text_checks[0])  # Fallback to first item
-        self.condition_check.grid(row=0, column=3, padx=3, pady=5)
+        self.condition_check.grid(row=0, column=3, padx=(3, 0), pady=(5, 0))
 
         # Entry "Condition Value" with a default text value
-        tb.Label(self, text="Condition Value").grid(row=0, column=4, padx=5, pady=5, sticky="w")
+        tb.Label(self, text="Condition Value").grid(row=0, column=4, padx=(5, 0), pady=(5, 0), sticky="w")
         self.condition_value_var = tb.StringVar(value="")
         self.condition_value = tb.Entry(self, textvariable=self.condition_value_var)
-        self.condition_value.grid(row=0, column=5, padx=3, pady=5)
+        self.condition_value.grid(row=0, column=5, padx=(3, 0), pady=(5, 0))
 
         self.condition_type.bind("<<ComboboxSelected>>", self._updated_type)
 
@@ -231,14 +254,17 @@ class ConditionFrame(Frame):
             self.condition_value_var.set(self.condition.attribute_value)
 
 
+
         # "+" Button to add new condition frame at the same level
         self.add_button = tb.Button(self, text="+", width=2, command=self.add_condition)
-        self.add_button.grid(row=0, column=6, padx=3, pady=5)
+        self.add_button.grid(row=0, column=6, padx=(3, 0), pady=(5, 0))
 
-        # "-" Button to remove the condition frame, if needed
-        if self.with_remove:
-            self.remove_button = tb.Button(self, text="-", width=2, command=self.remove_self)
-            self.remove_button.grid(row=0, column=7, padx=3, pady=5)
+        self.transform_button = tb.Button(self, text="🔄", width=3, command=self.transform)
+        self.transform_button.grid(row=0, column=7, padx=(3, 0), pady=(5, 0))
+
+        if not self.first_element:
+            self.remove_button = tb.Button(self, text="-", width=2, command=self.remove_self, bootstyle="danger")
+            self.remove_button.grid(row=0, column=8, padx=(3, 0), pady=(5, 0))
 
     def _updated_type(self, event=None):
         if self.condition_type.get() == "timestamp":
@@ -247,12 +273,37 @@ class ConditionFrame(Frame):
             self.condition_check.configure(values=ConditionFrame._text_checks)
 
         self.condition_check.set(self.condition_check["values"][0])
+    def toggle_state(self):
+        if str(self.add_button.cget("state")) == "disabled":
+            self.condition_type.configure(state="readonly")
+            self.condition_check.configure(state="readonly")
+            self.condition_value.configure(state="normal")
+            self.add_button.configure(state="normal")
+            self.transform_button.configure(state="normal")
+            if hasattr(self, "remove_button"):
+                self.remove_button.configure(state="normal")
 
+
+        else:
+            self.condition_type.configure(state="disabled")
+            self.condition_check.configure(state="disabled")
+            self.condition_value.configure(state="disabled")
+            self.add_button.configure(state="disabled")
+            self.transform_button.configure(state="disabled")
+            if hasattr(self, "remove_button"):
+                self.remove_button.configure(state="disabled")
+
+
+    def transform(self):
+        parent = self.master
+        self.pack_forget()
+        self.destroy()
+        ConditionListFrame(parent, first_element=self.first_element)
 
     def add_condition(self):
         parent = self.master
         if isinstance(parent, Frame):
-            ConditionFrame(parent, with_remove=True)
+            ConditionFrame(parent)
         else:
             print("Error on adding condition frame with add function")
 
@@ -271,8 +322,9 @@ class ConditionFrame(Frame):
     def remove_self(self):
         self.destroy()
 
+
 class LabelFrame(Frame):
-    def __init__(self, parent, label = None):
+    def __init__(self, parent, label: Label | None = None):
         super().__init__(parent, borderwidth=2, relief="solid")
         if label is None:
             self._label = None
@@ -284,71 +336,50 @@ class LabelFrame(Frame):
             self._label = label
             self.label_name = StringVar(value=label.name)
             self.manually_var = BooleanVar(value=label.manually)
-            self.active_var = BooleanVar(value=label.is_active)
-            self.creation_datetime = label.get_creation_datetime()
+            self.active_var = BooleanVar(value=label.active)
+            self.creation_datetime = label.creation_datetime
 
-        self.create_widgets()
+        self._create_widgets()
 
-
-    def create_widgets(self):
+    def _create_widgets(self):
         # Upper Frame for Label Name, Manually, Active Checkboxes, and Datetime Label
         upper_frame = Frame(self)
         upper_frame.name = "upper"
-        upper_frame.pack(fill="x", padx=5, pady=5)
+        upper_frame.pack(fill="x", padx=(5, 0), pady=(5, 0))
 
         # Entry field for "Label name"
-        tb.Label(upper_frame, text="Label name:").grid(row=0, column=0, padx=(5, 0), pady=5, sticky="w")
+        tb.Label(upper_frame, text="Label name:").grid(row=0, column=0, padx=(5, 0), pady=(5, 0), sticky="w")
         self.label_entry = tb.Entry(upper_frame, textvariable=self.label_name)
-        self.label_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.label_entry.grid(row=0, column=1, padx=(5, 0), pady=(5, 0), sticky="ew")
 
         # Checkbox for "Manually"
         manually_checkbox = tb.Checkbutton(upper_frame, text="Manually", variable=self.manually_var, command=self.toggle_conditions)
-        manually_checkbox.grid(row=0, column=2, padx=5, pady=5)
+        manually_checkbox.grid(row=0, column=2, padx=(5, 0), pady=(5, 0))
 
         # Checkbox for "Active"
         active_checkbox = tb.Checkbutton(upper_frame, text="Active", variable=self.active_var)
-        active_checkbox.grid(row=0, column=3, padx=5, pady=5)
+        active_checkbox.grid(row=0, column=3, padx=(5, 0), pady=(5, 0))
 
         # Datetime creation
         formatted_date = self.creation_datetime.strftime("%d.%m.%y - %H:%M")
         datetime_label = tb.Label(upper_frame, text=f"Created {formatted_date}")
-        datetime_label.grid(row=0, column=4, padx=(5, 0), pady=5)
+        datetime_label.grid(row=0, column=4, padx=(5, 0), pady=(5, 0))
 
         # Delete Button
         delete_btn = tb.Button(upper_frame, text="Delete", width=8, bootstyle="danger")
-        delete_btn.grid(row=0, column=5, padx=(170, 0), pady=5, sticky="e")  # Todo: better align this then with fixed
+        delete_btn.grid(row=0, column=5, padx=(170, 5), pady=(5, 0), sticky="e")  # Todo: better align this then with fixed
         delete_btn.bind("<Button-1>", self.delete_label)
 
+        conds_list = None
+        if hasattr(self._label, "condition_list"):
+            conds_list = self._label.condition_list
+        self.all_conditions_list_frame = ConditionListFrame(self, condition_list=conds_list, top_list=True)
 
-        # Container for all condition frames
-        # TODO: check for this methods here, feels wrong
-        self.all_condition_frame = Frame(self)
-        self.all_condition_frame.name = "all_conditions"
-        self.all_condition_frame.pack(fill="x", padx=5, pady=5)
-
-        ConditionListFrame(self.all_condition_frame, condition_list=self._label.condition_list)
-
-        self.toggle_conditions()
-
-    def _recursive_toggle_below(self, parent_widget, activate=True):
-        for child in parent_widget.winfo_children():
-            if len(child.winfo_children()) > 0:
-                self._recursive_toggle_below(child)
-            else:
-                widget_class = type(child)
-                match widget_class:
-                    case tb.Button | tb.Checkbutton | tb.Menubutton | tb.Radiobutton | tb.Scrollbar | tb.Spinbox :
-                        child.config(state="normal" if activate else "disabled")
-
-                    case tb.Spinbox | tb.Entry | tb.Combobox:
-                        child.config(state="normal" if activate else "readonly")
-
-                    case _:
-                        pass  # do nothing otherwise
-
+        if self.manually_var.get():
+            self.toggle_conditions()
 
     def toggle_conditions(self):
-        self._recursive_toggle_below(self.all_condition_frame, activate=not self.manually_var.get())
+        self.all_conditions_list_frame.toggle_state()
 
     def save_label_to_db(self):
         lab_name = self.label_name.get()
@@ -358,14 +389,9 @@ class LabelFrame(Frame):
         lab_active = self.active_var.get()
         lab_condition_list = None
         if not lab_manually:
-            # get from new clist the object
-            c_list_frame = self.all_condition_frame.winfo_children()[0]
-            if isinstance(c_list_frame, ConditionListFrame):
-                lab_condition_list = c_list_frame.get_as_object()
-            else:
-                raise Exception("Child of label is not ConditionListFrame")
+            lab_condition_list = self.all_conditions_list_frame.get_as_object()
+
         if self._label is None:
-            # do stuff for new label
             Label(lab_name, manually=lab_manually, active=lab_active, condition_list=lab_condition_list)
         else:
             self._label.name = lab_name
@@ -489,14 +515,16 @@ class ViewController:
         low_left_frame.grid_columnconfigure(0, weight=1)
         low_left_frame.grid_columnconfigure(1, weight=1)
 
-
-
     def update_analysis_tab(self, tab):
         # TODO: This should make user choosable what kind of stuff they want to analys
         #  They should be able to create and access querrys from here,
         #  to analyze their favorite activitys /behaviour.
         #  It will allways include standard analysis, like per label and/or multiple labels,
         #  Weekdays, weeks, daytime, time window
+        #  We need analyzes that can combine different ways of searching infos from the database.
+        #  also there needs to be time window pre choices like this week, last week, last 3 days whatsover
+        #  maybe later advanced conditions for analyzes and labeling. Like background windows or system time (night/day etc)
+
         label_list = Label.get_all_labels()
         if label_list:
             dropdown_values = list({lab.name for lab in label_list})
@@ -506,14 +534,12 @@ class ViewController:
         label_dropdown.current(0)
         label_dropdown.pack(padx=10, pady=10)
 
-
     def update_label_tab(self, tab):
+        # FIXME: seems like there can happen to be multiple of the same label, if saved over under specific(unknown) conditions
         scrollable_frame = ScrollableFrame(tab)
         scrollable_frame.pack(fill="both", expand=True)
 
-
-        label_list = Label.get_all_labels()
-        for lab in label_list:
+        for lab in Label.get_all_labels():
             lab_frame = LabelFrame(parent=scrollable_frame.scrollable_frame, label=lab)
             lab_frame.pack(fill="x", padx=5, pady=5)
 
@@ -522,7 +548,6 @@ class ViewController:
 
         new_label_button = tb.Button(btn_frame, text="Add new Label")
         new_label_button.pack(padx=5, pady=5, side="left", expand=True)  # Center with expand=True
-
 
         save_labels_button = tb.Button(btn_frame, text="Save")
         save_labels_button.pack(padx=5, pady=5, side="right")  # Move to the right side and block space for lbl btn
@@ -555,7 +580,7 @@ class ViewController:
         else:
 
             tab_frame = event.widget.master.master
-            btn_frame= event.widget.master
+            btn_frame = event.widget.master
             btn_frame.pack_forget()
             n_lab = LabelFrame(parent=tab_frame)
             n_lab.pack(fill="x", padx=10, pady=5)
@@ -747,6 +772,7 @@ def sys_add(win: Window, label_text):
 
 # # # # External call functions for less import in other files # # # #
 def open_main_window():
+    # Todo: If window is allready open (mainwindow) dont reopen it, just make it foreground again
     ViewController().main_window()
 
 

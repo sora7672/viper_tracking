@@ -6,7 +6,7 @@ Author: sora7672
 # TODO: Minimize the imports!
 from win32gui import GetForegroundWindow, GetWindowText
 from win32process import GetWindowThreadProcessId
-from psutil import Process
+from psutil import Process, NoSuchProcess
 from db_connector import DBHandler
 from threading import Thread, Lock
 from time import time, sleep
@@ -48,9 +48,14 @@ class WinInfo:
         a_win = GetForegroundWindow()
         self.window_title = GetWindowText(a_win)
         _, self.process_id = GetWindowThreadProcessId(a_win)
-        self.window_type = Process(self.process_id).name()
-
-        # FIXME: If the application gets closed in the time between grabbing the process ID and checking it, results in this error:
+        # TODO: Test this. Should fix the problem with broken pids
+        try:
+            self.window_type = Process(self.process_id).name()
+        except NoSuchProcess | ValueError as e:
+            get_logger().error(f"WinInfo object could not be filled properly: {e}")
+            del self
+            return
+        # # # # # Old error, maybe fixed # # # #
         #
         #     Exception in thread Thread-6 (window_tracker):
         #     Traceback (most recent call last):
@@ -91,7 +96,7 @@ class WinInfo:
         #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
         #         raise NoSuchProcess(pid, msg=msg)
         #     psutil.NoSuchProcess: process PID not found (pid=1963797664)
-        # FIXME: same problem with negative PIDs, probably also cuz of closed window
+        # # # # # #  error no 2. # # # # # # #
         # Exception in thread
         # Thread - 6(window_tracker):
         # Traceback(most
@@ -132,9 +137,8 @@ class WinInfo:
         # a
         # positive
         # integer(got - 1827508448)
+
         if self.window_type not in untracked_types:
-
-
             for r_char in repl_chars:
                 self.window_title = self.window_title.replace(r_char, "-")
             tmp_segments = self.window_title.split(" - ")
@@ -208,13 +212,13 @@ class Label:
     _label_list = []
     _lock = Lock()
 
-    def __init__(self, name: str, manually: bool = False, condition_list: ConditionList = None,
+    def __init__(self, name: str, manually: bool = False, condition_list: ConditionList | None = None,
                  active: bool = True, creation_datetime=None, db_id=None):
         self.lock = Lock()
         self._name: str = name
         self._manually = manually
         self._active = active
-        self._condition_list: ConditionList = condition_list or None
+        self._condition_list: ConditionList | None = condition_list or None
         self._creation_datetime = datetime.now() if creation_datetime is None else creation_datetime
         self._id = db_id
 
@@ -226,7 +230,7 @@ class Label:
         get_logger().debug("(CLASS) LABEL lock release")
 
     @property
-    def condition_list(self) -> ConditionList | ObjectCondition:
+    def condition_list(self) -> ConditionList:
         with self.lock:
             return self._condition_list
 
@@ -243,7 +247,6 @@ class Label:
     def id(self):
         with self.lock:
             return self._id
-
 
     @property
     def name(self):
@@ -266,12 +269,10 @@ class Label:
         with self.lock:
             self._manually = manually
 
-    # FIXME: replace all label.active calls to label.is_active, or better remove the field and do it in one
     @property
     def active(self):
         with self.lock:
             return self._active
-
 
     @active.setter
     def active(self, active: bool):
@@ -281,23 +282,22 @@ class Label:
     @property
     def creation_datetime(self):
         with self.lock:
-            return  self._creation_datetime
-
+            return self._creation_datetime
 
     def enable(self):
         """
         :return: self
         """
-        with self.lock:
-            self.active = True
+
+        self.active = True
         return self
 
     def disable(self):
         """
         :return: self
         """
-        with self.lock:
-            self.active = False
+
+        self.active = False
         return self
 
     # FIXME: check all propertys to be used properly, changed a lot of them
@@ -309,7 +309,7 @@ class Label:
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             tmp_dict = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
-                        "conditions": self._condition_list.to_dict(),
+                        "conditions": self._condition_list.to_dict() if self._condition_list else None,
                         "creation_datetime": self._creation_datetime}
 
         get_logger().debug(f"LABEL {self._name} lock release")
@@ -325,11 +325,11 @@ class Label:
         with self.lock:
             if self._id is not None:
                 get_logger().warning("Label was already added to the database.")
-            if self._condition_list and not self._manually:
+            if not self._condition_list and not self._manually:
                 get_logger().error("No conditions were provided.")
             else:
                 dict_no_id = {"name": self._name, "manually": self._manually, "active": self._active,
-                              "conditions": self._condition_list.to_dict(),
+                              "conditions": self._condition_list.to_dict() if self._condition_list else None,
                               "creation_datetime": self._creation_datetime}
                 self._id = DBHandler().add_label(dict_no_id)
 
@@ -345,7 +345,7 @@ class Label:
         with self.lock:
             if self._id is not None and self._id != "":
                 dict_with_id = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
-                                "conditions": self._condition_list.to_dict(),
+                                "conditions": self._condition_list.to_dict() if self._condition_list else None,
                                 "creation_datetime": self._creation_datetime}
                 DBHandler().update_label(dict_with_id)
 
@@ -370,7 +370,10 @@ class Label:
         """
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
-            self._condition_list.add(*conditions)
+            if self._condition_list:
+                self._condition_list.add(*conditions)
+            else:
+                self._condition_list = ConditionList(conditions)
         get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
@@ -407,10 +410,14 @@ class Label:
            """
         label_dicts = DBHandler().get_all_labels()
         for label_dict in label_dicts:
+            if label_dict["condition_json"] == "{}":
+                tmp_conditionlist = None
+            else:
+                tmp_conditionlist = ConditionList.from_json(label_dict["condition_json"])
 
-            tmp_label = Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
-                              active=label_dict["active"], creation_datetime=label_dict["creation_datetime"],
-                              conditions=label_dict["conditions"])
+            Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
+                  active=label_dict["active"], creation_datetime=label_dict["creation_datetime"],
+                  condition_list=tmp_conditionlist)
 
 
 def window_tracker() -> None:

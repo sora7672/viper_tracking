@@ -15,13 +15,7 @@ from log_handler import get_logger, init_logging
 from db_connector import start_db
 from settings_manager import init_user_settings
 
-# TODO: in english
-#  We need analyzes that can combine different ways of searching infos from the database.
-#  also there needs to be time window pre choices like this week, last week, last 3 days whatsover
-#  maybe later advanced conditions for analyzes and labeling. Like background windows or system time (night/day etc)
 
-# FIXME: Not saving manually labels properly or maybe not loading in on restart!
-#  What about auto labels?
 
 def start_program() -> None:
     """
@@ -29,7 +23,6 @@ def start_program() -> None:
     :return: None
     """
 
-    # TODO: add settings manager init
     initialize_config_manager()
     init_logging()
     get_logger().debug("config_manager init done & log_handler started")

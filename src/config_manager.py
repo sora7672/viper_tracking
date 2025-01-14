@@ -1,15 +1,24 @@
 """
-This file includes a singleton class that holds all configs for all other files.
-Its sole purpose is to manage configs for the application.
-It will NOT import from other project modules, except non project modules like reader/csv/time.
+This file includes a singleton class to manage all application configurations.
+
+It handles:
+- Reading and saving configurations to a JSON file.
+- Providing thread-safe access to configuration settings.
+- Managing debug mode and application intervals.
+
 Author: sora7672
 """
-
+__author__ = 'sora7672'
 
 from threading import Lock, Event
 import json
 from warnings import warn
 from os import path
+
+"""
+Project Note:
+This file needs to never load other project modules!
+"""
 
 # TODO: Probably when smth here is updated, the other threads need to
 #  read in infos new (like interval for input/window tracker)
@@ -22,20 +31,41 @@ from os import path
 
 class ConfigManager:
     """
-    This class will hold all settings related to a project.
-    Including window/gui settings, intervals for checks
-    and the access to the stop event for the application
-    Need to be initialized
+    A thread-safe singleton class that manages configuration settings for the application.
+
+    This class provides:
+    - Methods to read/write settings to a JSON file.
+    - Access to application-specific configurations like debug mode and intervals.
+
+    Attributes:
+        _lock (Lock): Ensures thread-safe access to configurations.
+        _stop_event (Event): Signals thread termination.
+        _config_path (str): Path to the configuration file.
+        _interval_save_windows (int): Interval for saving window logs.
+        _interval_save_inputs (int): Interval for saving input logs.
+        _debug (bool): Debug mode status.
     """
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
+        """
+        Implements the singleton pattern by ensuring only one instance of the class exists.
+
+        :return: ConfigManager (The singleton instance.)
+        """
 
         if cls._instance is None:
             cls._instance = super(cls, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Initializes the ConfigManager instance with default settings.
+
+        :return: None
+        """
+
         if not hasattr(self, '_initialized'):
             self._initialized = True
             self._lock = Lock()
@@ -45,11 +75,16 @@ class ConfigManager:
             self._interval_save_inputs = 30
             self._debug = False
 
-    def read_settings(self):
+    def read_settings(self) -> None:
         """
-        THis will load the settings from a json file
-        into the singleton instance.
+        Loads the application configuration from a JSON file.
+
+        If the file is missing, empty, or contains invalid JSON, default settings are applied.
+        Missing fields in the configuration are also replaced with default values.
+
+        :return: None
         """
+
         unlock_and_save = False
         with self._lock:
             if path.exists(self._config_path):
@@ -82,10 +117,13 @@ class ConfigManager:
         if unlock_and_save:
             self.save_settings()
 
-    def save_settings(self):
+    def save_settings(self) -> None:
         """
-        Saves the settings to the json file.
+        Saves the current configuration settings to a JSON file.
+
+        :return: None
         """
+
         with self._lock:
             dict_to_save = {"interval_save_windows": self._interval_save_windows,
                             "interval_save_inputs": self._interval_save_inputs,
@@ -95,50 +133,68 @@ class ConfigManager:
                 # dump with extra params makes it better readable
                 json.dump(dict_to_save, json_file, indent=4, sort_keys=True)
 
-    def get_interval_save_inputs(self):
+    def get_interval_save_inputs(self) -> int:
         """
-        Just returns the interval_save_inputs
+        Returns the interval for saving input logs.
+
+        :return: int (The interval in seconds.)
         """
+
         with self._lock:
             return self._interval_save_inputs
 
-    def get_interval_save_windows(self):
+    def get_interval_save_windows(self) -> int:
         """
-        Just returns the interval_save_windows
+        Returns the interval for saving window logs.
+
+        :return: int (The interval in seconds.)
         """
+
         with self._lock:
             return self._interval_save_windows
 
-    def enable_debug(self):
+    def enable_debug(self) -> None:
         """
-        Enable Debug Mode in the whole application.
+        Enables debug mode for the application.
+
+        :return: None
         """
+
         # TODO: Probably needs to restart the logger
         with self._lock:
             self._debug = True
 
-    def disable_debug(self):
+    def disable_debug(self) -> None:
         """
-        Disable Debug Mode in the whole application.
+        Disables debug mode for the application.
+
+        :return: None
         """
+
         # TODO: Probably needs to restart the logger
         with self._lock:
             self._debug = False
 
     def get_debug(self) -> bool:
         """
-        Just returns if debug mode is on
+        Checks if debug mode is enabled.
+
+        :return: bool (True if debug mode is enabled, False otherwise.)
         """
+
         return self._debug
 
-    def threads_are_stopped(self):
+    def threads_are_stopped(self) -> bool:
         """
         Checks if the thread stop event is set.
+
+        :return: bool (True if threads are stopped, False otherwise.)
         """
+
         with self._lock:
             return self._stop_event.is_set()
 
-    def stop_threads(self):
+    def stop_threads(self) -> None:
         """
         Sets the thread stop event.
         """
@@ -147,55 +203,78 @@ class ConfigManager:
 
 
 # # # # External call functions for less import in other files # # # #
-def stop_program_threads():
+def stop_program_threads() -> None:
     """
-    Stopping all threads on call.
-    Takes a few seconds to close all threads gracefully.
+    Stops all threads gracefully by setting the thread stop event.
+
+    This function signals all threads to stop and allows for a clean shutdown.
+
+    :return: None
     """
+
     ConfigManager().stop_threads()
 
 
 def threads_are_stopped() -> bool:
     """
-    Checks if the thread stop event is set.
+    Checks if all threads have been stopped.
+
+    :return: bool (True if threads are stopped, False otherwise.)
     """
+
     return ConfigManager().threads_are_stopped()
 
 
 def interval_windows() -> int:
     """
-    Returns the set interval in seconds for saving windows to log.
+    Retrieves the interval for saving window logs from the configuration manager.
+
+    :return: int (The interval in seconds.)
     """
+
     return ConfigManager().get_interval_save_windows()
 
 
 def interval_inputs() -> int:
     """
-    Returns the set interval in seconds for saving windows to log.
+    Retrieves the interval for saving input logs from the configuration manager.
+
+    :return: int (The interval in seconds.)
     """
+
     return ConfigManager().get_interval_save_inputs()
 
 
 def is_debug() -> bool:
     """
-    Returns if debug is enabled.
+    Checks if the application is running in debug mode.
+
+    :return: bool (True if debug mode is enabled, False otherwise.)
     """
+
     return ConfigManager().get_debug()
 
 
 def initialize_config_manager():
     """
-    Needs to be called before using the ConfigManager class.
-    It starts all necessary things for the manager.
+    Initializes the configuration manager by reading the settings file.
+
+    This ensures that the configuration manager is ready before other modules use it.
+
+    :return: None
     """
+
     ConfigManager().read_settings()
 
 
 # TODO: Used when settings are updated, dont need to save in the end of program then
 def save_settings():
     """
-    Saves the settings to the json file.
+    Saves the current configuration settings to the JSON file.
+
+    :return: None
     """
+
     ConfigManager().save_settings()
 
 

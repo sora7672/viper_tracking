@@ -5,6 +5,7 @@ It loads and initializes all other modules needed.
 Author: sora7672
 """
 
+__author__ = "sora7672"
 
 from input_manager import start_input_tracker
 from window_manager import start_window_tracker, init_all_labels_from_db
@@ -16,10 +17,10 @@ from db_connector import start_db
 from settings_manager import init_user_settings
 
 
-
 def start_program() -> None:
     """
-    The function to start all needed application modules.
+    Starts the application by initializing and running all necessary components.
+
     :return: None
     """
 

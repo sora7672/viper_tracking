@@ -1,26 +1,37 @@
+"""
+This module provides utilities for evaluating and applying conditions on objects.
+
+Features:
+- Validates attributes of objects against dynamic conditions.
+- Supports common comparison operators like `==`, `!=`, `<`, `>`, `<=`, `>=`.
+- Supports nested conditions through logical operators (e.g., 'and', 'or').
+- Provides helper functions for creating and applying conditions programmatically.
+
+Author: sora7672
+"""
+__author__ = 'sora7672'
+
 from datetime import datetime, date, time, timedelta
 import json
-
 from threading import Lock
+
 
 class ObjectCondition:
     """
-     Represents a single condition to evaluate an attribute of an object
-     based on a specified comparison operator and value.
+    Represents a single condition to evaluate an attribute of an object.
 
-     Attributes:
-         _accepted_comp_operators_strings: Operators valid for string comparisons.
-         _accepted_comp_operators_numbers: Operators valid for numeric comparisons.
-         _accepted_comp_operators_lists: Operators valid for list-based comparisons.
-         _accepted_value_types: Supported data types for the condition's attribute value.
-     """
+    This class allows checking if an object's attribute satisfies a condition
+    defined by a comparison operator and value.
+    """
+
     _accepted_comp_operators_strings = ("==", "!=", "in", "not in")
     _accepted_comp_operators_numbers = ("<", ">", "<=", ">=", "==", "!=")
     _accepted_comp_operators_lists = ("in", "not in")
     _accepted_comp_operators = tuple(set(_accepted_comp_operators_strings +
                                          _accepted_comp_operators_numbers +
                                          _accepted_comp_operators_lists))
-    # TODO: add weekdays, monthes to compare & also allowe == and != for these
+    # TODO: add weekdays, months to compare & also allow == and != for these, add validation rules for that too!
+    #  and check only all lowercase to ensure no caps/lower typos
     _accepted_value_types = ("str", "int", "float", "date", "datetime", "time")
 
     def __init__(self, attribute_name: str, comp_operator: str,
@@ -28,10 +39,11 @@ class ObjectCondition:
         """
         Initializes an ObjectCondition instance with a specified attribute, comparison operator, value, and value type.
 
-        :param attribute_name: Name of the attribute to be evaluated on the object.
-        :param comp_operator: Comparison operator, must be one of the accepted types.
-        :param attribute_value: The value to compare against.
-        :param value_type: The type of the attribute, default is 'str'.
+        :param attribute_name: str (Name of the attribute to be evaluated on the object.)
+        :param comp_operator: str (Comparison operator, must be one of the accepted types.)
+        :param attribute_value: Any (The value to compare against.)
+        :param value_type: str (The type of the attribute, default is 'str'.)
+        :raises ValueError: If the value type or comparison operator is invalid.
         """
 
         if value_type not in self._accepted_value_types:
@@ -97,10 +109,13 @@ class ObjectCondition:
 
     def is_true(self, obj: object) -> bool:
         """
-        Evaluates the condition against an attribute of the given object.
+        Evaluates the condition on a given object.
 
-        :param obj: The object containing the attribute to be checked.
-        :return: Boolean indicating if the condition holds true for the given object.
+        :param obj: object (The object containing the attribute to evaluate.)
+        :return: bool (True if the condition is satisfied, False otherwise.)
+        :raises AttributeError: If the attribute does not exist on the object.
+        :raises TypeError: If the attribute type does not match the expected value type.
+        :raises Exception: If the comparison operator is unknown.
         """
 
         if not hasattr(obj, self._attribute_name):
@@ -119,10 +134,7 @@ class ObjectCondition:
             raise TypeError(f"Condition evaluation error.\nObject ({obj}) attribute type {type(test_value)} "
                             f"is not type {type(self._attribute_value)}")
 
-
-
         match self._comp_operator:
-            # FIXME: seems to not working properly anyhow?
             case "in":
                 if isinstance(test_value, str):
                     return self._attribute_value.lower() in test_value.lower()
@@ -164,10 +176,11 @@ class ObjectCondition:
 
     def to_dict(self) -> dict:
         """
-        Serializes the condition to a dictionary.
+        Serializes the condition to a dictionary format.
 
-        :return: A dictionary with the condition's parameters.
+        :return: dict (A dictionary representation of the condition.)
         """
+
         with self.lock:
             return {
                 "attribute_name": self._attribute_name,
@@ -176,16 +189,25 @@ class ObjectCondition:
                 "value_type": self._value_type
             }
 
-
     def json(self) -> str:
         """
         Serializes the condition to a JSON string.
 
-        :return: JSON string representation of the condition.
+        :return: str (A JSON string representation of the condition.)
         """
+
         return json.dumps(self.to_dict())
 
-    def convert_to_type(self, input_value):
+    def convert_to_type(self, input_value) -> datetime | date | time:
+        """
+        Converts an input value to the type specified by the condition.
+
+        :param input_value: Any (The value to convert.)
+        :return: Any (The converted value in the specified type.)
+        :raises ValueError: If the input is not valid for the specified type.
+        :raises TypeError: If the input type is unsupported.
+        """
+
         # Ensure output_type is valid
         # Convert input_value to a datetime object first
         if isinstance(input_value, datetime):
@@ -226,9 +248,10 @@ class ObjectCondition:
         """
         Creates an ObjectCondition instance from a JSON string or dictionary.
 
-        :param data: A JSON string or dictionary with condition parameters.
-        :return: ObjectCondition instance initialized with the given data.
+        :param data: dict | str (A dictionary or JSON string containing the condition parameters.)
+        :return: ObjectCondition (The constructed ObjectCondition instance.)
         """
+
         if isinstance(data, str):
             data = json.loads(data)
         elif not isinstance(data, dict):
@@ -273,21 +296,22 @@ class ObjectCondition:
 
 class ConditionList:
     """
-    Represents a collection of ObjectCondition and ConditionList objects
-    with a specified logical operator.
+    Represents a collection of ObjectCondition and ConditionList objects combined using a logical operator.
 
-    Attributes:
-      _accepted_boolean_operators: Operators valid for combining conditions (and, or).
+    Allows for grouping multiple conditions with 'and' or 'or' logic.
     """
+
     _accepted_boolean_operators = ("and", "or")
 
     def __init__(self, *conditions, operator: str = "and"):
         """
         Initializes a ConditionList with specified conditions and logical operator.
 
-        :param conditions: Conditions to be evaluated as a list of ObjectCondition or ConditionList instances.
-        :param operator: Logical operator to apply across conditions, either 'and' or 'or'.
+        :param conditions: list (A list of ObjectCondition or ConditionList instances to evaluate.)
+        :param operator: str (Logical operator for combining conditions, must be 'and' or 'or'.)
+        :raises ValueError: If the operator or condition type is invalid.
         """
+
         self.conditions = []
         self.lock = Lock()
         if operator.lower() not in self._accepted_boolean_operators:
@@ -300,7 +324,14 @@ class ConditionList:
             else:
                 raise ValueError(f"Invalid condition type {type(condition)}")
 
-    def add(self, *conditions, operator: str = "and"):
+    def add(self, *conditions):
+        """
+        Adds conditions to the ConditionList.
+
+        :param conditions: list (A list of ObjectCondition or ConditionList instances to add.)
+        :raises ValueError: If a condition type is invalid.
+        """
+
         with self.lock:
             for condition in conditions:
                 if isinstance(condition, ObjectCondition) or isinstance(condition, ConditionList):
@@ -310,11 +341,12 @@ class ConditionList:
 
     def is_true(self, obj: object) -> bool:
         """
-        Evaluates all conditions in the list using the specified logical operator.
+        Evaluates all conditions in the list using the logical operator.
 
-        :param obj: Object to check conditions against.
-        :return: Boolean indicating the result of all combined conditions.
+        :param obj: object (The object to evaluate conditions on.)
+        :return: bool (True if all conditions are satisfied according to the operator.)
         """
+
         result_list = []
         for condition in self.conditions:
             result = condition.is_true(obj)
@@ -334,10 +366,11 @@ class ConditionList:
 
     def to_dict(self) -> dict:
         """
-        Serializes the ConditionList to a dictionary.
+        Serializes the ConditionList to a dictionary format.
 
-        :return: A dictionary with 'operator' and 'conditions' keys.
+        :return: dict (A dictionary representation of the ConditionList.)
         """
+
         return {
             "operator": self.operator,
             "conditions": [condition.to_dict() for condition in self.conditions]
@@ -347,8 +380,9 @@ class ConditionList:
         """
         Serializes the ConditionList to a JSON string.
 
-        :return: JSON string representing the ConditionList.
+        :return: str (A JSON string representation of the ConditionList.)
         """
+
         return json.dumps(self.to_dict())
 
     @classmethod
@@ -356,9 +390,10 @@ class ConditionList:
         """
         Creates a ConditionList instance from a JSON string or dictionary.
 
-        :param data: A JSON string or dictionary with 'operator' and 'conditions'.
-        :return: ConditionList instance populated with the specified conditions and operator.
+        :param data: dict | str (A dictionary or JSON string containing 'operator' and 'conditions'.)
+        :return: ConditionList (The constructed ConditionList instance.)
         """
+
         if isinstance(data, str):
             data = json.loads(data)
         elif not isinstance(data, dict):

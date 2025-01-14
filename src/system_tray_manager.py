@@ -120,13 +120,13 @@ class SystemTrayManager:
         menu_labels = []
         for label in all_label:
             if label.manually:
-                # TODO: remove the enable/disable and make it to set the value.
+                # TODO: remove the enable/disable and make it to set the value if possible.
                 disable_action = MultiFunction(label.disable, self.update_menu)
                 enable_action = MultiFunction(label.enable, self.update_menu)
 
                 menu_labels.append(MenuItem(label.name, Menu(
-                    MenuItem("Activate", enable_action, visible=not label.is_active),
-                    MenuItem("Deactivate", disable_action, visible=label.is_active)
+                    MenuItem("Activate", enable_action, visible=not label.active),
+                    MenuItem("Deactivate", disable_action, visible=label.active)
                 )))
 
         menu_labels.append(MenuItem("Add & start new Label", open_systray_label))

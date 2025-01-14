@@ -1,31 +1,38 @@
 """
-This file includes all database related methods and helper functions.
-Each table has a search function that does the search based on positionable arguments input.
+This module handles all database-related operations, including initialization,
+connection handling, and CRUD operations for various tables.
+
+Features:
+- Ensures thread-safe database access.
+- Handles custom exceptions for better error reporting.
+- Provides helper functions for query generation and data serialization.
+
 Author: sora7672
 """
+__author__ = 'sora7672'
+
 import sqlite3
 from threading import Lock
 import json
-from time import time
 from log_handler import get_logger
 from os import path, makedirs
 from datetime import datetime, timedelta
-
-from conditions import ObjectCondition, ConditionList
 
 
 class DateTimeTypeError(Exception):
     """Custom exception for invalid datetime format."""
     pass
 
+
 def string_to_iso_datetime(date_string):
     """
-    Validate if the input string is in ISO 8601 format.
-    Args:
-        date_string (str): The string to validate.
-    Raises:
-        DateTimeTypeError: If the string is not in ISO 8601 format.
+    Converts a string to a datetime object in ISO 8601 format.
+
+    :param date_string: str (The input string to convert.)
+    :raises DateTimeTypeError: If the string is not in ISO 8601 format.
+    :return: datetime (The converted datetime object.)
     """
+
     try:
         return datetime.fromisoformat(date_string)
     except ValueError:
@@ -35,29 +42,36 @@ def string_to_iso_datetime(date_string):
 # # # # Helper functions internal # # # #
 def _make_searchable(text: str) -> str:
     """
-    Function makes a text searchable in SQL terms with replacing all non-alphanumeric chars with a "%"
-    :param text: str
-    :return: str
+    Converts a text string into an SQL-searchable format by replacing non-alphanumeric characters with '%'.
+
+    :param text: str (The input text to convert.)
+    :return: str (The modified string suitable for SQL queries.)
     """
+
     return ''.join([char if char.isalnum() else '%' for char in text])
 
 
 def _create_in_search_term(field_name: str, values: list | str) -> tuple[str, list[int | float | str | None]]:
     """
-    Function creates a tuple for adding into a SQL Querry splitted to values and querry.
-    :param field_name: str
-    :param values: list
+    Generates an SQL IN condition with placeholders and values for a query.
+
+    :param field_name: str (The name of the database field to match.)
+    :param values: list | str (The values to include in the IN condition.)
+    :return: tuple (SQL condition string and a list of values.)
     """
+
     placeholders = ','.join(['?'] * len(values))
     return f"{field_name} IN ({placeholders})", [_make_searchable(val) for val in values]
 
 
 def _to_json(data: dict) -> str | None:
     """
-    Function converts data dictionary to json string
-    :param data: dict
-    :return: str | None
+    Serializes a dictionary into a JSON string.
+
+    :param data: dict (The dictionary to serialize.)
+    :return: str | None (The serialized JSON string, or None on failure.)
     """
+
     try:
         return json.dumps(data)
     except TypeError as e:
@@ -70,10 +84,12 @@ def _to_json(data: dict) -> str | None:
 
 def _from_json(json_string: str) -> dict | None:
     """
-    Function converts json string back to a dictionary
-    :param json_string: str
-    :return: str | None
+    Deserializes a JSON string into a dictionary.
+
+    :param json_string: str (The JSON string to deserialize.)
+    :return: dict | None (The deserialized dictionary, or None on failure.)
     """
+
     try:
         return json.loads(json_string)
     except json.JSONDecodeError as e:
@@ -88,22 +104,45 @@ def _from_json(json_string: str) -> dict | None:
 # For all DB stuff
 class DBHandler:
     """
-    This a singleton that handles all database related things.
-    Connecting and closing the connection,
-    creating the tables on first init,
-    adding, updating, deleting or searching entries in tables.
-    Methods are called like:
-    DBHandler().methode()
+    A thread-safe singleton class for managing database operations.
+
+    This class handles:
+    - Connecting to the database.
+    - Initializing tables on the first run.
+    - CRUD operations for tables: `window_log`, `input_log`, and `labels`.
+    - Thread-safe execution using locks.
+
+    Usage:
+        DBHandler().method()
+
+    Attributes:
+        db_path (str): Path to the database directory.
+        db_name (str): Name of the database file.
+        conn (sqlite3.Connection): SQLite connection object.
+        cursor (sqlite3.Cursor): SQLite cursor for executing queries.
+        lock (Lock): Ensures thread-safe operations.
     """
+
     _instance = None
 
     def __new__(cls, *args, **kwargs):
+        """
+        Ensures that DBHandler follows the singleton pattern.
+
+        :return: DBHandler (The singleton instance.)
+        """
 
         if cls._instance is None:
             cls._instance = super(cls, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
+        """
+        Initializes the DBHandler instance, setting up paths and locks.
+
+        :return: None
+        """
+
         if not hasattr(self, '_initialized'):
             self._initialized = True
             self.db_path = path.abspath(path.join(path.dirname(path.abspath(__file__)), "database"))
@@ -115,18 +154,26 @@ class DBHandler:
 
     def check_db_path(self):
         """
-        Just plain checks if path dir exists if not create it.
+        Checks if the database directory exists and creates it if necessary.
+
+        :return: None
         """
+
         if not path.exists(self.db_path):
             makedirs(self.db_path)
 
     def first_open_db(self):
         """
-        This method is executed if there is no tables existing.
-        It creates the needed tables & sets the DB to thread safe usage.
-        :param self: DBHandler
+        Creates database tables on the first run and enables WAL mode for multithreading.
+
+        Tables:
+        1. `window_log` - Logs information about application windows.
+        2. `input_log` - Logs user input events.
+        3. `labels` - Stores metadata about labels and their conditions.
+
         :return: None
         """
+
         try:
             self.cursor.execute("PRAGMA journal_mode=WAL;")  # Enable WAL mode for multithreading
             self.conn.commit()
@@ -191,11 +238,13 @@ class DBHandler:
 
     def check_dbs(self):
         """
-        This method is checking for the labels table, if its not existing,
-        the first_open_db method was not called before and calls it.
-        :param self: DBHandler
+        Ensures that all required tables exist in the database.
+
+        If tables are missing, it initializes them using `first_open_db`.
+
         :return: None
         """
+
         try:
             self.cursor.execute('''
                             SELECT name FROM sqlite_master WHERE type='table' AND name='labels'
@@ -222,11 +271,13 @@ class DBHandler:
 
     def connect(self):
         """
-        This method initializes the database connection.
-        Then it calls the check_dbs() method to ensure on program start, that the DB is existing.
-        :param self: DBHandler
+        Establishes a connection to the SQLite database.
+
+        After connecting, it verifies the existence of required tables.
+
         :return: None
         """
+
         # Connect to the database with WAL mode enabled
         try:
             self.conn = sqlite3.connect(path.join(self.db_path, self.db_name), check_same_thread=False)
@@ -249,10 +300,11 @@ class DBHandler:
 
     def close(self):
         """
-        This method closes the connection to the DB when the program should egt closed.
-        :param self: DBHandler
+        Closes the connection to the SQLite database safely.
+
         :return: None
         """
+
         with self.lock:
             if self.conn:
                 self.conn.close()
@@ -260,13 +312,19 @@ class DBHandler:
 
     def add_window_log(self, window_dict: dict) -> None:
         """
-        This method writes a window dictionary into the database.
-        The keys the dictionary needs are:
-        window_type, window_title, word_list, label_list, creation_datetime
-        :param self: DBHandler
-        :param window_dict: dict
+        Inserts a window log entry into the `window_log` table.
+
+        Required Keys in `window_dict`:
+        - `window_type` (str): The type of the window.
+        - `window_title` (str): The title of the window.
+        - `window_text_words` (list | set | tuple): Words associated with the window.
+        - `label_list` (list | set | tuple): Labels assigned to the window.
+        - `creation_datetime` (datetime): Timestamp of the log.
+
+        :param window_dict: dict (Details of the window log.)
         :return: None
         """
+
         keys_needed = ['window_type', 'window_title', 'window_text_words', 'label_list', 'creation_datetime']
         if not all(key in window_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
@@ -297,15 +355,19 @@ class DBHandler:
 
     def add_input_log(self, input_dict: dict) -> None:
         """
-        This method writes an input dictionary into the database.
-        The keys the dictionary needs are:
-        last_activity_datetime, count_key_pressed, count_mouse_pressed,
-        count_direction_key_pressed, count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls,
-        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime
-        :param self: DBHandler
-        :param input_dict: dict
+        Inserts an input log entry into the `input_log` table.
+
+        Required Keys in `input_dict`:
+        - `last_activity_datetime` (datetime): Last activity timestamp.
+        - `count_key_pressed` (int): Total key presses.
+        - `count_mouse_pressed` (int): Total mouse button presses.
+        - `creation_datetime` (datetime): Timestamp of the log.
+        - Additional counters for specific inputs (e.g., `count_char_key_pressed`).
+
+        :param input_dict: dict (Details of the input log.)
         :return: None
         """
+
         keys_needed = ["last_activity_datetime", "count_key_pressed", "count_mouse_pressed",
                        "count_direction_key_pressed", "count_char_key_pressed", "count_special_key_pressed",
                        "count_mouse_scrolls", "count_left_mouse_pressed", "count_right_mouse_pressed",
@@ -325,7 +387,6 @@ class DBHandler:
         else:
             raise ValueError("input_dict['last_activity_datetime'] not a (datetime)")
 
-
         with self.lock:
             self.cursor.execute('''
                 INSERT INTO input_log (last_activity_datetime, count_key_pressed, count_mouse_pressed, 
@@ -342,13 +403,19 @@ class DBHandler:
 
     def add_label(self, label_dict: dict) -> None | int:
         """
-        This method writes a label dictionary into the database.
-        The keys the dictionary needs are:
-        name, manually, active, conditions, creation_datetime
-        :param self: DBHandler
-        :param label_dict: dict
-        :return: None
+        Inserts a label entry into the `labels` table.
+
+        Required Keys in `label_dict`:
+        - `name` (str): Name of the label.
+        - `manually` (bool): Whether the label is manually assigned.
+        - `active` (bool): Status of the label.
+        - `conditions` (dict): JSON-serializable conditions for the label.
+        - `creation_datetime` (datetime): Timestamp of the label creation.
+
+        :param label_dict: dict (Details of the label.)
+        :return: int | None (ID of the newly added label, or None on failure.)
         """
+
         keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
         if not all(key in label_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
@@ -400,14 +467,17 @@ class DBHandler:
 
     def update_label(self, label_dict: dict) -> None:
         """
-        This method updates a label in the database.
-        The keys the dictionary needs are:
-        name, manually, active, conditions, creation_datetime
-        :param self: DBHandler
-        :param label_dict: dict
+        Updates an existing label in the `labels` table.
+
+        Required Keys in `label_dict`:
+        - `id` (int): ID of the label to update.
+        - Other keys as described in `add_label`.
+
+        :param label_dict: dict (Updated label details.)
         :return: None
         """
-        keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
+
+        keys_needed = ["id", "name", "manually", "active", "conditions", "creation_datetime"]
         if not all(key in label_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
                               f"label_dict: {label_dict}")
@@ -452,12 +522,11 @@ class DBHandler:
 
     def delete_label_by_id(self, label_id: int) -> None:
         """
-        This methode deletes the label based on the id provided.
-        :param self: DBHandler
-        :param label_id: int
+        Deletes a label entry from the `labels` table based on its ID.
+
+        :param label_id: int (The ID of the label to delete.)
         :return: None
         """
-
 
         # TODO: need to add some better error handling, more visual for the user + the normal log writing
         try:
@@ -485,12 +554,14 @@ class DBHandler:
 
     def get_all_labels(self) -> None | list[dict]:
         """
-        This method returns all labels in the database.
-        Each in the form of a dictionary with the following keys:
-        name, manually, active, conditions, creation_datetime
-        :self: DBHandler
-        :return: None | list[dict]
+        Retrieves all labels from the `labels` table.
+
+        Each label is returned as a dictionary with the following keys:
+        - `id`, `name`, `manually`, `active`, `conditions`, `creation_datetime`.
+
+        :return: list[dict] | None (List of labels, or None on failure.)
         """
+
         try:
             with self.lock:
                 self.cursor.execute('''
@@ -534,28 +605,33 @@ class DBHandler:
                          count_mouse_pressed: int = None, count_direction_key_pressed: int = None,
                          count_char_key_pressed: int = None, count_special_key_pressed: int = None,
                          count_mouse_scrolls: int = None, count_left_mouse_pressed: int = None,
-                         count_right_mouse_pressed: int = None, count_middle_mouse_pressed: int = None):
+                         count_right_mouse_pressed: int = None, count_middle_mouse_pressed: int = None) -> list[dict] | None:
         """
-        Returns a list of input dicts with these keys:
-        id, last_activity_datetime, count_key_pressed, count_mouse_pressed, count_direction_key_pressed,
-        count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls, count_left_mouse_pressed,
-        count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime
-        Default parameters will return the last 24 hours input log.
-        All parameter except end_time are searched as greater equal then.
-        end_time is the only that is searched as less equal then.
-        All parameters which are set will be searched as a AND condition.
-        If you need a OR you need to run this function 2 times and combine the arrays programmatically.
-        :param start_time: datetime
-        :param end_time: datetime
-        :param count_key_pressed: int
-        :param count_mouse_pressed: int
-        :param count_direction_key_pressed: int
-        :param count_char_key_pressed: int
-        :param count_special_key_pressed: int
-        :param count_mouse_scrolls: int
-        :param count_left_mouse_pressed: int
-        :param count_right_mouse_pressed: int
-        :param count_middle_mouse_pressed: int
+        Searches the `input_log` table based on the provided filters.
+
+        This method retrieves logs of user input activities, such as key presses, mouse clicks,
+        and directional inputs, from the database. The default behavior (when no parameters are specified)
+        returns logs from the last 24 hours.
+
+        All parameters, except `end_time`, are searched using "greater than or equal to" (>=).
+        `end_time` is searched using "less than or equal to" (<=).
+        Filters that are set are combined using an AND condition.
+
+        If an OR condition is needed, this method must be called multiple times with different parameters,
+        and the results combined programmatically.
+
+        :param start_time: datetime (Start of the search range. Defaults to 24 hours ago.)
+        :param end_time: datetime (End of the search range. Defaults to the current time.)
+        :param count_key_pressed: int (Minimum number of total key presses to match.)
+        :param count_mouse_pressed: int (Minimum number of total mouse button presses to match.)
+        :param count_direction_key_pressed: int (Minimum number of directional key presses to match.)
+        :param count_char_key_pressed: int (Minimum number of character key presses to match.)
+        :param count_special_key_pressed: int (Minimum number of special key presses to match.)
+        :param count_mouse_scrolls: int (Minimum number of mouse scroll actions to match.)
+        :param count_left_mouse_pressed: int (Minimum number of left mouse button presses to match.)
+        :param count_right_mouse_pressed: int (Minimum number of right mouse button presses to match.)
+        :param count_middle_mouse_pressed: int (Minimum number of middle mouse button presses to match.)
+        :return: list[dict] | None (A list of matching input logs, or None if an error occurs.)
         """
 
         if start_time is None:
@@ -563,7 +639,6 @@ class DBHandler:
 
         if end_time is None:
             end_time = datetime.now()
-
 
         query = '''
             SELECT id, last_activity_datetime,  count_key_pressed, count_mouse_pressed, count_direction_key_pressed,    
@@ -635,28 +710,34 @@ class DBHandler:
 
     def search_window_log(self, window_type: str = None, window_title: str | list[str] = None,
                           word_list: str | list[str] = None, label_list: str | list[str] = None,
-                          start_time: datetime = None, end_time: datetime = None):
+                          start_time: datetime = None, end_time: datetime = None) -> list[dict] | None:
         """
-          Returns a list of window dicts with these keys:
-          id, window_type, window_title, word_list, label_list, creation_datetime
-          Default parameters will return the last 24 hours input log.
-          All parameter except end_time are searched as greater equal then.
-          end_time is the only that is searched as less equal then.
-          All parameters which are set will be searched as a AND condition.
-          If you need a OR you need to run this function 2 times and combine the arrays programmatically.
-          :param start_time: datetime
-          :param end_time: datetime
-          :param window_type: str
-          :param window_title: str | list[str]
-          :param word_list: str | list[str]
-          :param label_list: str | list[str]
+        Searches the `window_log` table based on the provided filters.
 
+        This method retrieves logs of windows and their associated metadata, such as window type,
+        title, word lists, and labels, from the database. The default behavior (when no parameters
+        are specified) returns logs from the last 24 hours.
+
+        All parameters, except `end_time`, are searched using "greater than or equal to" (>=).
+        `end_time` is searched using "less than or equal to" (<=).
+        Filters that are set are combined using an AND condition.
+
+        If an OR condition is needed, this method must be called multiple times with different parameters,
+        and the results combined programmatically.
+
+        :param start_time: datetime (Start of the search range. Defaults to 24 hours ago.)
+        :param end_time: datetime (End of the search range. Defaults to the current time.)
+        :param window_type: str (Filter for the type of the window. Matches substrings case-insensitively.)
+        :param window_title: str | list[str] (Filter for the title of the window. Matches substrings or multiple titles.)
+        :param word_list: str | list[str] (Filter for specific words associated with the window. Matches substrings or multiple words.)
+        :param label_list: str | list[str] (Filter for specific labels associated with the window. Matches substrings or multiple labels.)
+        :return: list[dict] | None (A list of matching window logs, or None if an error occurs.)
         """
+
         if start_time is None:
             start_time = datetime.now() - timedelta(days=1)  # 24 hours ago
         if end_time is None:
             end_time = datetime.now()
-
 
         query = '''
             SELECT id, window_type, window_title, word_list, label_list, creation_datetime
@@ -734,17 +815,23 @@ class DBHandler:
 
 
 # # # # External call functions for less import in other files # # # #
-def start_db():
+def start_db() -> None:
     """
-    To minimize the import this function can be imported to start properly.
+    Starts the database connection.
+
+    :return: None
     """
+
     DBHandler().connect()
 
 
-def stop_db():
+def stop_db() -> None:
     """
-    To minimize the import this function can be imported to stop properly.
+    Stops the database connection.
+
+    :return: None
     """
+
     DBHandler().close()
 
 

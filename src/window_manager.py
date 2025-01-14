@@ -1,22 +1,27 @@
 """
+Main module for handling all aspects of logging windows and managing labels.
+
+This module includes:
+- Window tracking functionality.
+- Label assignment to windows based on conditions.
+- Integration with the database for storing window logs.
 
 Author: sora7672
 """
+__author__ = 'sora7672'
 
-# TODO: Minimize the imports!
 from win32gui import GetForegroundWindow, GetWindowText
 from win32process import GetWindowThreadProcessId
 from psutil import Process, NoSuchProcess
 from db_connector import DBHandler
 from threading import Thread, Lock
-from time import time, sleep
+from time import sleep
 from config_manager import interval_windows, threads_are_stopped
 from log_handler import get_logger
 from conditions import ObjectCondition, ConditionList
-
 from datetime import datetime
-window_thread: Thread = None
 
+window_thread: Thread = None
 # TODO: Add this to the config
 untracked_types = []
 repl_chars = "–—-"
@@ -25,11 +30,21 @@ removable_chars = "._-,!?;: "
 
 class WinInfo:
     """
-    Saves all infos from a read in foreground window
-    This is a class for collecting data in one object, to access it easier
-    and have the same structure all time.
+    Represents information about a foreground window.
+
+    This class provides a consistent structure for storing window data,
+    including metadata such as process ID, title, and associated labels.
+
+    Attributes:
+        creation_datetime (datetime): Timestamp of when the instance was created.
+        process_id (int): ID of the associated process.
+        window_type (str): Type of the window (e.g., application name).
+        window_title (str): Title of the window.
+        window_text_words (list[str]): Words extracted from the window text.
+        _label_list (list[str]): Labels associated with the window.
     """
-    def __init__(self):
+
+    def __init__(self) -> None:
         self.creation_datetime: datetime = datetime.now()
         self.process_id: int = 0
         self.window_type: str = ""
@@ -40,11 +55,16 @@ class WinInfo:
     def __str__(self):
         return str(self.__dict__)
 
-    def fill_self(self):
+    def fill_self(self) -> None:
         """
-        Grabs all infos needed from the active window.
-        Maybe later some extension with background windows too.
+        Gathers all relevant information about the active foreground window.
+
+        If the process ID cannot be determined, an error is logged, and the operation is aborted.
+        Handles special cases for untracked window types.
+
+        :return: None
         """
+
         a_win = GetForegroundWindow()
         self.window_title = GetWindowText(a_win)
         _, self.process_id = GetWindowThreadProcessId(a_win)
@@ -156,40 +176,46 @@ class WinInfo:
             self.set_labels()
             self.write_to_db()
 
-    def set_labels(self):
+    def set_labels(self) -> None:
         """
-        Loops through all labels,
-        which loop through all their conditions to check
-        if the window is ok to have this label.
+        Assigns labels to the window by evaluating all defined conditions.
+
+        Labels are applied if their conditions are met or if they are marked as manual.
+
+        :return: None
         """
+
         for lab in Label.get_all_labels():
             lab.check_and_add_to_window(self)
 
     def write_to_db(self):
         """
-        Simple call to add it to the database
+        Saves the current window's information to the database.
+
+        :return: None
         """
+
         DBHandler().add_window_log(self.as_dict())
 
     def add_label(self, value):
         """
-        Adds a new label to this object.
-        No duplicated labels are added.
-        (Could happen if multiple conditions
-        for the same name are met)
-        Enables chain method casting.
-        :param value: str
-        :return: self
+        Adds a label name to the window object if it does not already exist.
+
+        :param value: str (The label name to be added.)
+        :return: self (For chaining method calls.)
         """
+
         if value.lower() not in [item.lower() for item in self.label_list]:
             self._label_list.append(value)
         return self
 
     def as_dict(self) -> dict:
         """
-        Just returns important attributes as a dict for further usage.
-        :return: dict
+        Converts the window's attributes into a dictionary.
+
+        :return: dict (A dictionary of the window's attributes.)
         """
+
         return dict({"creation_datetime": self.creation_datetime,
                      "window_type": self.window_type, "window_title": self.window_title,
                      "window_text_words": self.window_text_words,
@@ -198,17 +224,26 @@ class WinInfo:
     @property
     def label_list(self) -> list[str]:
         """
-        Returns a list of all labels in this object
+        Returns the list of labels associated with the window.
+
         :return: list[str]
         """
+
         return self._label_list
 
 
 class Label:
     """
-    This class objects hold information about when to apply a Label to a WinInfo object
-    and have methods to append & check these. Can have multiple conditions that need to be True to append.
+    Represents a label that can be applied to windows based on conditions.
+
+    This class supports:
+    - Assigning labels to windows.
+    - Managing conditions for label assignment.
+    - Interacting with the database for saving, updating, and retrieving labels.
+
+    Thread-safe implementation ensures consistency when multiple threads modify labels.
     """
+
     _label_list = []
     _lock = Lock()
 
@@ -218,6 +253,7 @@ class Label:
         self._name: str = name
         self._manually = manually
         self._active = active
+        # todo: simplyfy with just conditionlist param?
         self._condition_list: ConditionList | None = condition_list or None
         self._creation_datetime = datetime.now() if creation_datetime is None else creation_datetime
         self._id = db_id
@@ -236,7 +272,6 @@ class Label:
 
     @condition_list.setter
     def condition_list(self, condition: ConditionList | ObjectCondition | None) -> None:
-
         with self.lock:
             if isinstance(self._condition_list, ObjectCondition):
                 self._condition_list = ConditionList(condition)
@@ -252,7 +287,6 @@ class Label:
     def name(self):
         with self.lock:
             return self._name
-
 
     @name.setter
     def name(self, name: str):
@@ -286,7 +320,11 @@ class Label:
 
     def enable(self):
         """
-        :return: self
+        Activates the label.
+
+        Sets the label's `active` property to True, marking it as active for application.
+
+        :return: Label (Returns the instance for method chaining.)
         """
 
         self.active = True
@@ -294,7 +332,11 @@ class Label:
 
     def disable(self):
         """
-        :return: self
+        Deactivates the label.
+
+        Sets the label's `active` property to False, marking it as inactive for application.
+
+        :return: Label (Returns the instance for method chaining.)
         """
 
         self.active = False
@@ -303,9 +345,11 @@ class Label:
     # FIXME: check all propertys to be used properly, changed a lot of them
     def get_as_dict(self):
         """
-        Just returns important attributes as a dict for further usage.
-        :return: dict
+        Converts the label's attributes into a dictionary.
+
+        :return: dict (A dictionary of the label's attributes.)
         """
+
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             tmp_dict = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
@@ -338,9 +382,11 @@ class Label:
 
     def update_in_db(self):
         """
-        Updates the label object in the database.
-        When its set inactive for example.
+        Updates the label's information in the database.
+
+        :return: None
         """
+
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._id is not None and self._id != "":
@@ -354,7 +400,13 @@ class Label:
         get_logger().debug(f"LABEL {self._name} lock release")
         return self
 
-    def delete_in_db(self):
+    def delete_in_db(self) -> None:
+        """
+        Deletes the label from the database and removes it from the label list.
+
+        :return: None
+        """
+
         DBHandler().delete_label_by_id(self._id)
         with Label._lock:
             Label._label_list.remove(self)
@@ -368,6 +420,7 @@ class Label:
         Can add multiple conditions with multiple methode calls.
         :return: self
         """
+
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._condition_list:
@@ -379,10 +432,12 @@ class Label:
 
     def check_and_add_to_window(self, win_info: WinInfo) -> None:
         """
-        Runs all Condition checks from the Label Object on the WinInfo object.
-        :param win_info: WinInfo
+        Evaluates the label's conditions and adds it to the provided window if applicable.
+
+        :param win_info: WinInfo (The window object to evaluate.)
         :return: None
         """
+
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._active and (self._manually or self._condition_list.is_true(win_info)):
@@ -393,9 +448,11 @@ class Label:
     @classmethod
     def get_all_labels(cls) -> list:
         """
-        Returns all existing labels as list.
-        :return: list[Label]
+        Retrieves all existing labels as a list.
+
+        :return: list[Label] (A list of all label objects.)
         """
+
         get_logger().debug("(CLASS) LABEL lock use")
         with Label._lock:
             tmp_list = cls._label_list
@@ -405,9 +462,11 @@ class Label:
     @classmethod
     def init_all_labels_from_db(cls):
         """
-           This function is for initializing the Label objects from the database.
-           :return: None
-           """
+        Initializes all label objects from the database.
+
+        :return: None
+        """
+
         label_dicts = DBHandler().get_all_labels()
         for label_dict in label_dicts:
             if label_dict["condition_json"] == "{}":
@@ -422,9 +481,13 @@ class Label:
 
 def window_tracker() -> None:
     """
-    This function is for adding to teh thread to run it properly.
+    Tracks the active foreground window and logs its details periodically.
+
+    This function runs in a thread and checks for new windows at intervals specified in the configuration.
+
     :return: None
     """
+
     do_stop = False
     while not threads_are_stopped():
         inter = interval_windows()
@@ -445,7 +508,8 @@ def window_tracker() -> None:
 
 def start_window_tracker() -> None:
     """
-    This function gets called from outside to start the window_tracker module thread.
+    Starts the window tracking functionality in a separate thread.
+
     :return: None
     """
 
@@ -458,9 +522,11 @@ def start_window_tracker() -> None:
 # # # # External call functions for less import in other files # # # #
 def stop_done() -> bool:
     """
-    This function gets called from outside to stop the window_tracker module thread.
-    :return: bool
+    Stops the window tracking thread and waits for it to finish.
+
+    :return: bool (True when the thread has stopped.)
     """
+
     global window_thread
     window_thread.join()
     return True
@@ -468,20 +534,21 @@ def stop_done() -> bool:
 
 def init_all_labels_from_db() -> None:
     """
-    This function is for initializing the Label objects from the database.
+    Initializes all labels from the database.
+
     :return: None
     """
+
     Label.init_all_labels_from_db()
-    # Label(name="python learning", manually = False, db_id=None, condition_list=[
-    #     Condition("window_text_words", "in", "W3Schools"),
-    # Condition("window_text_words", "in", "python")])
+
 
 def update_all_labels_to_db() -> None:
     """
-    This imported function loops through all labels and updates them in the database.
-    Was created in case we want to save all labels in DB on exit of the app.
+    Updates all labels in the database. Useful for saving label states before exiting.
+
     :return: None
     """
+
     for lab in Label.get_all_labels():
         lab.update_in_db()
 

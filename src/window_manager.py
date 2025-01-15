@@ -50,7 +50,7 @@ class WinInfo:
         self.window_type: str = ""
         self.window_title: str = ""
         self.window_text_words: list[str] = []
-        self._label_list: list[str] = []
+        self._label_list: list[int] = []
 
     def __str__(self):
         return str(self.__dict__)
@@ -205,7 +205,7 @@ class WinInfo:
         :return: self (For chaining method calls.)
         """
 
-        if value.lower() not in [item.lower() for item in self.label_list]:
+        if value not in self.label_list:
             self._label_list.append(value)
         return self
 
@@ -222,7 +222,7 @@ class WinInfo:
                      "label_list": self._label_list})
 
     @property
-    def label_list(self) -> list[str]:
+    def label_list(self) -> list[int]:
         """
         Returns the list of labels associated with the window.
 
@@ -441,9 +441,9 @@ class Label:
         get_logger().debug(f"LABEL {self._name} lock use")
         with self.lock:
             if self._active and (self._manually or self._condition_list.is_true(win_info)):
-                win_info.add_label(self._name)
+                win_info.add_label(self._id)
 
-        get_logger().debug(f"LABEL {self._name} lock release")
+        get_logger().debug(f"LABEL {self._id} lock release")
 
     @classmethod
     def get_all_labels(cls) -> list:

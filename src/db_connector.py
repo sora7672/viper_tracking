@@ -169,7 +169,7 @@ class DBHandler:
         Tables:
         1. `window_log` - Logs information about application windows.
         2. `input_log` - Logs user input events.
-        3. `labels` - Stores metadata about labels and their conditions.
+        3. `label_catalog` - Stores metadata about labels and their conditions.
 
         :return: None
         """
@@ -183,10 +183,19 @@ class DBHandler:
                     window_type TEXT NOT NULL COLLATE NOCASE,
                     window_title TEXT NOT NULL COLLATE NOCASE,
                     word_list TEXT NOT NULL COLLATE NOCASE,
-                    label_list TEXT COLLATE NOCASE,
                     creation_datetime TEXT NOT NULL
                 )
             ''')
+            self.conn.commit()
+            self.cursor.execute('''
+                            CREATE TABLE IF NOT EXISTS con_window_label (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                window_id INTEGER NOT NULL,
+                                label_id INTEGER NOT NULL,
+                                FOREIGN KEY (window_id) REFERENCES window_log (id),
+                                FOREIGN KEY (label_id) REFERENCES label_catalog (id)
+                            )
+                        ''')
             self.conn.commit()
             self.cursor.execute('''
                        CREATE TABLE IF NOT EXISTS input_log (
@@ -206,13 +215,14 @@ class DBHandler:
                    ''')
             self.conn.commit()
             self.cursor.execute('''
-                                CREATE TABLE IF NOT EXISTS labels (
+                                CREATE TABLE IF NOT EXISTS label_catalog (
                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                name TEXT NOT NULL COLLATE NOCASE,
+                                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
                                 manually boolean NOT NULL,
                                 active boolean NOT NULL,
                                 conditions TEXT,
-                                creation_datetime TEXT NOT NULL 
+                                creation_datetime TEXT NOT NULL,
+                                deleted BOOLEAN NOT NULL DEFAULT 0
                                )
                            ''')
             self.conn.commit()
@@ -247,7 +257,7 @@ class DBHandler:
 
         try:
             self.cursor.execute('''
-                            SELECT name FROM sqlite_master WHERE type='table' AND name='labels'
+                            SELECT name FROM sqlite_master WHERE type='table' AND name='label_catalog'
                         ''')
 
         except sqlite3.IntegrityError as e:
@@ -318,7 +328,7 @@ class DBHandler:
         - `window_type` (str): The type of the window.
         - `window_title` (str): The title of the window.
         - `window_text_words` (list | set | tuple): Words associated with the window.
-        - `label_list` (list | set | tuple): Labels assigned to the window.
+        - `label_list` (list | set | tuple): Label_ids applied to window
         - `creation_datetime` (datetime): Timestamp of the log.
 
         :param window_dict: dict (Details of the window log.)
@@ -336,9 +346,7 @@ class DBHandler:
         else:
             raise ValueError("(window_dict['window_text_words'] not a (list,tuple,set,frozenset)")
 
-        if isinstance(window_dict["label_list"], (list,tuple,set,frozenset)):
-            labels = ",".join(window_dict["label_list"])
-        else:
+        if not isinstance(window_dict["label_list"], (list,tuple,set,frozenset)):
             raise ValueError("window_dict['label_list'] not a (list,tuple,set,frozenset)")
 
         if isinstance(window_dict["creation_datetime"], datetime):
@@ -348,10 +356,11 @@ class DBHandler:
 
         with self.lock:
             self.cursor.execute('''
-                INSERT INTO window_log (window_type, window_title, word_list, label_list, creation_datetime)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (window_dict["window_type"], window_dict["window_title"], words, labels, creation_datetime))
+                INSERT INTO window_log (window_type, window_title, word_list, creation_datetime)
+                VALUES (?, ?, ?, ?)
+            ''', (window_dict["window_type"], window_dict["window_title"], words, creation_datetime))
             self.conn.commit()
+            # TODO: Grab new id and run an adding of all labels to the db with that id
 
     def add_input_log(self, input_dict: dict) -> None:
         """
@@ -433,7 +442,7 @@ class DBHandler:
         try:
             with self.lock:
                 self.cursor.execute('''
-                    INSERT INTO labels (name, manually, active, conditions, creation_datetime)
+                    INSERT INTO label_catalog (name, manually, active, conditions, creation_datetime)
                     VALUES (?, ?, ?, ?, ?)
                 ''', (label_dict["name"], label_dict["manually"], label_dict["active"],
                       conditions, creation_datetime))
@@ -498,7 +507,7 @@ class DBHandler:
         try:
             with self.lock:
                 self.cursor.execute('''
-                    UPDATE labels 
+                    UPDATE label_catalog 
                     SET name = ?, manually = ?, active = ?, conditions = ?, creation_datetime = ?
                     WHERE id = ?
                 ''', (label_dict["name"], label_dict["manually"], label_dict["active"],
@@ -528,11 +537,11 @@ class DBHandler:
         :return: None
         """
 
-        # TODO: need to add some better error handling, more visual for the user + the normal log writing
+        # TODO: Check when label id exist in con_window_label then set the labelname to "<Name>_deleted<id>" cuz unique
         try:
             with self.lock:
                 self.cursor.execute('''
-                    DELETE FROM labels 
+                    DELETE FROM label_catalog 
                     WHERE id = ?
                 ''', (label_id,))
 
@@ -566,7 +575,8 @@ class DBHandler:
             with self.lock:
                 self.cursor.execute('''
                     SELECT id, name, manually, active, conditions, creation_datetime
-                    FROM labels
+                    FROM label_catalog
+                    WHERE deleted = 0
                     ORDER BY creation_datetime
                 ''')
                 rows = self.cursor.fetchall()
@@ -709,7 +719,7 @@ class DBHandler:
             return out
 
     def search_window_log(self, window_type: str = None, window_title: str | list[str] = None,
-                          word_list: str | list[str] = None, label_list: str | list[str] = None,
+                          word_list: str | list[str] = None, label_list: int | list[int] = None,
                           start_time: datetime = None, end_time: datetime = None) -> list[dict] | None:
         """
         Searches the `window_log` table based on the provided filters.
@@ -730,7 +740,7 @@ class DBHandler:
         :param window_type: str (Filter for the type of the window. Matches substrings case-insensitively.)
         :param window_title: str | list[str] (Filter for the title of the window. Matches substrings or multiple titles.)
         :param word_list: str | list[str] (Filter for specific words associated with the window. Matches substrings or multiple words.)
-        :param label_list: str | list[str] (Filter for specific labels associated with the window. Matches substrings or multiple labels.)
+        :param label_list: int | list[int] (Filter for specific labels associated with the window. Checking for label_ids)
         :return: list[dict] | None (A list of matching window logs, or None if an error occurs.)
         """
 
@@ -738,9 +748,9 @@ class DBHandler:
             start_time = datetime.now() - timedelta(days=1)  # 24 hours ago
         if end_time is None:
             end_time = datetime.now()
-
+        # TODO: need connection to con_window_label
         query = '''
-            SELECT id, window_type, window_title, word_list, label_list, creation_datetime
+            SELECT id, window_type, window_title, word_list, creation_datetime
             FROM window_log
             WHERE creation_datetime >= ? AND creation_datetime <= ?
         '''
@@ -768,15 +778,6 @@ class DBHandler:
                 query += " AND word_list LIKE ?"
                 params.append(f"%{_make_searchable(word_list)}%")
 
-        if label_list:
-            if isinstance(label_list, list):
-                condition, values = _create_in_search_term('label_list', label_list)
-                query += f" AND {condition}"
-                params.extend(values)
-            else:
-                query += " AND label_list LIKE ?"
-                params.append(f"%{_make_searchable(label_list)}%")
-
         query += " ORDER BY creation_datetime ASC"
 
         try:
@@ -791,8 +792,7 @@ class DBHandler:
                     "window_type": row[1],
                     "window_title": row[2],
                     "word_list": row[3].split(","),
-                    "label_list": row[4].split(","),
-                    "creation_datetime": string_to_iso_datetime(row[5])
+                    "creation_datetime": string_to_iso_datetime(row[4])
                 })
 
         except sqlite3.IntegrityError as e:

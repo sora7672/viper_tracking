@@ -360,7 +360,17 @@ class DBHandler:
                 VALUES (?, ?, ?, ?)
             ''', (window_dict["window_type"], window_dict["window_title"], words, creation_datetime))
             self.conn.commit()
-            # TODO: Grab new id and run an adding of all labels to the db with that id
+
+            window_id = self.cursor.lastrowid
+            if len(window_dict["label_list"]) >= 1:
+                cons = [(window_id, label_id) for label_id in window_dict["label_list"]]
+
+                # Perform a batch insert with executemany
+                self.cursor.executemany('''
+                        INSERT INTO con_window_label (window_id, label_id)
+                        VALUES (?, ?)
+                    ''', cons)
+                self.conn.commit()
 
     def add_input_log(self, input_dict: dict) -> None:
         """
@@ -538,28 +548,43 @@ class DBHandler:
         """
 
         # TODO: Check when label id exist in con_window_label then set the labelname to "<Name>_deleted<id>" cuz unique
-        try:
-            with self.lock:
+        with self.lock:
+            try:
+
                 self.cursor.execute('''
-                    DELETE FROM label_catalog 
-                    WHERE id = ?
-                ''', (label_id,))
+                             SELECT 1 
+                 FROM con_window_label
+                 WHERE label_id = ?
+                 LIMIT 1;
+                 ''', (label_id,))
+                found = self.cursor.fetchone()
 
+                if found is None:
+                    self.cursor.execute('''
+                        DELETE FROM label_catalog 
+                        WHERE id = ?
+                    ''', (label_id,))
+                else:
+                    self.cursor.execute('''
+                                       UPDATE label_catalog 
+                                       SET deleted = 1 
+                                       WHERE id = ?
+                                   ''', (label_id,))
                 self.conn.commit()
-        except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while deleting label ID {label_id}: {e}")
-            self.conn.rollback()
+            except sqlite3.IntegrityError as e:
+                get_logger().error(f"Integrity error while deleting label ID {label_id}: {e}")
+                self.conn.rollback()
 
-        except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error during deleting label ID {label_id}: {e}")
+            except sqlite3.OperationalError as e:
+                get_logger().error(f"Operational error during deleting label ID {label_id}: {e}")
 
-        except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while deleting label ID {label_id}: {e}")
-            self.conn.rollback()
+            except sqlite3.DatabaseError as e:
+                get_logger().error(f"Database error while deleting label ID {label_id}: {e}")
+                self.conn.rollback()
 
-        except Exception as e:
-            get_logger().error(f"Unexpected error during deleting label ID {label_id}: {e}")
-            self.conn.rollback()
+            except Exception as e:
+                get_logger().error(f"Unexpected error during deleting label ID {label_id}: {e}")
+                self.conn.rollback()
 
     def get_all_labels(self) -> None | list[dict]:
         """
@@ -748,13 +773,31 @@ class DBHandler:
             start_time = datetime.now() - timedelta(days=1)  # 24 hours ago
         if end_time is None:
             end_time = datetime.now()
-        # TODO: need connection to con_window_label
         query = '''
             SELECT id, window_type, window_title, word_list, creation_datetime
-            FROM window_log
+            FROM window_log'''
+        if label_list:
+            query += '''
+                       LEFT JOIN con_window_label
+                       ON window_log.id = con_window_label.window_id
+                     '''
+        query += '''
             WHERE creation_datetime >= ? AND creation_datetime <= ?
         '''
         params = [start_time.isoformat(), end_time.isoformat()]
+
+        if label_list:
+            if isinstance(label_list, list):
+                placeholder = ', '.join('?' for _ in label_list)
+                query += f'''
+                        AND con_window_label.label_id IN ({placeholder})
+                        '''
+                params.extend(label_list)
+            else:
+                query += '''
+                        AND con_window_label.label_id = ?
+                        '''
+                params.append(label_list)
 
         if window_type:
             query += " AND window_type LIKE ?"
@@ -769,6 +812,7 @@ class DBHandler:
                 query += " AND window_title LIKE ?"
                 params.append(f"%{_make_searchable(window_title)}%")
 
+        # FIXME: this one just looks wrong??
         if word_list:
             if isinstance(word_list, list):
                 condition, values = _create_in_search_term('word_list', word_list)
@@ -796,19 +840,19 @@ class DBHandler:
                 })
 
         except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while searching input logs: {e}")
+            get_logger().error(f"Integrity error while searching window logs: {e}")
             return None
 
         except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error while searching input logs: {e}")
+            get_logger().error(f"Operational error while searching window logs: {e}")
             return None
 
         except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while searching input logs: {e}")
+            get_logger().error(f"Database error while searching window logs: {e}")
             return None
 
         except Exception as e:
-            get_logger().error(f"Unexpected error while searching input logs: {e}")
+            get_logger().error(f"Unexpected error while searching window logs: {e}")
             return None
         else:
             return out

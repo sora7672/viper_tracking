@@ -645,7 +645,7 @@ class LabelFrame(Frame):
         :raises FormValidationError: If required fields are empty or invalid.
         :return: None
         """
-
+        # FIXME: TO fast interaction with save fucntion = in multiple entry creation
         lab_name = self.label_name.get()
         if lab_name == "":
             raise FormValidationError(faulty_fields="label name")
@@ -914,7 +914,7 @@ class ViewController:
         :param event: Event (The event triggering the save operation, typically a button press.)
         :return: None
         """
-
+        # FIXME: to fast clicking results in multiple label creation
         if event is None:
             print("error no button provided")
         else:

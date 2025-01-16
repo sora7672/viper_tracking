@@ -21,6 +21,8 @@ from log_handler import get_logger
 from conditions import ObjectCondition, ConditionList
 from datetime import datetime
 
+from input_manager import input_to_db, had_input
+
 window_thread: Thread = None
 # TODO: Add this to the config
 untracked_types = []
@@ -49,6 +51,7 @@ class WinInfo:
         self.process_id: int = 0
         self.window_type: str = ""
         self.window_title: str = ""
+        self.activity = False
         self.window_text_words: list[str] = []
         self._label_list: list[int] = []
 
@@ -64,7 +67,7 @@ class WinInfo:
 
         :return: None
         """
-
+        self.activity = had_input()
         a_win = GetForegroundWindow()
         self.window_title = GetWindowText(a_win)
         _, self.process_id = GetWindowThreadProcessId(a_win)
@@ -195,7 +198,8 @@ class WinInfo:
         :return: None
         """
 
-        DBHandler().add_window_log(self.as_dict())
+        window_id = DBHandler().add_window_log(self.as_dict())
+        input_to_db(window_id)
 
     def add_label(self, value):
         """
@@ -219,7 +223,7 @@ class WinInfo:
         return dict({"creation_datetime": self.creation_datetime,
                      "window_type": self.window_type, "window_title": self.window_title,
                      "window_text_words": self.window_text_words,
-                     "label_list": self._label_list})
+                     "label_list": self._label_list, "activity": self.activity})
 
     @property
     def label_list(self) -> list[int]:

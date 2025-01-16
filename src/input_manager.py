@@ -26,7 +26,6 @@ from log_handler import get_logger
 # TODO: Maybe change global threads to a class/object based system
 mouse_thread: Thread = None
 keyboard_thread: Thread = None
-input_writer_thread: Thread = None
 
 
 class InputManager:
@@ -52,7 +51,6 @@ class InputManager:
         _count_middle_mouse_pressed (int): Number of middle mouse button clicks.
         _count_mouse_scrolls (int): Number of mouse scroll actions.
         _last_mouse_scroll_datetime (datetime | None): Time of the last mouse scroll action.
-        _last_activity_datetime (datetime | None): Time of the last recorded activity.
         lock (Lock): Ensures that input tracking is safe and error-free.
     """
 
@@ -86,7 +84,6 @@ class InputManager:
         - `_count_middle_mouse_pressed` (int): Tracks the number of middle mouse button presses.
         - `_count_mouse_scrolls` (int): Tracks the number of mouse scroll events.
         - `_last_mouse_scroll_datetime` (datetime | None): Stores the timestamp of the last mouse scroll event.
-        - `_last_activity_datetime` (datetime | None): Stores the timestamp of the last detected user activity.
         - `lock` (Lock): Ensures thread-safe access to the input data.
 
         Additionally, this method sets the singleton instance (`InputManager._instance`) and
@@ -105,8 +102,10 @@ class InputManager:
             self._count_middle_mouse_pressed = 0
             self._count_mouse_scrolls = 0
 
+            # Needed for calculating one scroll only
             self._last_mouse_scroll_datetime = None
-            self._last_activity_datetime = None
+
+            self._activity = False
 
             self.lock = Lock()
             InputManager._instance = self
@@ -129,7 +128,7 @@ class InputManager:
 
         get_logger().debug("InputManager lock use")
         with self.lock:
-            tmp_dict: dict = {"last_activity_datetime": self._last_activity_datetime, "count_key_pressed": (
+            tmp_dict: dict = {"count_key_pressed": (
                          self._count_char_key_pressed + self._count_direction_key_pressed +
                          self._count_special_key_pressed),
                          "count_mouse_pressed": (self._count_left_mouse_pressed + self._count_right_mouse_pressed +
@@ -141,7 +140,7 @@ class InputManager:
                          "count_left_mouse_pressed": self._count_left_mouse_pressed,
                          "count_right_mouse_pressed": self._count_right_mouse_pressed,
                          "count_middle_mouse_pressed": self._count_middle_mouse_pressed}
-            self.reset()
+        self.reset()
         get_logger().debug("InputManager lock release")
         tmp_dict["creation_datetime"] = datetime.now()
         return tmp_dict
@@ -159,17 +158,18 @@ class InputManager:
 
         :return: None
         """
+        with self.lock:
+            self._count_char_key_pressed = 0
+            self._count_direction_key_pressed = 0
+            self._count_special_key_pressed = 0
 
-        self._count_char_key_pressed = 0
-        self._count_direction_key_pressed = 0
-        self._count_special_key_pressed = 0
+            self._count_left_mouse_pressed = 0
+            self._count_right_mouse_pressed = 0
+            self._count_middle_mouse_pressed = 0
+            self._count_mouse_scrolls = 0
+            self._activity = False
 
-        self._count_left_mouse_pressed = 0
-        self._count_right_mouse_pressed = 0
-        self._count_middle_mouse_pressed = 0
-        self._count_mouse_scrolls = 0
-
-    def add_to_db(self) -> None:
+    def add_to_db(self, window_id: int | None) -> None:
         """
         Saves the collected counts into the database.
 
@@ -182,8 +182,11 @@ class InputManager:
 
         :return: None
         """
-
-        DBHandler().add_input_log(self.get_all())
+        if self.activity:
+            if window_id:
+                DBHandler().add_input_log(window_id, self.get_all())
+            else:
+                self.reset()
 
     def add_input(self, user_input_type) -> None:
         """
@@ -211,7 +214,7 @@ class InputManager:
 
         get_logger().debug("InputManager lock use")
         with self.lock:
-            self._last_activity_datetime = datetime.now()
+            self._activity = True
             match user_input_type:
                 case 'char_key':
                     self._count_char_key_pressed += 1
@@ -241,6 +244,12 @@ class InputManager:
                 case _:
                     raise Exception(f'Unexpected input type: {user_input_type}')
         get_logger().debug("InputManager lock released")
+
+    @property
+    def activity(self):
+        with self.lock:
+            tmp = self._activity
+        return tmp
 
 
 # Key lists for different types we want to handle different
@@ -364,30 +373,6 @@ def keyboard_tracker() -> None:
     get_logger().debug("keyboard_tracker() end")
 
 
-def input_writer() -> None:
-    """
-    Writes tracked input data to the database periodically.
-
-    What it does:
-    - Every few seconds, collects all input counts and saves them to the database.
-    - Ensures that input counts are cleared after saving.
-
-    :return: None
-    """
-
-    while not threads_are_stopped():
-        inter = interval_inputs()
-        if inter % 5 != 0:
-            raise Exception(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
-        fifth_timer = inter // 5
-        for i in range(fifth_timer):
-            sleep(5)
-            if threads_are_stopped():
-                break
-        InputManager().add_to_db()
-    get_logger().debug("input_writer() end")
-
-
 # # # # External call functions for less import in other files # # # #
 def stop_done() -> bool:
     """
@@ -404,7 +389,6 @@ def stop_done() -> bool:
 
     mouse_thread.join()
     keyboard_thread.join()
-    input_writer_thread.join()
     return True
 
 
@@ -419,17 +403,22 @@ def start_input_tracker() -> None:
     :return: None
     """
 
-    global mouse_thread, keyboard_thread, input_writer_thread
+    global mouse_thread, keyboard_thread
     mouse_thread = Thread(target=mouse_tracker)
     keyboard_thread = Thread(target=keyboard_tracker)
-    input_writer_thread = Thread(target=input_writer)
 
     mouse_thread.start()
     get_logger().debug("mouse_thread.start()")
     keyboard_thread.start()
     get_logger().debug("keyboard_thread.start()")
-    input_writer_thread.start()
-    get_logger().debug("input_writer_thread.start()")
+
+
+def input_to_db(window_id: int | None):
+    InputManager().add_to_db(window_id)
+
+
+def had_input():
+    return InputManager().activity
 
 
 if __name__ == "__main__":

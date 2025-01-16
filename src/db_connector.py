@@ -199,8 +199,7 @@ class DBHandler:
             self.conn.commit()
             self.cursor.execute('''
                        CREATE TABLE IF NOT EXISTS input_log (
-                           id INTEGER PRIMARY KEY AUTOINCREMENT,
-                           last_activity_datetime TEXT,
+                           window_id INTEGER PRIMARY KEY,
                            count_key_pressed INTEGER,
                            count_mouse_pressed INTEGER,
                            count_direction_key_pressed INTEGER,
@@ -210,7 +209,7 @@ class DBHandler:
                            count_left_mouse_pressed INTEGER,
                            count_right_mouse_pressed INTEGER,
                            count_middle_mouse_pressed INTEGER,
-                           creation_datetime TEXT NOT NULL
+                           FOREIGN KEY (window_id) REFERENCES window_log (id) ON DELETE CASCADE
                        )
                    ''')
             self.conn.commit()
@@ -320,7 +319,7 @@ class DBHandler:
                 self.conn.close()
         get_logger().info(f"database connection closed.")
 
-    def add_window_log(self, window_dict: dict) -> None:
+    def add_window_log(self, window_dict: dict) -> int | None:
         """
         Inserts a window log entry into the `window_log` table.
 
@@ -371,53 +370,41 @@ class DBHandler:
                         VALUES (?, ?)
                     ''', cons)
                 self.conn.commit()
+        return window_id
 
-    def add_input_log(self, input_dict: dict) -> None:
+    def add_input_log(self, window_id:int, input_dict: dict) -> None:
         """
         Inserts an input log entry into the `input_log` table.
 
         Required Keys in `input_dict`:
-        - `last_activity_datetime` (datetime): Last activity timestamp.
         - `count_key_pressed` (int): Total key presses.
         - `count_mouse_pressed` (int): Total mouse button presses.
-        - `creation_datetime` (datetime): Timestamp of the log.
         - Additional counters for specific inputs (e.g., `count_char_key_pressed`).
 
         :param input_dict: dict (Details of the input log.)
         :return: None
         """
 
-        keys_needed = ["last_activity_datetime", "count_key_pressed", "count_mouse_pressed",
+        keys_needed = ["count_key_pressed", "count_mouse_pressed",
                        "count_direction_key_pressed", "count_char_key_pressed", "count_special_key_pressed",
                        "count_mouse_scrolls", "count_left_mouse_pressed", "count_right_mouse_pressed",
-                       "count_middle_mouse_pressed", "creation_datetime"]
+                       "count_middle_mouse_pressed"]
         if not all(key in input_dict for key in keys_needed):
             get_logger().warn(f"At least one missing key: {keys_needed}\n"
                               f"input_dict: {input_dict}")
             return None
 
-        if isinstance(input_dict["creation_datetime"], datetime):
-            creation_datetime = input_dict["creation_datetime"].isoformat()
-        else:
-            raise ValueError("input_dict['creation_datetime'] not a (datetime)")
-
-        if isinstance(input_dict["last_activity_datetime"], datetime):
-            last_activity_datetime = input_dict["last_activity_datetime"].isoformat()
-        else:
-            raise ValueError("input_dict['last_activity_datetime'] not a (datetime)")
-
         with self.lock:
             self.cursor.execute('''
-                INSERT INTO input_log (last_activity_datetime, count_key_pressed, count_mouse_pressed, 
+                INSERT INTO input_log (window_id, count_key_pressed, count_mouse_pressed, 
                 count_direction_key_pressed, count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls,
-                 count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (last_activity_datetime, input_dict["count_key_pressed"],
+                 count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (window_id,  input_dict["count_key_pressed"],
                   input_dict["count_mouse_pressed"], input_dict["count_direction_key_pressed"],
                   input_dict["count_char_key_pressed"], input_dict["count_special_key_pressed"],
                   input_dict["count_mouse_scrolls"], input_dict["count_left_mouse_pressed"],
-                  input_dict["count_right_mouse_pressed"], input_dict["count_middle_mouse_pressed"],
-                  creation_datetime))
+                  input_dict["count_right_mouse_pressed"], input_dict["count_middle_mouse_pressed"]))
             self.conn.commit()
 
     def add_label(self, label_dict: dict) -> None | int:
@@ -636,7 +623,7 @@ class DBHandler:
 
             return labels
 
-    def search_input_log(self, start_time: datetime = None, end_time: datetime = None, count_key_pressed: int = None,
+    def search_input_log(self, count_key_pressed: int = None,
                          count_mouse_pressed: int = None, count_direction_key_pressed: int = None,
                          count_char_key_pressed: int = None, count_special_key_pressed: int = None,
                          count_mouse_scrolls: int = None, count_left_mouse_pressed: int = None,
@@ -669,20 +656,15 @@ class DBHandler:
         :return: list[dict] | None (A list of matching input logs, or None if an error occurs.)
         """
 
-        if start_time is None:
-            start_time = datetime.now() - timedelta(days=1)  # 24 hours ago
-
-        if end_time is None:
-            end_time = datetime.now()
 
         query = '''
-            SELECT id, last_activity_datetime,  count_key_pressed, count_mouse_pressed, count_direction_key_pressed,    
+            SELECT window_id, count_key_pressed, count_mouse_pressed, count_direction_key_pressed,    
                         count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls, 
-                        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed, creation_datetime         
+                        count_left_mouse_pressed, count_right_mouse_pressed, count_middle_mouse_pressed         
             FROM input_log
-            WHERE creation_datetime >= ? AND creation_datetime <= ?
+            WHERE window_id != 0 
         '''
-        params = [start_time.isoformat(), end_time.isoformat()]
+        params = []
 
         # Work smart not hard ^^
         def add_gt_condition(field_name, value):
@@ -701,8 +683,6 @@ class DBHandler:
         add_gt_condition("count_right_mouse_pressed", count_right_mouse_pressed)
         add_gt_condition("count_middle_mouse_pressed", count_middle_mouse_pressed)
 
-        query += " ORDER BY creation_datetime ASC"
-
         try:
             with self.lock:
                 out = []
@@ -711,18 +691,16 @@ class DBHandler:
 
                 for row in rows:
                     out.append({
-                        "id": row[0],
-                        "last_activity_datetime": string_to_iso_datetime(row[1]),
-                        "count_key_pressed": row[2],
-                        "count_mouse_pressed": row[3],
-                        "count_direction_key_pressed": row[4],
-                        "count_char_key_pressed": row[5],
-                        "count_special_key_pressed": row[6],
-                        "count_mouse_scrolls": row[7],
-                        "count_left_mouse_pressed": row[8],
-                        "count_right_mouse_pressed": row[9],
-                        "count_middle_mouse_pressed": row[10],
-                        "creation_datetime": string_to_iso_datetime(row[11])
+                        "window_id": row[0],
+                        "count_key_pressed": row[1],
+                        "count_mouse_pressed": row[2],
+                        "count_direction_key_pressed": row[3],
+                        "count_char_key_pressed": row[4],
+                        "count_special_key_pressed": row[5],
+                        "count_mouse_scrolls": row[6],
+                        "count_left_mouse_pressed": row[7],
+                        "count_right_mouse_pressed": row[8],
+                        "count_middle_mouse_pressed": row[9]
                     })
 
         except sqlite3.IntegrityError as e:

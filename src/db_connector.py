@@ -17,6 +17,7 @@ import json
 from log_handler import get_logger
 from os import path, makedirs
 from datetime import datetime, timedelta
+from pandas import DataFrame, merge as pandas_merge
 
 
 class DateTimeTypeError(Exception):
@@ -382,6 +383,7 @@ class DBHandler:
         - Additional counters for specific inputs (e.g., `count_char_key_pressed`).
 
         :param input_dict: dict (Details of the input log.)
+        :param window_id: int (The id of the window at time of saving)
         :return: None
         """
 
@@ -723,7 +725,7 @@ class DBHandler:
 
     def search_window_log(self, window_type: str = None, window_title: str | list[str] = None,
                           word_list: str | list[str] = None, label_list: int | list[int] = None,
-                          start_time: datetime = None, end_time: datetime = None) -> list[dict] | None:
+                          start_time: datetime = None, end_time: datetime = None) -> DataFrame | None:
         """
         Searches the `window_log` table based on the provided filters.
 
@@ -807,16 +809,6 @@ class DBHandler:
                 self.cursor.execute(query, params)
                 results = self.cursor.fetchall()
 
-            out = []
-            for row in results:
-                out.append({
-                    "id": row[0],
-                    "window_type": row[1],
-                    "window_title": row[2],
-                    "word_list": row[3].split(","),
-                    "creation_datetime": string_to_iso_datetime(row[4])
-                })
-
         except sqlite3.IntegrityError as e:
             get_logger().error(f"Integrity error while searching window logs: {e}")
             return None
@@ -833,7 +825,73 @@ class DBHandler:
             get_logger().error(f"Unexpected error while searching window logs: {e}")
             return None
         else:
+            window_df = DataFrame(
+                [
+                    {
+                        "window_id": row[0],
+                        "window_type": row[1],
+                        "window_title": row[2],
+                        "word_list": row[3].split(","),
+                        "creation_datetime": string_to_iso_datetime(row[4]),
+                    }
+                    for row in results
+                ]
+            )
+
+            ids = tuple(window_df['window_id'].tolist())
+            inputs = self.get_inputs_by_window_id(ids)
+            if inputs is not None:
+                out = pandas_merge(window_df, inputs, on="window_id", how="left")
+                out["activity"] = out["count_key_pressed"].apply(lambda x: True if x is not None and x >= 0 else False)
+                out["all_activity_count"] = out[
+                    [
+                        "count_key_pressed", "count_mouse_pressed", "count_direction_key_pressed",
+                        "count_char_key_pressed",  "count_special_key_pressed", "count_mouse_scrolls",
+                        "count_left_mouse_pressed", "count_right_mouse_pressed", "count_middle_mouse_pressed"
+                    ]
+                ].sum(axis=1)
+            else:
+                out = window_df
+
             return out
+
+    def get_inputs_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame| None:
+
+        if window_ids is None:
+            get_logger().error(f"Value Error, no window ids provided in get_inputs_by_window_id()")
+            return None
+
+        if isinstance(window_ids, int):
+            params = (window_ids,)
+        else:
+            params = window_ids
+        query = "SELECT * FROM input_log WHERE window_id IN ({})".format(
+            ",".join(["?"] * len(params))  # Create placeholders for each ID
+        )
+
+        try:
+            with self.lock:
+                self.cursor.execute(query, params)
+
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while getting input log: {e}")
+            return None
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error while getting input log: {e}")
+            return None
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while getting input log: {e}")
+            return None
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error while getting input log: {e}")
+            return None
+        else:
+            columns = [desc[0] for desc in self.cursor.description]
+            data_out = DataFrame(self.cursor.fetchall(), columns=columns)
+            return data_out
 
 
 # # # # External call functions for less import in other files # # # #

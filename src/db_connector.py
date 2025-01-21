@@ -838,12 +838,12 @@ class DBHandler:
                 ]
             )
 
-            ids = tuple(window_df['window_id'].tolist())
-            inputs = self.get_inputs_by_window_id(ids)
+            window_ids = tuple(window_df['window_id'].tolist())
+            inputs = self.get_inputs_by_window_id(window_ids)
             if inputs is not None:
-                out = pandas_merge(window_df, inputs, on="window_id", how="left")
-                out["activity"] = out["count_key_pressed"].apply(lambda x: True if x is not None and x >= 0 else False)
-                out["all_activity_count"] = out[
+                input_merged = pandas_merge(window_df, inputs, on="window_id", how="left")
+                input_merged["activity"] = input_merged["count_key_pressed"].apply(lambda x: True if x is not None and x >= 0 else False)
+                input_merged["all_activity_count"] = input_merged[
                     [
                         "count_key_pressed", "count_mouse_pressed", "count_direction_key_pressed",
                         "count_char_key_pressed",  "count_special_key_pressed", "count_mouse_scrolls",
@@ -851,11 +851,17 @@ class DBHandler:
                     ]
                 ].sum(axis=1)
             else:
-                out = window_df
+                input_merged = window_df
 
-            return out
+            labels = self.get_labels_by_window_id(window_ids)
+            if labels is not None:
+                labels_merged = pandas_merge(input_merged, labels, on="window_id", how="left")
+            else:
+                labels_merged = input_merged
 
-    def get_inputs_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame| None:
+            return labels_merged
+
+    def get_inputs_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
 
         if window_ids is None:
             get_logger().error(f"Value Error, no window ids provided in get_inputs_by_window_id()")
@@ -891,6 +897,56 @@ class DBHandler:
         else:
             columns = [desc[0] for desc in self.cursor.description]
             data_out = DataFrame(self.cursor.fetchall(), columns=columns)
+            return data_out
+
+
+    def get_labels_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
+        if window_ids is None:
+            get_logger().error(f"Value Error, no window ids provided in get_labels_by_window_id()")
+            return None
+
+        if isinstance(window_ids, int):
+            params = (window_ids,)
+        else:
+            params = window_ids
+
+        query = """
+            SELECT con_window_label.window_id, label_catalog.name
+            FROM con_window_label
+            LEFT JOIN label_catalog
+            ON con_window_label.label_id = label_catalog.id
+            WHERE con_window_label.window_id IN ({})
+        """.format(",".join(["?"] * len(params)))
+
+        try:
+            with self.lock:
+                self.cursor.execute(query, params)
+
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while getting labels: {e}")
+            return None
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error while getting labels: {e}")
+            return None
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while getting labels: {e}")
+            return None
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error while getting labels: {e}")
+            return None
+
+        else:
+            columns = [desc[0] for desc in self.cursor.description]
+            data_out = (
+                DataFrame(self.cursor.fetchall(), columns=columns)
+                .rename(columns={"name": "label_list"})
+                .groupby("window_id", as_index=False)
+                .agg({"label_list": lambda x: list(x.dropna().unique())})
+            )
+
             return data_out
 
 

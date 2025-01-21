@@ -6,204 +6,290 @@ Author: sora7672
 """
 __author__ = 'sora7672'
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from threading import Lock, Thread
 from time import sleep, gmtime, strftime
 from pandas import DataFrame, Series
+from abc import ABC, abstractmethod
 
 import pandas as pd
+
 from config_manager import threads_are_stopped, stop_program_threads
 from db_connector import DBHandler, stop_db, start_db
 
 
-class StandardAnalyzes:
+class Seconds(int):
+
+    def __new__(cls, value):
+        if not isinstance(value, int):
+            raise ValueError("Seconds must be initialized with an integer value.")
+        return super().__new__(cls, value)
+
+    @property
+    def mins(self):
+        mins, secs = divmod(self, 60)
+        return f"{mins}:{secs}"
+
+    @property
+    def hours(self):
+        mins, secs = divmod(self, 60)
+        hours, mins = divmod(mins, 60)
+        return f"{hours}:{mins}:{secs}"
+
+    @property
+    def days(self):
+        mins, secs = divmod(self, 60)
+        hours, mins = divmod(mins, 60)
+        days, hours = divmod(hours, 24)
+        return f"{days}:{hours}:{mins}:{secs}"
+
+    @property
+    def weeks(self):
+        mins, secs = divmod(self, 60)
+        hours, mins = divmod(mins, 60)
+        days, hours = divmod(hours, 24)
+        weeks, days = divmod(days, 7)
+        return f"{weeks}:{days}:{hours}:{mins}:{secs}"
+
+
+class ViperDF:
+
+    def __init__(self, name: str, main_df: DataFrame):
+        # Naming should be "name" or "label:blahh" or "app:blahh" if name includes ":" check for app/label
+        # and set some flags for further implementation
+        self.name = name
+        self._main_df: DataFrame = main_df
+        if not self._validate_mainframe():
+            raise ValueError("Main frame is not valid.")
+        self.analysis_results: dict = {}
+        self.is_app_based = name.startswith("app:")
+        self.is_label_based = name.startswith("label:")
+
+
+    def _validate_mainframe(self):
+        # Check for all fields in the DF that are needed from the analyses
+        needed_columns = ["window_id", "window_type", "window_title", "word_list", "creation_datetime", "activity",
+                          "count_key_pressed", "count_mouse_pressed",  "count_direction_key_pressed",
+                          "count_char_key_pressed", "count_special_key_pressed", "count_mouse_scrolls",
+                          "count_left_mouse_pressed", "count_right_mouse_pressed", "count_middle_mouse_pressed"]
+        if all(ncol in self._main_df.columns for ncol in needed_columns):
+            return True
+        else:
+            return False
+    def split_data_on_label(self):
+        # returns multiple new ViperDF with flag label, each auto analyze?
+        pass
+
+    def split_data_on_apps(self):
+        # returns multiple new ViperDF with flag app, each auto analyze?
+        pass
+
+    def analyze(self):
+        # calls all protected analyzes functions
+        # ORDER MATTERS!
+        self._time_analysis()
+        self._input_analysis()
+        self._app_analysis()
+        self._label_analysis()
+
+    def _time_analysis(self):
+
+        self._main_df.sort_values(by=["creation_datetime"], ascending=True)
+        self.analysis_results["first_datetime"] = self._main_df["creation_datetime"].iloc[0]
+        self.analysis_results["last_datetime"] = self._main_df["creation_datetime"].iloc[-1]
+        self.analysis_results["time_frame_seconds"] = Seconds(int((self.analysis_results["last_datetime"]
+                                                                   - self.analysis_results["first_datetime"])
+                                                                  .total_seconds()))
+
+        self.analysis_results["entry_count"] = len(self._main_df)
+        self.analysis_results["tracked_seconds"] = Seconds(5 * self.analysis_results["entry_count"])
+        self.analysis_results["untracked_seconds"] = Seconds(self.analysis_results["time_frame_seconds"]
+                                                             - self.analysis_results["tracked_seconds"])
+
+        self.analysis_results["active_secs"] = Seconds(5 * len(self._main_df[self._main_df["activity"]]))
+        self.analysis_results["inactive_secs"] = (self.analysis_results["tracked_seconds"] -
+                                                  self.analysis_results["active_secs"])
+
+        self.analysis_results["percent_active"] = round((self.analysis_results["active_secs"]/(
+                                                    self.analysis_results["tracked_seconds"]/100)), 2)
+
+    def _input_analysis(self):
+
+        input_columns = [
+            "count_key_pressed",
+            "count_mouse_pressed",
+            "count_direction_key_pressed",
+            "count_char_key_pressed",
+            "count_special_key_pressed",
+            "count_mouse_scrolls",
+            "count_left_mouse_pressed",
+            "count_right_mouse_pressed",
+            "count_middle_mouse_pressed",
+            "all_activity_count"
+        ]
+
+        only_actives = self._main_df[self._main_df['activity']]
+        num_activities = len(only_actives)
+
+        all_max = {col: int(only_actives[col].max()) for col in input_columns}
+        all_summed = {col: int(only_actives[col].sum()) for col in input_columns}
+        all_average = {col: int(all_summed[col] / num_activities) for col in input_columns}
+        all_active_value = {col: int((all_max[col] + all_average[col]) / 2) for col in input_columns}
+
+        self.analysis_results["input_max"] = all_max
+        self.analysis_results["input_summed"] = all_summed
+        self.analysis_results["input_average"] = all_average
+        self.analysis_results["input_active_value"] = all_active_value
+
+    def _app_analysis(self):
+        app_win_count = self._main_df["window_type"].value_counts().to_dict()
+        self.analysis_results["apps"] = {"num_unique": len(app_win_count), "entrys": app_win_count}
+
+    def _label_analysis(self):
+        # count each label, sort by counts
+        # count unlabeled timeframes vs labeled time frames
+        # count unique labeld time frames (only one label) vs multi labeled
+
+        all_labels = self._main_df["label_list"].dropna().explode()
+        label_counts = all_labels.value_counts().to_dict()
+
+        self.analysis_results["labels"] = {
+            "num_unique": len(label_counts),
+            "entrys": label_counts
+        }
+
+
+
+# for analyzer: check if maindf count = sub count on each, if yes ignore the new df and set a analysis result like (
+class Analyzer(ABC):
+    _all_analyzer = []
+    _class_lock = Lock()
+
+    def __init__(self, analyzer_type: str, main_df: DataFrame):
+        self.lock = Lock()
+        if len(Analyzer._all_analyzer) == 0 or analyzer_type.upper() not in Analyzer._all_analyzer:
+            Analyzer._all_analyzer.append(self)
+        else:
+            raise ValueError(f'Analyzer of type "{analyzer_type}" already initialized!')
+
+        self._analyzer_type: str = analyzer_type.upper()
+        self._main_df = main_df
+
+
+
+
+        self._analyze()
+
+    def __del__(self):
+        with Analyzer._class_lock:
+            Analyzer._all_analyzer.remove(self)
+        del self
+
+    @abstractmethod
+    def _analyze(self):
+        """ This methode will analyze the data frame according to the analyzer type."""
+        pass
+
+    @abstractmethod
+    def _refresh_data(self):
+        """ This methode will refresh the data frame according to the analyzer type."""
+        pass
+
+    def refresh(self):
+        """ This method will call the refresh_data and after analyze method to refresh the data frame."""
+        self._refresh_data()
+        self._analyze()
+
+    @property
+    def analyzer_type(self):
+        with self.lock:
+            return self._analyzer_type
+
+    @classmethod
+    def get_analyzer_types_used(cls):
+        with cls._class_lock:
+            return [a.analyzer_type for a in cls._all_analyzer]
+
+
+# # # # Stuff to add # # # #
+
+
+
+    # def check_after_interval(self):
+    #     """ simple checks for time saved and if its already """
+    #     if self._next_check_timestamp >= datetime.now():
+    #         self._data_refresh()
+    #
+    # def _thread_actions(self):
+    #
+    #     do_stop = False
+    #     while not threads_are_stopped():
+    #         inter = 30  # Needs to stay 60
+    #         fifth_timer = inter // 5
+    #
+    #         for i in range(fifth_timer):
+    #             sleep(5)
+    #             if threads_are_stopped():
+    #                 do_stop = True
+    #                 break
+    #         if do_stop:
+    #             break
+    #         self.check_after_interval()
+    #     self._thread_closed = True
+
+# # # # # # # # # # # # # # #
+
+
+class StandardAnalyzer(Analyzer):
     _instance = None
 
+    # FIXME: Check if the new "super().__new__(cls)" compared to "super(cls, cls).__new__(cls)" works
     def __new__(cls, *args, **kwargs):
         """
         Ensures that StandardAnalyzes follows the singleton pattern.
 
         :return: StandardAnalyzes (The singleton instance.)
         """
-
         if cls._instance is None:
-            cls._instance = super(cls, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
-        """
-        Initializes the StandardAnalyzes instance, setting attributes and locks.
-
-        :return: None
-        """
-
+    def __init__(self, main_df: DataFrame, time_frame: str = "DAY"):
         if not hasattr(self, '_initialized'):
             self._initialized = True
-            self._day_df = None
-            self._day_analyzed_dict = {}
-            self._last_check_timestamp = None
-            self._next_check_timestamp = None
-            self.check_interval_minutes = 1
-            self._thread = Thread(target=self._thread_actions)
-            self._thread_closed = True
+            if time_frame.upper() not in ("DAY", "WEEK", "MONTH"):
+                raise ValueError("time_frame must be one of 'DAY', 'WEEK', 'MONTH'")
+            super().__init__(analyzer_type=f"STANDARD_ANALYZER_{time_frame}", main_df=main_df)
+            self._time_frame = time_frame
 
-            self._lock = Lock()
-
-            self._data_refresh()
-
-            self._thread.start()
-
-    def _data_refresh(self):
-        """
-        Refreshes the data in the
-        """
-        self._last_check_timestamp = datetime.now()
-        self._next_check_timestamp = datetime.now() + timedelta(minutes=self.check_interval_minutes)
-        # TODO: remove the test timeframe, it auto uses last 24 hours.
-        self._day_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
-
-        self._analyze_general_data_day()
-
-    def _analyze_general_data_day(self):
-        alltm,activetm, inactivetm, activep = self._df_activity(self._day_df)
-        self._day_analyzed_dict["activity"] = {
-            "all_minutes": alltm,
-            "active_minutes": activetm,
-            "inactive_minutes": inactivetm,
-            "percent_active": activep
-        }
-        self._day_analyzed_dict["average"] = self._df_average_inputs(self._day_df)
-
-        print(self._day_analyzed_dict)
-        # Todo:
-        #  average_active_key_pushes
-        #  average_active_mouse_clicks
-        #  average_active_mouse_scrolls
-        #  -----
-        #  number_of_applications
-        #  count_all_activities
-        #
-
-    def _df_average_inputs(self, df):
-        if "activity" not in df.columns:
-            raise ValueError("No activity column")
-        else:
-            only_actives = df[df['activity']]
-            num_activities = len(only_actives)
-            all_summed = {
-                "count_key_pressed": only_actives['count_key_pressed'].sum(),
-                "count_mouse_pressed": only_actives['count_mouse_pressed'].sum(),
-                "count_direction_key_pressed": only_actives['count_direction_key_pressed'].sum(),
-                "count_char_key_pressed": only_actives['count_char_key_pressed'].sum(),
-                "count_special_key_pressed": only_actives['count_special_key_pressed'].sum(),
-                "count_mouse_scrolls": only_actives['count_mouse_scrolls'].sum(),
-                "count_left_mouse_pressed": only_actives['count_left_mouse_pressed'].sum(),
-                "count_right_mouse_pressed": only_actives['count_right_mouse_pressed'].sum(),
-                "count_middle_mouse_pressed": only_actives['count_middle_mouse_pressed'].sum(),
-                "all_activity_count": only_actives['all_activity_count'].sum()
-
-            }
-            all_average = {
-                key: int((value / num_activities).flat[0])
-                for key, value in all_summed.items()
-            }
-
-            return all_average
-    def _df_activity(self, df:DataFrame):
-        if "activity" not in df.columns:
-            raise ValueError("No activity column")
-        else:
-
-            all_secs = 5 * len(df)
-            active_secs = 5 * len(df[df["activity"]])
-            inactive_secs = all_secs - active_secs
-
-            all_time_mm_ss = secs_to_mm_ss(all_secs)
-            active_time_mm_ss = secs_to_mm_ss(active_secs)
-            inactive_time_mm_ss = secs_to_mm_ss(inactive_secs)
-            percent_active = int(active_secs / (all_secs / 100))
-
-            return all_time_mm_ss, active_time_mm_ss, inactive_time_mm_ss, percent_active
-
-
-    def _analyze_application_data_day(self):
+    def _analyze(self):
+        """ This methode will analyze the data frame according to the analyzer type."""
         pass
-        # Todo: Per window_type
-        #  time_tracked_minutes
-        #  time_active_minutes
-        #  time_inactive_minutes
-        #  %active
-        #  average_active_key_pushes
-        #  average_active_mouse_clicks
-        #  average_active_mouse_scrolls
 
-        # TODO: Compare Application data
-
-    def _analyze_label_data_day(self):
+    def _refresh_data(self):
+        """ This methode will refresh the data frame according to the analyzer type."""
         pass
-        # Todo: Per label_id in con_window_label
-        #  time_tracked_minutes
-        #  time_active_minutes
-        #  time_inactive_minutes
-        #  %active
-        #  average_active_key_pushes
-        #  average_active_mouse_clicks
-        #  average_active_mouse_scrolls
-        #  % of all time that day usage
-        #  % of all active time that day usage
 
-        # TODO: Compare Label data
 
-    def check_after_interval(self):
-        """ simple checks for time saved and if its already """
-        if self._next_check_timestamp >= datetime.now():
-            self._data_refresh()
 
-    def _thread_actions(self):
 
-        do_stop = False
-        while not threads_are_stopped():
-            inter = 30  # Needs to stay 60
-            fifth_timer = inter // 5
-
-            for i in range(fifth_timer):
-                sleep(5)
-                if threads_are_stopped():
-                    do_stop = True
-                    break
-            if do_stop:
-                break
-            self.check_after_interval()
-        self._thread_closed = True
-
-    @property
-    def thread_closed(self):
-        with self._lock:
-            return bool(self._thread_closed)
-
-    def wait_for_thread_closed(self):
-        """
-        After calling this, the function waits till the thread is closed.
-        """
-        self._thread.join()
-
-# # # # Helper functions # # # #
-def secs_to_mm_ss(secs):
-    m, s = divmod(secs, 60)
-    return f"{m}:{s:02}"
 
 
 # # # # External Call functions # # # #
-
 def init_standard_analyzes():
-    StandardAnalyzes()
+    pass
+
 
 if __name__ == "__main__":
     start_db()
     pd.set_option("display.max_columns", None)
     pd.set_option("display.width", None)
 
-    init_standard_analyzes()
+    test_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
+
+    vdf = ViperDF(name="test", main_df=test_df)
+    vdf.analyze()
+    #print(vdf.analysis_results)
 
     stop_db()
     #print("Please start with the main.py")

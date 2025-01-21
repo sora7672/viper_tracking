@@ -535,7 +535,7 @@ class ConditionFrame(Frame):
 
         self.destroy()
 
-
+# FIXME: Labelframes make comoboxes scrollabale, remove that because it changes value before saving
 class LabelFrame(Frame):
     """
     Frame for creating, editing, and managing labels.

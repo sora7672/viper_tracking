@@ -16,6 +16,7 @@ import pandas as pd
 
 from config_manager import threads_are_stopped, stop_program_threads
 from db_connector import DBHandler, stop_db, start_db
+from helper_classes import Classproperty
 
 
 class Seconds(int):
@@ -66,6 +67,12 @@ class ViperDF:
         self._is_analyzed = False
         self.is_app_based = name.startswith("app:")
         self.is_label_based = name.startswith("label:")
+
+    def __repr__(self):
+        return f"VDF '{self.name}'"
+
+    def __str__(self):
+        return f"VDF '{self.name}'"
 
 
     def _validate_mainframe(self):
@@ -201,17 +208,13 @@ class Analyzer(ABC):
     _all_analyzer = []
     _class_lock = Lock()
 
-    def __init__(self, analyzer_type: str, main_df: DataFrame):
+    def __init__(self, name: str, main_df: DataFrame):
         self.lock = Lock()
-        if len(Analyzer._all_analyzer) == 0 or analyzer_type.upper() not in Analyzer._all_analyzer:
-            Analyzer._all_analyzer.append(self)
-        else:
-            raise ValueError(f'Analyzer of type "{analyzer_type}" already initialized!')
 
-        self._analyzer_type: str = analyzer_type.upper()
+        self._name: str = name.upper()
         self._main_df = main_df
-
-        self._analyze()
+        with Analyzer._class_lock:
+            Analyzer._all_analyzer.append(self)
 
     def __del__(self):
         with Analyzer._class_lock:
@@ -234,49 +237,19 @@ class Analyzer(ABC):
         self._analyze()
 
     @property
-    def analyzer_type(self):
+    def name(self):
         with self.lock:
-            return self._analyzer_type
+            return self._name
 
     @classmethod
-    def get_analyzer_types_used(cls):
+    def get_all_analyzer(cls):
         with cls._class_lock:
-            return [a.analyzer_type for a in cls._all_analyzer]
+            return cls._all_analyzer
 
 
-# # # # Stuff to add # # # #
-
-
-
-    # def check_after_interval(self):
-    #     """ simple checks for time saved and if its already """
-    #     if self._next_check_timestamp >= datetime.now():
-    #         self._data_refresh()
-    #
-    # def _thread_actions(self):
-    #
-    #     do_stop = False
-    #     while not threads_are_stopped():
-    #         inter = 30  # Needs to stay 60
-    #         fifth_timer = inter // 5
-    #
-    #         for i in range(fifth_timer):
-    #             sleep(5)
-    #             if threads_are_stopped():
-    #                 do_stop = True
-    #                 break
-    #         if do_stop:
-    #             break
-    #         self.check_after_interval()
-    #     self._thread_closed = True
-
-# # # # # # # # # # # # # # #
-
-
-class StandardAnalyzer(Analyzer):
+class DayAnalyzer(Analyzer):
     _instance = None
 
-    # FIXME: Check if the new "super().__new__(cls)" compared to "super(cls, cls).__new__(cls)" works
     def __new__(cls, *args, **kwargs):
         """
         Ensures that StandardAnalyzes follows the singleton pattern.
@@ -287,25 +260,82 @@ class StandardAnalyzer(Analyzer):
             cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self, main_df: DataFrame, time_frame: str = "DAY"):
+    def __init__(self):
         if not hasattr(self, '_initialized'):
             self._initialized = True
-            if time_frame.upper() not in ("DAY", "WEEK", "MONTH"):
-                raise ValueError("time_frame must be one of 'DAY', 'WEEK', 'MONTH'")
-            super().__init__(analyzer_type=f"STANDARD_ANALYZER_{time_frame}", main_df=main_df)
-            self._time_frame = time_frame
+            self._db_call = DBHandler().search_window_log
+            tmp_df = self._db_call()
+            super().__init__(name="DAY_ANALYZER", main_df=tmp_df)
+            self._vdf = None
+            self._analyze()
+
+
 
     def _analyze(self):
         """ This methode will analyze the data frame according to the analyzer type."""
-        pass
+        self._vdf = ViperDF("DayAnalyzer", self._main_df)
+        self._vdf.analyze()
+        self._app_vdf_list = self._vdf.split_data_on_app()
+        self._label_vdf_list = self._vdf.split_data_on_label()
 
     def _refresh_data(self):
         """ This methode will refresh the data frame according to the analyzer type."""
-        pass
+        self._main_df = self._db_call()
+
+    def print_name(self):
+        print(self._name)
+
+    @Classproperty
+    def this(self):
+        return self._instance
+
+
+class AnalyzerThread:
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if not hasattr(self, '_initialized'):
+            self._initialized = True
+            self._lock = Lock()
+
+            self._check_interval = 60  # Minutes
+            self._next_check_timestamp = datetime.now() + timedelta(minutes=self._check_interval)
+
+            self._thread = Thread(target=self._thread_loop)
+            self._thread.start()
+
+    def _check_for_action(self):
+        """ simple checks for time saved and if its already """
+        with self._lock:
+            if self._next_check_timestamp >= datetime.now():
+                self._next_check_timestamp = datetime.now() + timedelta(minutes=self._check_interval)
+                DayAnalyzer.this.refresh()
+
+    def _thread_loop(self):
+        do_stop = False
+        while not threads_are_stopped():
+            inter = 60  # Needs to stay 60
+            fifth_timer = inter // 5
+
+            for i in range(fifth_timer):
+                sleep(5)
+                if threads_are_stopped():
+                    do_stop = True
+                    break
+            if do_stop:
+                break
+            self._check_for_action()
 
 
 # # # # External Call functions # # # #
 def init_standard_analyzes():
+    # analyze day once
+    # after start the thread
     pass
 
 
@@ -316,12 +346,15 @@ if __name__ == "__main__":
 
     test_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
 
-    vdf = ViperDF(name="test", main_df=test_df)
-    vdf.analyze()
-    outs = vdf.split_data_on_app()
-    for o in outs:
-        print(o.name)
-        print(o.analysis_results)
+
+    # FIXME: we need to make all database requests
+    #  either return a empty df or handle requests on db different,
+    #  because window_logs could be empty on request.
+    DayAnalyzer()
+    print(DayAnalyzer.this._app_vdf_list)
+
 
     stop_db()
+
+
     #print("Please start with the main.py")

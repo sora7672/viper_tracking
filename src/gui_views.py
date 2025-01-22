@@ -195,6 +195,7 @@ class ConditionListFrame(Frame):
 
             self.bool_operator_dropdown = Combobox(self.operator_frame, values=["AND", "OR"], width=4, state="readonly")
             self.bool_operator_dropdown.current(0)
+            self.bool_operator_dropdown.bind("<MouseWheel>", disable_scroll)
             self.bool_operator_dropdown.bind("<<ComboboxSelected>>", self._updated_operator)
             self.bool_operator_dropdown.grid(row=0, column=0, padx=(5, 0))
 
@@ -371,6 +372,7 @@ class ConditionFrame(Frame):
         tb.Label(self, text="Condition Type").grid(row=0, column=0, padx=(5, 0), pady=(5, 0), sticky="w")
         self.condition_type = tb.Combobox(self, values=ConditionFrame._condition_types, state="readonly", width=max_chars)
         self.condition_type.set(ConditionFrame._condition_types[0])
+        self.condition_type.bind("<MouseWheel>", disable_scroll)
         self.condition_type.grid(row=0, column=1, padx=(3, 0), pady=(5, 0))
 
 
@@ -379,6 +381,7 @@ class ConditionFrame(Frame):
         tb.Label(self, text="Condition Check").grid(row=0, column=2, padx=(5, 0), pady=(5, 0), sticky="w")
         self.condition_check = tb.Combobox(self, values=ConditionFrame._text_checks, state="readonly", width=max_chars)
         self.condition_check.set(ConditionFrame._text_checks[0])  # Fallback to first item
+        self.condition_check.bind("<MouseWheel>", disable_scroll)
         self.condition_check.grid(row=0, column=3, padx=(3, 0), pady=(5, 0))
 
         # Entry "Condition Value" with a default text value
@@ -869,6 +872,7 @@ class ViewController:
             dropdown_values = ["No labels existing"]
         label_dropdown = tb.Combobox(tab, values=dropdown_values, state="readonly")
         label_dropdown.current(0)
+        label_dropdown.bind("<MouseWheel>", disable_scroll)
         label_dropdown.pack(padx=10, pady=10)
 
     def update_label_tab(self, tab) -> None:
@@ -978,6 +982,7 @@ class ViewController:
         d_res_values = [f"{key}: {value[0]}x{value[1]}" for key, value in dict_resolution.items()]
         dropdown_resolution = tb.Combobox(upper_frame, values=d_res_values, state="readonly")
         dropdown_resolution.current(0)
+        dropdown_resolution.bind("<MouseWheel>", disable_scroll)
         dropdown_resolution.place(x=10, y=10)  # Absolute position at the top-left corner
 
         # Save button placed at the bottom-left (absolute positioning)
@@ -1012,6 +1017,7 @@ class ViewController:
 
         dropdown_demo = tb.Combobox(example_frame, values=["Option 1", "Option 2"], bootstyle="primary")
         dropdown_demo.current(0)
+        dropdown_demo.bind("<MouseWheel>", disable_scroll)
         dropdown_demo.pack(padx=10, pady=10)
         tb.Button(example_frame, text="Action Button (primary)", bootstyle="primary").pack(padx=10, pady=10)
 
@@ -1019,6 +1025,7 @@ class ViewController:
         list_themes = GuiController().root.style.theme_names()
         dropdown_themes = tb.Combobox(right_frame, values=list_themes, state="readonly")
         dropdown_themes.set(GuiController().root.style.theme_use())
+        dropdown_themes.bind("<MouseWheel>", disable_scroll)
         dropdown_themes.pack(side="left", padx=10, pady=5)
 
         # Apply button next to the dropdown (on the right)
@@ -1115,6 +1122,11 @@ class ViewController:
 
 
 # # # # Helper functions for the widgets # # # #
+
+
+def disable_scroll(event):
+    return "break"
+
 def win_close(win: Window) -> None:
     """
     Closes a specified window.

@@ -58,10 +58,12 @@ class ViperDF:
         # Naming should be "name" or "label:blahh" or "app:blahh" if name includes ":" check for app/label
         # and set some flags for further implementation
         self.name = name
+        self._lock = Lock()
         self._main_df: DataFrame = main_df
         if not self._validate_mainframe():
             raise ValueError("Main frame is not valid.")
         self.analysis_results: dict = {}
+        self._is_analyzed = False
         self.is_app_based = name.startswith("app:")
         self.is_label_based = name.startswith("label:")
 
@@ -76,24 +78,56 @@ class ViperDF:
             return True
         else:
             return False
-    def split_data_on_label(self):
-        # returns multiple new ViperDF with flag label, each auto analyze?
-        pass
 
-    def split_data_on_apps(self):
-        # returns multiple new ViperDF with flag app, each auto analyze?
-        pass
+    def split_data_on_label(self):
+        if not self._is_analyzed:
+            raise ValueError("Main frame is not analyzed.")
+
+        n_vdf = []
+        exploded_df = self._main_df.explode('label_list')
+        for lab in self.analysis_results["labels"]["entries"].keys():
+            tmp_df = exploded_df[exploded_df['label_list'] == lab]
+            window_ids = tuple(tmp_df['window_id'].tolist())
+            out_df = self._main_df[self._main_df['window_id'].isin(window_ids)]
+            if len(out_df) == self.analysis_results["entry_count"]:
+                # Dont append if the sub DF is the same as the main DF
+                continue
+            n_vdf.append(ViperDF(lab, out_df))
+            n_vdf[-1].analyze()
+
+        return n_vdf
+
+
+    def split_data_on_app(self):
+        if not self._is_analyzed:
+            raise ValueError("Main frame is not analyzed.")
+
+        n_vdf = []
+
+        for w_type in self.analysis_results["apps"]["entries"].keys():
+            out_df = self._main_df[self._main_df['window_type'] == w_type]
+            if len(out_df) == self.analysis_results["entry_count"]:
+                # Dont append if the sub DF is the same as the main DF
+                continue
+            n_vdf.append(ViperDF(w_type, out_df))
+            n_vdf[-1].analyze()
+
+        return n_vdf
 
     def analyze(self):
-        # calls all protected analyzes functions
-        # ORDER MATTERS!
+        """
+        calls all protected analyzes functions
+        ORDER MATTERS!
+        """
+
         self._time_analysis()
         self._input_analysis()
         self._app_analysis()
         self._label_analysis()
 
-    def _time_analysis(self):
+        self._is_analyzed = True
 
+    def _time_analysis(self):
         self._main_df.sort_values(by=["creation_datetime"], ascending=True)
         self.analysis_results["first_datetime"] = self._main_df["creation_datetime"].iloc[0]
         self.analysis_results["last_datetime"] = self._main_df["creation_datetime"].iloc[-1]
@@ -130,11 +164,16 @@ class ViperDF:
 
         only_actives = self._main_df[self._main_df['activity']]
         num_activities = len(only_actives)
-
-        all_max = {col: int(only_actives[col].max()) for col in input_columns}
-        all_summed = {col: int(only_actives[col].sum()) for col in input_columns}
-        all_average = {col: int(all_summed[col] / num_activities) for col in input_columns}
-        all_active_value = {col: int((all_max[col] + all_average[col]) / 2) for col in input_columns}
+        if num_activities == 0:
+            all_max = 0
+            all_summed = 0
+            all_average = 0
+            all_active_value = 0
+        else:
+            all_max = {col: int(only_actives[col].max()) for col in input_columns}
+            all_summed = {col: int(only_actives[col].sum()) for col in input_columns}
+            all_average = {col: int(all_summed[col] / num_activities) for col in input_columns}
+            all_active_value = {col: int((all_max[col] + all_average[col]) / 2) for col in input_columns}
 
         self.analysis_results["input_max"] = all_max
         self.analysis_results["input_summed"] = all_summed
@@ -143,24 +182,21 @@ class ViperDF:
 
     def _app_analysis(self):
         app_win_count = self._main_df["window_type"].value_counts().to_dict()
-        self.analysis_results["apps"] = {"num_unique": len(app_win_count), "entrys": app_win_count}
+        self.analysis_results["apps"] = {"count_unique": len(app_win_count), "entries": app_win_count}
 
     def _label_analysis(self):
-        # count each label, sort by counts
-        # count unlabeled timeframes vs labeled time frames
-        # count unique labeld time frames (only one label) vs multi labeled
 
         all_labels = self._main_df["label_list"].dropna().explode()
         label_counts = all_labels.value_counts().to_dict()
-
+        self.analysis_results["entry_count_labeled"] = len(self._main_df["label_list"].dropna())
+        self.analysis_results["entry_count_unlabeled"] = (self.analysis_results["entry_count"]
+                                                          - self.analysis_results["entry_count_labeled"])
         self.analysis_results["labels"] = {
-            "num_unique": len(label_counts),
-            "entrys": label_counts
+            "count_unique": len(label_counts),
+            "entries": label_counts
         }
 
 
-
-# for analyzer: check if maindf count = sub count on each, if yes ignore the new df and set a analysis result like (
 class Analyzer(ABC):
     _all_analyzer = []
     _class_lock = Lock()
@@ -174,9 +210,6 @@ class Analyzer(ABC):
 
         self._analyzer_type: str = analyzer_type.upper()
         self._main_df = main_df
-
-
-
 
         self._analyze()
 
@@ -271,10 +304,6 @@ class StandardAnalyzer(Analyzer):
         pass
 
 
-
-
-
-
 # # # # External Call functions # # # #
 def init_standard_analyzes():
     pass
@@ -289,7 +318,10 @@ if __name__ == "__main__":
 
     vdf = ViperDF(name="test", main_df=test_df)
     vdf.analyze()
-    #print(vdf.analysis_results)
+    outs = vdf.split_data_on_app()
+    for o in outs:
+        print(o.name)
+        print(o.analysis_results)
 
     stop_db()
     #print("Please start with the main.py")

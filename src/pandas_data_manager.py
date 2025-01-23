@@ -61,8 +61,10 @@ class ViperDF:
         self.name = name
         self._lock = Lock()
         self._main_df: DataFrame = main_df
+        self.empty = main_df.empty
         if not self._validate_mainframe():
-            raise ValueError("Main frame is not valid.")
+            print("not valid mainframe, created empty DataFrame")
+            self.empty = True
         self.analysis_results: dict = {}
         self._is_analyzed = False
         self.is_app_based = name.startswith("app:")
@@ -87,52 +89,55 @@ class ViperDF:
             return False
 
     def split_data_on_label(self):
-        if not self._is_analyzed:
-            raise ValueError("Main frame is not analyzed.")
+        if not self.empty:
+            if not self._is_analyzed:
+                raise ValueError("Main frame is not analyzed.")
 
-        n_vdf = []
-        exploded_df = self._main_df.explode('label_list')
-        for lab in self.analysis_results["labels"]["entries"].keys():
-            tmp_df = exploded_df[exploded_df['label_list'] == lab]
-            window_ids = tuple(tmp_df['window_id'].tolist())
-            out_df = self._main_df[self._main_df['window_id'].isin(window_ids)]
-            if len(out_df) == self.analysis_results["entry_count"]:
-                # Dont append if the sub DF is the same as the main DF
-                continue
-            n_vdf.append(ViperDF(lab, out_df))
-            n_vdf[-1].analyze()
+            n_vdf = []
+            exploded_df = self._main_df.explode('label_list')
+            for lab in self.analysis_results["labels"]["entries"].keys():
+                tmp_df = exploded_df[exploded_df['label_list'] == lab]
+                window_ids = tuple(tmp_df['window_id'].tolist())
+                out_df = self._main_df[self._main_df['window_id'].isin(window_ids)]
+                if len(out_df) == self.analysis_results["entry_count"]:
+                    # Dont append if the sub DF is the same as the main DF
+                    continue
+                n_vdf.append(ViperDF(lab, out_df))
+                n_vdf[-1].analyze()
 
-        return n_vdf
+            return n_vdf
+
 
 
     def split_data_on_app(self):
-        if not self._is_analyzed:
-            raise ValueError("Main frame is not analyzed.")
+        if not self.empty:
+            if not self._is_analyzed:
+                raise ValueError("Main frame is not analyzed.")
 
-        n_vdf = []
+            n_vdf = []
 
-        for w_type in self.analysis_results["apps"]["entries"].keys():
-            out_df = self._main_df[self._main_df['window_type'] == w_type]
-            if len(out_df) == self.analysis_results["entry_count"]:
-                # Dont append if the sub DF is the same as the main DF
-                continue
-            n_vdf.append(ViperDF(w_type, out_df))
-            n_vdf[-1].analyze()
+            for w_type in self.analysis_results["apps"]["entries"].keys():
+                out_df = self._main_df[self._main_df['window_type'] == w_type]
+                if len(out_df) == self.analysis_results["entry_count"]:
+                    # Dont append if the sub DF is the same as the main DF
+                    continue
+                n_vdf.append(ViperDF(w_type, out_df))
+                n_vdf[-1].analyze()
 
-        return n_vdf
+            return n_vdf
 
     def analyze(self):
         """
         calls all protected analyzes functions
         ORDER MATTERS!
         """
+        if not self.empty:
+            self._time_analysis()
+            self._input_analysis()
+            self._app_analysis()
+            self._label_analysis()
 
-        self._time_analysis()
-        self._input_analysis()
-        self._app_analysis()
-        self._label_analysis()
-
-        self._is_analyzed = True
+            self._is_analyzed = True
 
     def _time_analysis(self):
         self._main_df.sort_values(by=["creation_datetime"], ascending=True)
@@ -267,20 +272,23 @@ class DayAnalyzer(Analyzer):
             tmp_df = self._db_call()
             super().__init__(name="DAY_ANALYZER", main_df=tmp_df)
             self._vdf = None
+            self._app_vdf_list = None
+            self._label_vdf_list = None
+            self.empty_df = tmp_df.empty
             self._analyze()
-
-
 
     def _analyze(self):
         """ This methode will analyze the data frame according to the analyzer type."""
-        self._vdf = ViperDF("DayAnalyzer", self._main_df)
-        self._vdf.analyze()
-        self._app_vdf_list = self._vdf.split_data_on_app()
-        self._label_vdf_list = self._vdf.split_data_on_label()
+        if not self.empty_df:
+            self._vdf = ViperDF("DayAnalyzer", self._main_df)
+            self._vdf.analyze()
+            self._app_vdf_list = self._vdf.split_data_on_app()
+            self._label_vdf_list = self._vdf.split_data_on_label()
 
     def _refresh_data(self):
         """ This methode will refresh the data frame according to the analyzer type."""
         self._main_df = self._db_call()
+        self.empty_df = self._main_df.empty
 
     def print_name(self):
         print(self._name)
@@ -334,8 +342,8 @@ class AnalyzerThread:
 
 # # # # External Call functions # # # #
 def init_standard_analyzes():
-    # analyze day once
-    # after start the thread
+    # ini the threading class, it analyzes on init once.
+
     pass
 
 
@@ -351,7 +359,10 @@ if __name__ == "__main__":
     #  either return a empty df or handle requests on db different,
     #  because window_logs could be empty on request.
     DayAnalyzer()
-    print(DayAnalyzer.this._app_vdf_list)
+    if DayAnalyzer.this._app_vdf_list:
+        for df in DayAnalyzer.this._app_vdf_list:
+            print(df.name)
+            print(df.analysis_results)
 
 
     stop_db()

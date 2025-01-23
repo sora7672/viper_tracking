@@ -837,29 +837,31 @@ class DBHandler:
                     for row in results
                 ]
             )
+            if not window_df.empty:
+                window_ids = tuple(window_df['window_id'].tolist())
+                inputs = self.get_inputs_by_window_id(window_ids)
+                if inputs is not None:
+                    input_merged = pandas_merge(window_df, inputs, on="window_id", how="left")
+                    input_merged["activity"] = input_merged["count_key_pressed"].apply(lambda x: True if x is not None and x >= 0 else False)
+                    input_merged["all_activity_count"] = input_merged[
+                        [
+                            "count_key_pressed", "count_mouse_pressed", "count_direction_key_pressed",
+                            "count_char_key_pressed",  "count_special_key_pressed", "count_mouse_scrolls",
+                            "count_left_mouse_pressed", "count_right_mouse_pressed", "count_middle_mouse_pressed"
+                        ]
+                    ].sum(axis=1)
+                else:
+                    input_merged = window_df
 
-            window_ids = tuple(window_df['window_id'].tolist())
-            inputs = self.get_inputs_by_window_id(window_ids)
-            if inputs is not None:
-                input_merged = pandas_merge(window_df, inputs, on="window_id", how="left")
-                input_merged["activity"] = input_merged["count_key_pressed"].apply(lambda x: True if x is not None and x >= 0 else False)
-                input_merged["all_activity_count"] = input_merged[
-                    [
-                        "count_key_pressed", "count_mouse_pressed", "count_direction_key_pressed",
-                        "count_char_key_pressed",  "count_special_key_pressed", "count_mouse_scrolls",
-                        "count_left_mouse_pressed", "count_right_mouse_pressed", "count_middle_mouse_pressed"
-                    ]
-                ].sum(axis=1)
+                labels = self.get_labels_by_window_id(window_ids)
+                if labels is not None:
+                    labels_merged = pandas_merge(input_merged, labels, on="window_id", how="left")
+                else:
+                    labels_merged = input_merged
+
+                return labels_merged
             else:
-                input_merged = window_df
-
-            labels = self.get_labels_by_window_id(window_ids)
-            if labels is not None:
-                labels_merged = pandas_merge(input_merged, labels, on="window_id", how="left")
-            else:
-                labels_merged = input_merged
-
-            return labels_merged
+                return DataFrame()
 
     def get_inputs_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
 

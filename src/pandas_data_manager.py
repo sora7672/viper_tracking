@@ -354,15 +354,11 @@ if __name__ == "__main__":
 
     test_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
 
-
-    # FIXME: we need to make all database requests
-    #  either return a empty df or handle requests on db different,
-    #  because window_logs could be empty on request.
-    DayAnalyzer()
-    if DayAnalyzer.this._app_vdf_list:
-        for df in DayAnalyzer.this._app_vdf_list:
-            print(df.name)
-            print(df.analysis_results)
+    # DayAnalyzer()
+    # if DayAnalyzer.this._app_vdf_list:
+    #     for df in DayAnalyzer.this._app_vdf_list:
+    #         print(df.name)
+    #         print(df.analysis_results)
 
 
     stop_db()

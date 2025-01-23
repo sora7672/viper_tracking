@@ -792,7 +792,6 @@ class DBHandler:
                 query += " AND window_title LIKE ?"
                 params.append(f"%{_make_searchable(window_title)}%")
 
-        # FIXME: this one just looks wrong??
         if word_list:
             if isinstance(word_list, list):
                 condition, values = _create_in_search_term('word_list', word_list)

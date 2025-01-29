@@ -6,15 +6,19 @@ Author: sora7672
 """
 __author__ = 'sora7672'
 
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
 from threading import Lock, Thread
-from time import sleep, gmtime, strftime
+from time import sleep
 from pandas import DataFrame, Series
 from abc import ABC, abstractmethod
 
+# TODO: Minimize this imports to only import methods needed.
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import numpy as np
 import pandas as pd
 
-from config_manager import threads_are_stopped, stop_program_threads
+from config_manager import threads_are_stopped
 from db_connector import DBHandler, stop_db, start_db
 from helper_classes import Classproperty
 
@@ -89,7 +93,8 @@ class ViperDF:
             return False
 
     def split_data_on_label(self):
-        if not self.empty:
+        # TODO: better error handeling behaviour with GUI implemention.
+        if not self.empty and not self.is_label_based:
             if not self._is_analyzed:
                 raise ValueError("Main frame is not analyzed.")
 
@@ -102,15 +107,13 @@ class ViperDF:
                 if len(out_df) == self.analysis_results["entry_count"]:
                     # Dont append if the sub DF is the same as the main DF
                     continue
-                n_vdf.append(ViperDF(lab, out_df))
+                n_vdf.append(ViperDF(f"label:{lab}", out_df))
                 n_vdf[-1].analyze()
 
             return n_vdf
 
-
-
     def split_data_on_app(self):
-        if not self.empty:
+        if not self.empty and not self.is_app_based:
             if not self._is_analyzed:
                 raise ValueError("Main frame is not analyzed.")
 
@@ -121,10 +124,16 @@ class ViperDF:
                 if len(out_df) == self.analysis_results["entry_count"]:
                     # Dont append if the sub DF is the same as the main DF
                     continue
-                n_vdf.append(ViperDF(w_type, out_df))
+                n_vdf.append(ViperDF(f"app:{w_type}", out_df))
                 n_vdf[-1].analyze()
 
             return n_vdf
+
+    def get_plot_activity(self, plot_type="lines"):
+
+        # TODO: complete with new time frame
+        #self._activity_df
+        return None
 
     def analyze(self):
         """
@@ -134,8 +143,10 @@ class ViperDF:
         if not self.empty:
             self._time_analysis()
             self._input_analysis()
-            self._app_analysis()
-            self._label_analysis()
+            if not self.is_app_based:
+                self._app_analysis()
+            if not self.is_label_based:
+                self._label_analysis()
 
             self._is_analyzed = True
 
@@ -160,8 +171,9 @@ class ViperDF:
                                                     self.analysis_results["tracked_seconds"]/100)), 2)
 
     def _input_analysis(self):
+        activity_points = getattr(self, "_number_activity_points", 100)
 
-        input_columns = [
+        numeric_columns = [
             "count_key_pressed",
             "count_mouse_pressed",
             "count_direction_key_pressed",
@@ -174,23 +186,48 @@ class ViperDF:
             "all_activity_count"
         ]
 
-        only_actives = self._main_df[self._main_df['activity']]
-        num_activities = len(only_actives)
-        if num_activities == 0:
-            all_max = 0
-            all_summed = 0
-            all_average = 0
-            all_active_value = 0
-        else:
-            all_max = {col: int(only_actives[col].max()) for col in input_columns}
-            all_summed = {col: int(only_actives[col].sum()) for col in input_columns}
-            all_average = {col: int(all_summed[col] / num_activities) for col in input_columns}
-            all_active_value = {col: int((all_max[col] + all_average[col]) / 2) for col in input_columns}
+        time_df = self._main_df[numeric_columns + ["creation_datetime"]].fillna(0)
+        time_df = time_df.sort_values("creation_datetime")
 
-        self.analysis_results["input_max"] = all_max
-        self.analysis_results["input_summed"] = all_summed
-        self.analysis_results["input_average"] = all_average
-        self.analysis_results["input_active_value"] = all_active_value
+        start_time = time_df["creation_datetime"].iloc[0]
+        end_time = time_df["creation_datetime"].iloc[-1]
+        total_seconds = int((end_time - start_time).total_seconds())
+
+        time_frame_per_point = max(5, round(total_seconds / activity_points / 5) * 5)
+
+        # param freq uses a deprecated methode with "s" for seconds in the end, don't remove!
+        intervals = pd.interval_range(
+            start=start_time,
+            end=end_time + pd.Timedelta(seconds=time_frame_per_point),
+            freq=f"{time_frame_per_point}s",
+            closed="left"
+        )
+
+        time_df["time_bin"] = pd.cut(
+            time_df["creation_datetime"],
+            bins=intervals,
+            labels=range(len(intervals))
+        )
+
+        aggregated_data = time_df.groupby("time_bin", observed=True)[numeric_columns].sum()
+        aggregated_data = aggregated_data.reset_index(drop=True)
+
+        bins_df = pd.DataFrame({
+            "start_time": intervals.left,
+            "end_time": intervals.right
+        })
+
+        bins_df = bins_df.merge(aggregated_data, left_index=True, right_index=True, how="left").fillna(0)
+
+        bins_df[numeric_columns] = bins_df[numeric_columns].astype(int)
+
+        highest_activity_value = int(round(bins_df["all_activity_count"].max() * 0.75))
+        bins_df["activity_percent"] = bins_df["all_activity_count"].apply(
+            lambda x: min(round((x / (highest_activity_value / 100))), 100)).astype(int)
+
+        self.analysis_results["highest_activity_value"] = highest_activity_value
+        self._activity_df = bins_df
+
 
     def _app_analysis(self):
         app_win_count = self._main_df["window_type"].value_counts().to_dict()
@@ -207,6 +244,7 @@ class ViperDF:
             "count_unique": len(label_counts),
             "entries": label_counts
         }
+
 
 
 class Analyzer(ABC):
@@ -354,11 +392,13 @@ if __name__ == "__main__":
 
     test_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
 
-    # DayAnalyzer()
-    # if DayAnalyzer.this._app_vdf_list:
-    #     for df in DayAnalyzer.this._app_vdf_list:
-    #         print(df.name)
-    #         print(df.analysis_results)
+    start_analysis = datetime.now()
+    vdf = ViperDF("testing", test_df)
+    vdf.analyze()
+
+    end_analysis = datetime.now()
+    time_used = (end_analysis - start_analysis).total_seconds()
+    print(f"{end_analysis} - {start_analysis} = {time_used}")
 
 
     stop_db()

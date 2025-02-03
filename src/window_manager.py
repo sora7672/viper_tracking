@@ -26,8 +26,8 @@ from input_manager import input_to_db, had_input
 window_thread: Thread = None
 # TODO: Add this to the config
 untracked_types = []
-repl_chars = "–—-"
-removable_chars = "._-,!?;: "
+
+
 
 
 class WinInfo:
@@ -71,111 +71,19 @@ class WinInfo:
         a_win = GetForegroundWindow()
         self.window_title = GetWindowText(a_win)
         _, self.process_id = GetWindowThreadProcessId(a_win)
-        # TODO: Test this. Should fix the problem with broken pids
+
         try:
             self.window_type = Process(self.process_id).name()
         except NoSuchProcess | ValueError as e:
             get_logger().error(f"WinInfo object could not be filled properly: {e}")
             del self
             return
-        # # # # # Old error, maybe fixed # # # #
-        #
-        #     Exception in thread Thread-6 (window_tracker):
-        #     Traceback (most recent call last):
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 727, in wrapper
-        #         return fun(self, *args, **kwargs)
-        #                ^^^^^^^^^^^^^^^^^^^^^^^^^^
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 989, in create_time
-        #         _user, _system, created = cext.proc_times(self.pid)
-        #                                   ^^^^^^^^^^^^^^^^^^^^^^^^^
-        #     ProcessLookupError: [Errno 3] assume no such process (originated from OpenProcess -> ERROR_INVALID_PARAMETER)
-        #
-        #     During handling of the above exception, another exception occurred:
-        #
-        #     Traceback (most recent call last):
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 355, in _init
-        #         self.create_time()
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 757, in create_time
-        #         self._create_time = self._proc.create_time()
-        #                             ^^^^^^^^^^^^^^^^^^^^^^^^
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 729, in wrapper
-        #         raise convert_oserror(err, pid=self.pid, name=self._name)
-        #     psutil.NoSuchProcess: process no longer exists (pid=1963797664)
-        #
-        #     During handling of the above exception, another exception occurred:
-        #
-        #     Traceback (most recent call last):
-        #       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
-        #         self.run()
-        #       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
-        #         self._target(*self._args, **self._kwargs)
-        #       File "C:\git\python\viper_tracking\src\window_manager.py", line 417, in window_tracker
-        #         WinInfo().fill_self()
-        #       File "C:\git\python\viper_tracking\src\window_manager.py", line 50, in fill_self
-        #         self.window_type = Process(self.process_id).name()
-        #                            ^^^^^^^^^^^^^^^^^^^^^^^^
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
-        #         self._init(pid)
-        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
-        #         raise NoSuchProcess(pid, msg=msg)
-        #     psutil.NoSuchProcess: process PID not found (pid=1963797664)
-        # # # # # #  error no 2. # # # # # # #
-        # Exception in thread
-        # Thread - 6(window_tracker):
-        # Traceback(most
-        # recent
-        # call
-        # last):
-        # File
-        # "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line
-        # 1073, in _bootstrap_inner
-        # self.run()
-        #
-        # File
-        # "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line
-        # 1010, in run
-        # self._target(*self._args, **self._kwargs)
-
-        #
-        # File
-        # "C:\git\python\viper_tracking\src\window_manager.py", line
-        # 530, in window_tracker
-        # WinInfo().fill_self()
-        # File
-        # "C:\git\python\viper_tracking\src\window_manager.py", line
-        # 50, in fill_self
-        # self.window_type = Process(self.process_id).name()
-        # ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
-        # File
-        # "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line
-        # 319, in __init__
-        # self._init(pid)
-        # File
-        # "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line
-        # 330, in _init
-        # raise ValueError(msg)
-        # ValueError: pid
-        # must
-        # be
-        # a
-        # positive
-        # integer(got - 1827508448)
 
         if self.window_type not in untracked_types:
-            for r_char in repl_chars:
-                self.window_title = self.window_title.replace(r_char, "-")
-            tmp_segments = self.window_title.split(" - ")
-            for i in range(len(tmp_segments)):
-                tmp_segments[i] = tmp_segments[i].strip(removable_chars)
+            self.window_title = string_to_valid_string(self.window_title)
 
-            win_words = tmp_segments.copy()
-            for rem in removable_chars:
-                tmp_segments = win_words.copy()
-                win_words = []
-                for t_segm in tmp_segments:
-                    win_words.extend(t_segm.split(rem))
+            self.window_text_words = string_to_word_list(self.window_title)
 
-            self.window_text_words = list(dict.fromkeys(win_words))
             self.set_labels()
             self.write_to_db()
 
@@ -523,6 +431,43 @@ def start_window_tracker() -> None:
     get_logger().debug("window_thread.start()")
 
 
+valid_chars = "1234567890abcdefghijklmnopqrstuvwxyz.,!?-_:$€@%&/()={}[]+*#|<>^°'\"\t\n\r"
+special_valid_chars = "äöüß"
+
+
+def string_to_valid_string(input_string: str) -> str:
+    out_string = ""
+    for c in input_string:
+        if c in "–—-":
+            c = "-"
+        cl = c.lower()
+        if cl in valid_chars or cl in special_valid_chars:
+            out_string += c
+        else:
+            out_string += " "
+    while "  " in out_string:
+        out_string = out_string.replace("  ", " ")
+    return out_string
+
+
+ending_chars = "._-,!?;:| "
+
+
+def string_to_word_list(input_string:str) -> list:
+    out_list = input_string.strip(ending_chars).split(" ")
+
+    for ec in ending_chars:
+        tmp_out_list = []
+        for out in out_list:
+            out = out.strip(ending_chars)
+            tmp_out_list.extend(out.split(ec))
+
+        out_list = tmp_out_list.copy()
+        out_list = list(dict.fromkeys(out_list))
+        out_list = [word for word in out_list if word]
+    return out_list
+
+
 # # # # External call functions for less import in other files # # # #
 def stop_done() -> bool:
     """
@@ -560,4 +505,86 @@ def update_all_labels_to_db() -> None:
 if __name__ == "__main__":
     print("Please start with the main.py")
 
+# TODO: Test this. Should fix the problem with broken pids
+        # # # # # Old error, maybe fixed # # # #
+        #
+        #     Exception in thread Thread-6 (window_tracker):
+        #     Traceback (most recent call last):
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 727, in wrapper
+        #         return fun(self, *args, **kwargs)
+        #                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 989, in create_time
+        #         _user, _system, created = cext.proc_times(self.pid)
+        #                                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+        #     ProcessLookupError: [Errno 3] assume no such process (originated from OpenProcess -> ERROR_INVALID_PARAMETER)
+        #
+        #     During handling of the above exception, another exception occurred:
+        #
+        #     Traceback (most recent call last):
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 355, in _init
+        #         self.create_time()
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 757, in create_time
+        #         self._create_time = self._proc.create_time()
+        #                             ^^^^^^^^^^^^^^^^^^^^^^^^
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 729, in wrapper
+        #         raise convert_oserror(err, pid=self.pid, name=self._name)
+        #     psutil.NoSuchProcess: process no longer exists (pid=1963797664)
+        #
+        #     During handling of the above exception, another exception occurred:
+        #
+        #     Traceback (most recent call last):
+        #       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+        #         self.run()
+        #       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+        #         self._target(*self._args, **self._kwargs)
+        #       File "C:\git\python\viper_tracking\src\window_manager.py", line 417, in window_tracker
+        #         WinInfo().fill_self()
+        #       File "C:\git\python\viper_tracking\src\window_manager.py", line 50, in fill_self
+        #         self.window_type = Process(self.process_id).name()
+        #                            ^^^^^^^^^^^^^^^^^^^^^^^^
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
+        #         self._init(pid)
+        #       File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
+        #         raise NoSuchProcess(pid, msg=msg)
+        #     psutil.NoSuchProcess: process PID not found (pid=1963797664)
+        # # # # # #  error no 2. # # # # # # #
+        # Exception in thread
+        # Thread - 6(window_tracker):
+        # Traceback(most
+        # recent
+        # call
+        # last):
+        # File
+        # "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line
+        # 1073, in _bootstrap_inner
+        # self.run()
+        #
+        # File
+        # "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line
+        # 1010, in run
+        # self._target(*self._args, **self._kwargs)
 
+        #
+        # File
+        # "C:\git\python\viper_tracking\src\window_manager.py", line
+        # 530, in window_tracker
+        # WinInfo().fill_self()
+        # File
+        # "C:\git\python\viper_tracking\src\window_manager.py", line
+        # 50, in fill_self
+        # self.window_type = Process(self.process_id).name()
+        # ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+        # File
+        # "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line
+        # 319, in __init__
+        # self._init(pid)
+        # File
+        # "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line
+        # 330, in _init
+        # raise ValueError(msg)
+        # ValueError: pid
+        # must
+        # be
+        # a
+        # positive
+        # integer(got - 1827508448)

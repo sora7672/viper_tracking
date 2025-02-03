@@ -69,6 +69,8 @@ class WinInfo:
         """
         self.activity = had_input()
         a_win = GetForegroundWindow()
+        # FIXME: We need to make sure, that we only save standard chars in the
+        #  database and remove the scatter like emojis in titles or the different "-" from different OS
         self.window_title = GetWindowText(a_win)
         _, self.process_id = GetWindowThreadProcessId(a_win)
         # TODO: Test this. Should fix the problem with broken pids
@@ -161,6 +163,7 @@ class WinInfo:
         # positive
         # integer(got - 1827508448)
 
+        # TODO: Add here a config option for the user for untracked windows
         if self.window_type not in untracked_types:
             for r_char in repl_chars:
                 self.window_title = self.window_title.replace(r_char, "-")

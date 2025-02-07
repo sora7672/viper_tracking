@@ -292,6 +292,11 @@ class ViperDF:
         ##########################################
         # Hover & Static Line Elements
         hover_line, = ax.plot([0, 0], [-45, -5], color='red', linestyle='dotted', alpha=0.7, visible=False)
+
+        # Two triangles pointing at the hover line
+        triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Triangle pointing down
+        triangle_down, = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Triangle pointing up
+
         annotation = ax.annotate("", xy=(0, -5), xytext=(10, 10), textcoords="offset points",
                                  bbox=dict(boxstyle="round", fc="white", ec="purple", alpha=0.9),
                                  visible=False)
@@ -300,13 +305,12 @@ class ViperDF:
         selected_index = None
 
         def update_selection(index):
-            """ Update the selection line & annotation based on given index """
+            """ Update the selection line, annotation, and triangles based on given index """
             nonlocal selected_index, static_mode
             if index < 0 or index >= len(app_grouped_df):
                 return
 
             selected_index = index
-            static_mode = True
 
             entry = app_grouped_df.iloc[selected_index]
             start_time = entry["start_time"].strftime("%Y-%m-%d %H:%M:%S")
@@ -319,9 +323,22 @@ class ViperDF:
             hover_line.set_xdata([x_pos])
             hover_line.set_visible(True)
 
+            # Update triangle positions (centered on the line)
+            triangle_up.set_data([x_pos], [-5])  # Triangle at top of line
+            triangle_down.set_data([x_pos], [-45])  # Triangle at bottom of line
+            triangle_up.set_visible(True)
+            triangle_down.set_visible(True)
+
+            # Determine annotation position
+            midpoint = len(app_grouped_df) / 2
+            text_offset = 10 if selected_index < midpoint else -10  # Right or left shift
+            ha = "left" if selected_index < midpoint else "right"  # Horizontal alignment
+
             annotation.xy = (x_pos, -5)
             annotation.set_text(f"{start_time} -> {end_time}\n{window_type}\n{window_title}")
             annotation.set_visible(True)
+            annotation.set_ha(ha)  # Align left or right
+            annotation.set_position((text_offset, 10))  # Adjust position dynamically
 
             ax.figure.canvas.draw_idle()
 
@@ -337,6 +354,8 @@ class ViperDF:
                 return
 
             x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+
+            # Find the closest index based on mouse position
             valid_entries = app_grouped_df[
                 (app_grouped_df["start_time"] <= x_mouse) &
                 (app_grouped_df["end_time"] >= x_mouse)
@@ -347,33 +366,26 @@ class ViperDF:
             else:
                 closest_index = (app_grouped_df["start_time"] - x_mouse).abs().idxmin()
 
-            entry = app_grouped_df.iloc[closest_index]
-            x_pos = mdates.date2num(entry["mid_time"])
-
-            hover_line.set_xdata([x_pos])
-            hover_line.set_visible(True)
-            annotation.xy = (x_pos, -5)
-            annotation.set_text(
-                f"{entry['start_time']} -> {entry['end_time']}\n{entry['window_type']}\n{entry['window_title']}")
-            annotation.set_visible(True)
-
-            ax.figure.canvas.draw_idle()
+            # Use the update_selection method to handle the hover update
+            update_selection(closest_index)
 
         def on_click(event):
             """ Ensure clicks are only handled in the bar chart's axis """
+            nonlocal static_mode
             if event.button == 1 and event.inaxes == ax:
-                x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
-                valid_entries = app_grouped_df[
-                    (app_grouped_df["start_time"] <= x_click) &
-                    (app_grouped_df["end_time"] >= x_click)
-                    ]
+                if -45 <= event.ydata <= -5:
+                    x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+                    valid_entries = app_grouped_df[
+                        (app_grouped_df["start_time"] <= x_click) &
+                        (app_grouped_df["end_time"] >= x_click)
+                        ]
+                    static_mode = True
+                    if not valid_entries.empty:
+                        closest_index = valid_entries.index[0]
+                    else:
+                        closest_index = (app_grouped_df["start_time"] - x_click).abs().idxmin()
 
-                if not valid_entries.empty:
-                    closest_index = valid_entries.index[0]
-                else:
-                    closest_index = (app_grouped_df["start_time"] - x_click).abs().idxmin()
-
-                update_selection(closest_index)
+                    update_selection(closest_index)
 
         def on_key(event):
             """ Ensure keyboard events are only processed when static mode is active """
@@ -388,9 +400,14 @@ class ViperDF:
 
             if static_mode and selected_index is not None:
                 if event.key == "right":
-                    update_selection(min(selected_index + 1, len(app_grouped_df) - 1))
+                    new_index = selected_index + 1
+                    new_index = 0 if new_index > len(app_grouped_df) - 1 else new_index
+
                 elif event.key == "left":
-                    update_selection(max(selected_index - 1, 0))
+                    new_index = selected_index - 1
+                    new_index = len(app_grouped_df) - 1 if new_index < 0 else new_index
+
+                update_selection(new_index)
 
         ax.figure.canvas.mpl_connect("motion_notify_event", on_hover)
         ax.figure.canvas.mpl_connect("button_press_event", on_click)

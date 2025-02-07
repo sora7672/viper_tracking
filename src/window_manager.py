@@ -69,8 +69,6 @@ class WinInfo:
         """
         self.activity = had_input()
         a_win = GetForegroundWindow()
-        # FIXME: We need to make sure, that we only save standard chars in the
-        #  database and remove the scatter like emojis in titles or the different "-" from different OS
         self.window_title = GetWindowText(a_win)
         _, self.process_id = GetWindowThreadProcessId(a_win)
 
@@ -591,3 +589,28 @@ if __name__ == "__main__":
         # a
         # positive
         # integer(got - 1827508448)
+
+# FIXME: This error is persistent:
+# Exception in thread Thread-5 (window_tracker):
+# Traceback (most recent call last):
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 76, in fill_self
+#     self.window_type = Process(self.process_id).name()
+#                        ^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
+#     self._init(pid)
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 330, in _init
+#     raise ValueError(msg)
+# ValueError: pid must be a positive integer (got -1229961840)
+#
+# During handling of the above exception, another exception occurred:
+#
+# Traceback (most recent call last):
+#   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+#     self.run()
+#   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+#     self._target(*self._args, **self._kwargs)
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 418, in window_tracker
+#     WinInfo().fill_self()
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 77, in fill_self
+#     except NoSuchProcess | ValueError as e:
+# TypeError: catching classes that do not inherit from BaseException is not allowed

@@ -131,6 +131,183 @@ class ViperDF:
 
             return n_vdf
 
+    def analyze(self):
+        """
+        calls all protected analyzes functions
+        ORDER MATTERS!
+        """
+        if not self.empty:
+            self._time_analysis()
+            self._input_analysis()
+            if not self.is_app_based:
+                self._app_analysis()
+            if not self.is_label_based:
+                self._label_analysis()
+            self._is_analyzed = True
+
+    def _time_analysis(self):
+        self._main_df.sort_values(by=["creation_datetime"], ascending=True)
+        self.analysis_results["first_datetime"] = self._main_df["creation_datetime"].iloc[0]
+        self.analysis_results["last_datetime"] = self._main_df["creation_datetime"].iloc[-1]
+        self.analysis_results["time_frame_seconds"] = Seconds(int((self.analysis_results["last_datetime"]
+                                                                   - self.analysis_results["first_datetime"])
+                                                                  .total_seconds()))
+
+        self.analysis_results["entry_count"] = len(self._main_df)
+        self.analysis_results["tracked_seconds"] = Seconds(5 * self.analysis_results["entry_count"])
+        self.analysis_results["untracked_seconds"] = Seconds(self.analysis_results["time_frame_seconds"]
+                                                             - self.analysis_results["tracked_seconds"])
+
+        self.analysis_results["active_secs"] = Seconds(5 * len(self._main_df[self._main_df["activity"]]))
+        self.analysis_results["inactive_secs"] = (self.analysis_results["tracked_seconds"] -
+                                                  self.analysis_results["active_secs"])
+
+        self.analysis_results["percent_active"] = round((self.analysis_results["active_secs"]/(
+                                                    self.analysis_results["tracked_seconds"]/100)), 2)
+
+    def _input_analysis(self):
+        activity_points = getattr(self, "_number_activity_points", 100)
+
+        numeric_columns = [
+            "count_key_pressed",
+            "count_mouse_pressed",
+            "count_direction_key_pressed",
+            "count_char_key_pressed",
+            "count_special_key_pressed",
+            "count_mouse_scrolls",
+            "count_left_mouse_pressed",
+            "count_right_mouse_pressed",
+            "count_middle_mouse_pressed",
+            "all_activity_count"
+        ]
+
+        time_df = self._main_df[numeric_columns + ["creation_datetime"]].fillna(0)
+        time_df = time_df.sort_values("creation_datetime")
+
+        start_time = time_df["creation_datetime"].iloc[0]
+        end_time = time_df["creation_datetime"].iloc[-1]
+        total_seconds = int((end_time - start_time).total_seconds())
+
+        time_frame_per_point = max(5, round(total_seconds / activity_points / 5) * 5)
+        self.analysis_results["activity_interval"] = time_frame_per_point
+        # param freq uses a deprecated methode with "s" for seconds in the end, don't remove!
+        intervals = pd.interval_range(
+            start=start_time,
+            end=end_time + pd.Timedelta(seconds=time_frame_per_point),
+            freq=f"{time_frame_per_point}s",
+            closed="left"
+        )
+
+        time_df["time_bin"] = pd.cut(
+            time_df["creation_datetime"],
+            bins=intervals,
+            labels=range(len(intervals))
+        )
+
+        aggregated_data = time_df.groupby("time_bin", observed=True)[numeric_columns].sum()
+        aggregated_data = aggregated_data.reset_index(drop=True)
+
+        bins_df = pd.DataFrame({
+            "start_time": intervals.left,
+            "end_time": intervals.right
+        })
+        bins_df["middle_time"] = bins_df[["start_time", "end_time"]].mean(axis=1)
+
+        bins_df = bins_df.merge(aggregated_data, left_index=True, right_index=True, how="left").fillna(0)
+
+        bins_df[numeric_columns] = bins_df[numeric_columns].astype(int)
+
+        highest_activity_value = int(round(bins_df["all_activity_count"].max() * 0.75))
+        bins_df["activity_percent"] = bins_df["all_activity_count"].apply(
+            lambda x: min(round((x / (highest_activity_value / 100))), 100)).astype(int)
+        self.analysis_results["highest_activity_value"] = highest_activity_value
+        self._activity_df = bins_df
+
+    def _app_analysis(self):
+
+        app_win_count = self._main_df["window_type"].value_counts().to_dict()
+        self.analysis_results["apps"] = {"count_unique": len(app_win_count), "entries": app_win_count}
+        self._create_grouped_app_df()
+
+    def _label_analysis(self):
+
+        all_labels = self._main_df["label_list"].dropna().explode()
+        label_counts = all_labels.value_counts().to_dict()
+        self.analysis_results["entry_count_labeled"] = len(self._main_df["label_list"].dropna())
+        self.analysis_results["entry_count_unlabeled"] = (self.analysis_results["entry_count"]
+                                                          - self.analysis_results["entry_count_labeled"])
+        self.analysis_results["labels"] = {
+            "count_unique": len(label_counts),
+            "entries": label_counts
+        }
+        self._create_grouped_label_df()
+
+    def _create_grouped_app_df(self):
+        # Extract only required columns
+        app_data = self._main_df[["window_type", "window_title", "creation_datetime"]].copy()
+
+        # Calculate start_time and end_time
+        app_data["start_time"] = app_data["creation_datetime"] - pd.to_timedelta(5, unit='s')
+        app_data["end_time"] = app_data["creation_datetime"]
+
+        change_mask = (
+                (app_data["window_type"] != app_data["window_type"].shift(1)) |
+                (app_data["window_title"] != app_data["window_title"].shift(1)) |
+                ((app_data["start_time"] - app_data["end_time"].shift(1)).dt.total_seconds() > 5)
+        )
+
+        # Assign a unique group ID to each continuous block of identical entries
+        app_data["group"] = change_mask.cumsum()
+        app_data = app_data.sort_values("creation_datetime")
+
+        # Aggregate start_time (first entry) and end_time (last entry) per group
+        app_grouped_df = app_data.groupby("group").agg({
+            "window_type": "first",
+            "window_title": "first",
+            "start_time": "first",
+            "end_time": "last"
+        }).reset_index(drop=True)
+
+        app_grouped_df["mid_time"] = app_grouped_df["start_time"] + (
+                app_grouped_df["end_time"] - app_grouped_df["start_time"]) / 2
+
+        self._grouped_app_df = app_grouped_df.sort_values("start_time")
+
+    def _create_grouped_label_df(self):
+        if self._main_df is None or self._main_df.empty:
+            print("No data available.")
+            return pd.DataFrame(columns=["label_name", "start_time", "end_time"])
+
+            # 1️⃣ Entferne Zeilen ohne Labels
+        label_data = self._main_df.dropna(subset=["label_list"]).copy()
+
+        # 2️⃣ Explodiere `label_list`, damit jede Zeile nur ein Label hat
+        label_data = label_data.explode("label_list")
+
+        # 3️⃣ Berechne `start_time` und `end_time`
+        label_data["start_time"] = label_data["creation_datetime"] - pd.to_timedelta(5, unit='s')
+        label_data["end_time"] = label_data["creation_datetime"]
+
+        # 4️⃣ Sortiere nach Label-Name und Startzeit
+        label_data = label_data.sort_values(["label_list", "start_time"])
+
+        # 5️⃣ Gruppiere zusammenhängende Zeiträume mit einer Toleranz von 8 Sekunden
+        change_mask = (
+                (label_data["label_list"] != label_data["label_list"].shift(1)) |  # Anderes Label -> Neue Gruppe
+                ((label_data["start_time"] - label_data["end_time"].shift(1)).dt.total_seconds() > 8)  # Lücke > 8 Sek.
+        )
+        label_data["group"] = change_mask.cumsum()
+
+        # 6️⃣ Aggregiere Startzeit (erste Zeile) & Endzeit (letzte Zeile) pro Label-Gruppe
+        label_grouped_df = label_data.groupby(["label_list", "group"]).agg({
+            "start_time": "first",
+            "end_time": "last"
+        }).reset_index()
+
+        # 7️⃣ Umbenennen der Spalten für bessere Lesbarkeit
+        label_grouped_df = label_grouped_df.rename(columns={"label_list": "label_name"})
+
+        self._grouped_label_df = label_grouped_df[["label_name", "start_time", "end_time"]]
 
     def _get_ax_line_activity(self, ax=None):
         if ax is None:
@@ -220,7 +397,7 @@ class ViperDF:
 
         return ax
 
-    def _get_ax_bar_apps(self, ax=None):
+    def _get_ax_hbar_apps(self, ax=None):
         if ax is None:
             granularity = 200  # Fixed granularity
             fig, ax = plt.subplots(dpi=granularity)
@@ -229,52 +406,25 @@ class ViperDF:
             print("No data available for plotting.")
             return ax
 
-        # Extract only required columns
-        app_data = self._main_df[["window_type", "window_title", "creation_datetime"]].copy()
-
-        # Calculate start_time and end_time
-        app_data["start_time"] = app_data["creation_datetime"] - pd.to_timedelta(5, unit='s')
-        app_data["end_time"] = app_data["creation_datetime"]
-
-        change_mask = (
-                (app_data["window_type"] != app_data["window_type"].shift(1)) |
-                (app_data["window_title"] != app_data["window_title"].shift(1)) |
-                ((app_data["start_time"] - app_data["end_time"].shift(1)).dt.total_seconds() > 5)
-        )
-
-        # Assign a unique group ID to each continuous block of identical entries
-        app_data["group"] = change_mask.cumsum()
-        app_data = app_data.sort_values("creation_datetime")
-
-        # Aggregate start_time (first entry) and end_time (last entry) per group
-        app_grouped_df = app_data.groupby("group").agg({
-            "window_type": "first",
-            "window_title": "first",
-            "start_time": "first",
-            "end_time": "last"
-        }).reset_index(drop=True)
-
-        app_grouped_df["mid_time"] = app_grouped_df["start_time"] + (
-                    app_grouped_df["end_time"] - app_grouped_df["start_time"]) / 2
-
-        app_grouped_df = app_grouped_df.sort_values("start_time")
+        start_y = -5
+        end_y = -30
 
         # Convert times to numeric values for plotting
-        x1 = mdates.date2num(app_grouped_df["start_time"])
-        x2 = mdates.date2num(app_grouped_df["end_time"])
+        x1 = mdates.date2num(self._grouped_app_df["start_time"])
+        x2 = mdates.date2num(self._grouped_app_df["end_time"])
 
         # Create polygons for bar representation
-        verts = [np.array([[x1[i], -5], [x2[i], -5], [x2[i], -45], [x1[i], -45]]) for i in range(len(app_grouped_df))]
+        verts = [np.array([[x1[i], start_y], [x2[i], start_y], [x2[i], end_y], [x1[i], end_y]]) for i in range(len(self._grouped_app_df))]
 
-        unique_apps = app_grouped_df["window_type"].unique()
+        unique_apps = self._grouped_app_df["window_type"].unique()
 
         app_colors = ColorPicker.next_color_rgba(len(unique_apps))
         app_color_map = dict(zip(unique_apps, app_colors))
 
-        app_grouped_df["app_color"] = app_grouped_df["window_type"].map(app_color_map)
+        self._grouped_app_df["app_color"] = self._grouped_app_df["window_type"].map(app_color_map)
 
         # Extract colors in the correct order
-        colors = np.array([app_color_map[app] for app in app_grouped_df["window_type"]])  # Ensure alignment
+        colors = np.array([app_color_map[app] for app in self._grouped_app_df["window_type"]])  # Ensure alignment
 
         # Create the PolyCollection with correct mapping
         poly = PolyCollection(verts, facecolors=colors, alpha=0.7)
@@ -284,34 +434,43 @@ class ViperDF:
         if len(x1) > 0:
             ax.set_xlim(x1[0], x2[-1])
 
-        ax.set_ylim(-50, 110)
+
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
 
-
-        ##########################################
         # Hover & Static Line Elements
-        hover_line, = ax.plot([0, 0], [-45, -5], color='red', linestyle='dotted', alpha=0.7, visible=False)
+        hover_line, = ax.plot([0, 0], [end_y, start_y], color='red', linestyle='dotted', alpha=0.7, visible=False)
 
         # Two triangles pointing at the hover line
         triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Triangle pointing down
         triangle_down, = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Triangle pointing up
 
-        annotation = ax.annotate("", xy=(0, -5), xytext=(10, 10), textcoords="offset points",
+        annotation = ax.annotate("", xy=(0, start_y), xytext=(10, 10), textcoords="offset points",
                                  bbox=dict(boxstyle="round", fc="white", ec="purple", alpha=0.9),
                                  visible=False)
 
         static_mode = False
         selected_index = None
 
+        def reset_annotation():
+            """ Reset all hover and selection elements. """
+            nonlocal static_mode, selected_index
+            static_mode = False
+            selected_index = None
+            hover_line.set_visible(False)
+            annotation.set_visible(False)
+            triangle_up.set_visible(False)
+            triangle_down.set_visible(False)
+            ax.figure.canvas.draw_idle()
+
         def update_selection(index):
             """ Update the selection line, annotation, and triangles based on given index """
             nonlocal selected_index, static_mode
-            if index < 0 or index >= len(app_grouped_df):
+            if index < 0 or index >= len(self._grouped_app_df):
                 return
 
             selected_index = index
 
-            entry = app_grouped_df.iloc[selected_index]
+            entry = self._grouped_app_df.iloc[selected_index]
             start_time = entry["start_time"].strftime("%Y-%m-%d %H:%M:%S")
             end_time = entry["end_time"].strftime("%Y-%m-%d %H:%M:%S")
             window_type = entry["window_type"]
@@ -323,17 +482,17 @@ class ViperDF:
             hover_line.set_visible(True)
 
             # Update triangle positions (centered on the line)
-            triangle_up.set_data([x_pos], [-5])  # Triangle at top of line
-            triangle_down.set_data([x_pos], [-45])  # Triangle at bottom of line
+            triangle_up.set_data([x_pos], [start_y])  # Triangle at top of line
+            triangle_down.set_data([x_pos], [end_y])  # Triangle at bottom of line
             triangle_up.set_visible(True)
             triangle_down.set_visible(True)
 
             # Determine annotation position
-            midpoint = len(app_grouped_df) / 2
+            midpoint = len(self._grouped_app_df) / 2
             text_offset = 10 if selected_index < midpoint else -10  # Right or left shift
             ha = "left" if selected_index < midpoint else "right"  # Horizontal alignment
 
-            annotation.xy = (x_pos, -5)
+            annotation.xy = (x_pos, start_y)
             win_title = split_text_by_max_length(window_title, 35)
             annotation.set_text(f"{start_time}\n{end_time}\n{window_type}\n{win_title}")
             annotation.set_visible(True)
@@ -347,69 +506,293 @@ class ViperDF:
             if event.inaxes != ax or static_mode:
                 return
 
-            if event.ydata is None or not (-45 <= event.ydata <= -5):
-                hover_line.set_visible(False)
-                annotation.set_visible(False)
-                triangle_up.set_visible(False)
-                triangle_down.set_visible(False)
-                ax.figure.canvas.draw_idle()
+            if event.ydata is None or not (end_y <= event.ydata <= start_y):
+                reset_annotation()
                 return
 
             x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
 
             # Find the closest index based on mouse position
-            valid_entries = app_grouped_df[
-                (app_grouped_df["start_time"] <= x_mouse) &
-                (app_grouped_df["end_time"] >= x_mouse)
+            valid_entries = self._grouped_app_df[
+                (self._grouped_app_df["start_time"] <= x_mouse) &
+                (self._grouped_app_df["end_time"] >= x_mouse)
                 ]
 
             if not valid_entries.empty:
                 closest_index = valid_entries.index[0]
             else:
-                closest_index = (app_grouped_df["start_time"] - x_mouse).abs().idxmin()
+                closest_index = (self._grouped_app_df["start_time"] - x_mouse).abs().idxmin()
 
-            # Use the update_selection method to handle the hover update
             update_selection(closest_index)
 
         def on_click(event):
             """ Ensure clicks are only handled in the bar chart's axis """
             nonlocal static_mode
             if event.button == 1 and event.inaxes == ax:
-                if -45 <= event.ydata <= -5:
+                if end_y <= event.ydata <= start_y:
                     x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
-                    valid_entries = app_grouped_df[
-                        (app_grouped_df["start_time"] <= x_click) &
-                        (app_grouped_df["end_time"] >= x_click)
+                    valid_entries = self._grouped_app_df[
+                        (self._grouped_app_df["start_time"] <= x_click) &
+                        (self._grouped_app_df["end_time"] >= x_click)
                         ]
                     static_mode = True
                     if not valid_entries.empty:
                         closest_index = valid_entries.index[0]
                     else:
-                        closest_index = (app_grouped_df["start_time"] - x_click).abs().idxmin()
+                        closest_index = (self._grouped_app_df["start_time"] - x_click).abs().idxmin()
 
                     update_selection(closest_index)
+                else:
+                    # Klick außerhalb des Y-Bereichs -> Annotation zurücksetzen
+                    reset_annotation()
 
         def on_key(event):
             """ Ensure keyboard events are only processed when static mode is active """
             nonlocal static_mode, selected_index
-            if event.key == "escape":
-                static_mode = False
-                selected_index = None
-                hover_line.set_visible(False)
-                annotation.set_visible(False)
-                triangle_up.set_visible(False)
-                triangle_down.set_visible(False)
-                ax.figure.canvas.draw_idle()
+            if not static_mode or selected_index is None:
                 return
 
-            if static_mode and selected_index is not None:
-                if event.key == "right":
-                    new_index = selected_index + 1
-                    new_index = 0 if new_index > len(app_grouped_df) - 1 else new_index
+            if event.key == "escape":
+                reset_annotation()
+                return
 
-                elif event.key == "left":
-                    new_index = selected_index - 1
-                    new_index = len(app_grouped_df) - 1 if new_index < 0 else new_index
+            if event.key in ["right", "left"]:
+                step = 1 if event.key == "right" else -1
+                new_index = selected_index + step
+                new_index = 0 if new_index > len(self._grouped_app_df) - 1 else new_index
+                update_selection(new_index)
+
+
+        ax.figure.canvas.mpl_connect("motion_notify_event", on_hover)
+        ax.figure.canvas.mpl_connect("button_press_event", on_click)
+        ax.figure.canvas.mpl_connect("key_press_event", on_key)
+
+        return ax
+
+    def _get_ax_hbar_labels(self, ax=None, label_list: list[str] | str = None):
+        """Erstellt ein horizontales Balkendiagramm (hbar) für Labels basierend auf `self._grouped_label_df`.
+           Integriert Hover- und Click-Funktionen zur Interaktion.
+        """
+
+        if ax is None:
+            granularity = 200  # Fixed granularity
+            fig, ax = plt.subplots(dpi=granularity)
+
+        # Standard-Variablen
+        bar_height = 15
+        start_y = -35
+        y_spacing = 5
+
+        # Setze X-Grenzen basierend auf Analyseergebnissen
+        x_start = mdates.date2num(self.analysis_results["first_datetime"])
+        x_end = mdates.date2num(self.analysis_results["last_datetime"])
+
+        # Prüfen, ob `self._grouped_label_df` existiert und nicht leer ist
+        if self._grouped_label_df is None or self._grouped_label_df.empty:
+            raise ValueError("No data available in `_grouped_label_df`.")
+
+        # Falls keine Labels vorgegeben sind, nutze die ersten 5 eindeutigen Labels
+        available_labels = self._grouped_label_df["label_name"].unique()
+
+        if label_list is None:
+            label_list = available_labels[:5]
+        elif isinstance(label_list, str):
+            label_list = [label_list]
+
+        # Prüfen, ob alle angegebenen Labels existieren
+        missing_labels = [label for label in label_list if label not in available_labels]
+        if missing_labels:
+            raise ValueError(f"Labels not found: {missing_labels}")
+
+        # Daten filtern für die gewünschten Labels
+        label_data = self._grouped_label_df[self._grouped_label_df["label_name"].isin(label_list)].copy()
+
+        # Initiale Y-Position berechnen
+        y_positions = {}
+        current_y = start_y
+
+        # Farben für die Labels generieren
+        colors = ColorPicker.next_color_rgba(len(label_list))
+        color_map = dict(zip(label_list, colors))
+
+        # Balken zeichnen
+        label_y_mapping = {}  # Speichert Y-Positionen für Labels
+        for label in label_list:
+            df_subset = label_data[label_data["label_name"] == label]
+            label_y_mapping[label] = current_y  # Speichert die Y-Position für das Label
+
+            for _, row in df_subset.iterrows():
+                x1 = mdates.date2num(row["start_time"])
+                x2 = mdates.date2num(row["end_time"])
+
+                # Balken zeichnen
+                ax.barh(y=current_y - (bar_height / 2), width=(x2 - x1), left=x1, height=bar_height,
+                        color=color_map[label], alpha=0.7)
+
+            # Nächste Y-Position berechnen
+            current_y -= bar_height + y_spacing
+
+        # Dynamische Y-Limits basierend auf Anzahl der Labels
+        ax.set_ylim(current_y, 110)  # Offset für Lesbarkeit
+
+        # Hover & Static Line Elements
+        hover_line, = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
+
+        # Zwei Dreiecke für die Markierung
+        triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Unten
+        triangle_down, = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Oben
+
+        annotation = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+                                 bbox=dict(boxstyle="round", fc="white", ec="blue", alpha=0.9),
+                                 visible=False)
+
+        static_mode = False
+        selected_index = None
+
+        def update_selection(index):
+            """ Update selection and annotation. """
+            nonlocal selected_index, static_mode
+            if index < 0 or index >= len(label_data):
+                return
+
+            selected_index = index
+
+            entry = label_data.iloc[selected_index]
+            start_time = entry["start_time"].strftime("%H:%M:%S")
+            end_time = entry["end_time"].strftime("%H:%M:%S")
+            duration_seconds = int((entry["end_time"] - entry["start_time"]).total_seconds())
+            hours, remainder = divmod(duration_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            duration = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+            x_pos = mdates.date2num(entry["start_time"] + (entry["end_time"] - entry["start_time"]) / 2)
+            y_pos = label_y_mapping[entry["label_name"]]
+
+            hover_line.set_xdata([x_pos])
+            hover_line.set_ydata([y_pos - bar_height, y_pos])
+
+            hover_line.set_visible(True)
+
+            # Update triangle positions
+            triangle_up.set_data([x_pos], [y_pos])  # Triangle at center
+            triangle_down.set_data([x_pos], [y_pos - bar_height])  # Triangle at bottom
+            triangle_up.set_visible(True)
+            triangle_down.set_visible(True)
+
+            # Annotation position check
+            text_offset = 10 if x_pos < (x_start + x_end) / 2 else -10  # Rechts oder links verschieben
+            ha = "left" if x_pos < (x_start + x_end) / 2 else "right"
+
+            annotation.xy = (x_pos, y_pos)
+            annotation.set_text(f"{entry['label_name']}\n{start_time} - {end_time}\n{duration}")
+            annotation.set_visible(True)
+            annotation.set_ha(ha)
+            annotation.set_position((text_offset, 10))  # Dynamische Positionierung
+
+            ax.figure.canvas.draw_idle()
+
+        def on_hover(event):
+            """ Ensure hover event only affects label bars in the correct Y-zone. """
+            if event.inaxes != ax or static_mode:
+                return
+
+            closest_label = None
+            for label, y_pos in label_y_mapping.items():
+                if (y_pos - bar_height - int(y_spacing)) <= event.ydata <= (y_pos + int(y_spacing)):
+                    closest_label = label
+                    break  # Sobald das richtige Label gefunden wurde, abbrechen
+
+            if closest_label is None:
+                # Falls keine Übereinstimmung, alles ausblenden
+                reset_annotation()
+                return
+
+            # Jetzt innerhalb der richtigen Y-Zone nach dem nächsten X-Wert suchen
+            x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+            valid_entries = label_data[
+                (label_data["start_time"] <= x_mouse) &
+                (label_data["end_time"] >= x_mouse) &
+                (label_data["label_name"] == closest_label)
+                ]
+
+            if not valid_entries.empty:
+                closest_index = valid_entries.index[0]
+            else:
+                closest_index = (label_data[
+                                     label_data["label_name"] == closest_label
+                                     ]["start_time"] - x_mouse).abs().idxmin()
+
+            update_selection(closest_index)
+
+        def on_click(event):
+            """ Ensure click event only affects label bars in the correct Y-zone. """
+            nonlocal static_mode
+            if event.inaxes != ax:
+                return  # Klick außerhalb des Plots ignorieren
+
+            closest_label = None
+            for label, y_pos in label_y_mapping.items():
+                if (y_pos - bar_height - y_spacing) <= event.ydata <= (y_pos - y_spacing):
+                    closest_label = label
+                    break  # Sobald das richtige Label gefunden wurde, abbrechen
+
+            if closest_label is None:
+                # Falls Klick außerhalb aller Labels → Zurücksetzen
+                reset_annotation()
+                return
+
+            # Jetzt innerhalb der richtigen Y-Zone nach dem nächsten X-Wert suchen
+            x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+            valid_entries = label_data[
+                (label_data["start_time"] <= x_click) &
+                (label_data["end_time"] >= x_click) &
+                (label_data["label_name"] == closest_label)
+                ]
+
+            static_mode = True
+            if not valid_entries.empty:
+                closest_index = valid_entries.index[0]
+            else:
+                closest_index = (label_data[
+                                     label_data["label_name"] == closest_label
+                                     ]["start_time"] - x_click).abs().idxmin()
+
+            update_selection(closest_index)
+
+        def reset_annotation():
+            static_mode = False
+            selected_index = None
+            hover_line.set_visible(False)
+            annotation.set_visible(False)
+            triangle_up.set_visible(False)
+            triangle_down.set_visible(False)
+            ax.figure.canvas.draw_idle()
+
+        def on_key(event):
+            """ Handle keyboard navigation in static mode with round-robin effect. """
+            nonlocal static_mode, selected_index
+            if not static_mode or selected_index is None:
+                return
+
+            if event.key == "escape":
+                reset_annotation()
+                return
+
+            if event.key in ["right", "left"]:
+                step = 1 if event.key == "right" else -1
+
+                # Hol das aktuelle Label
+                current_label = label_data.iloc[selected_index]["label_name"]
+
+                # Filtere nur die Einträge für dieses Label
+                same_label_entries = label_data[label_data["label_name"] == current_label]
+
+                # Bestimme den aktuellen Index innerhalb dieser gefilterten Liste
+                relative_index = same_label_entries.index.get_loc(selected_index)
+
+                # Round-Robin Logik: Springt zyklisch durch die Einträge des Labels
+                new_relative_index = (relative_index + step) % len(same_label_entries)
+                new_index = same_label_entries.index[new_relative_index]
 
                 update_selection(new_index)
 
@@ -418,155 +801,6 @@ class ViperDF:
         ax.figure.canvas.mpl_connect("key_press_event", on_key)
 
         return ax
-
-    #####################
-
-    def get_label_timeframe_df(self):
-        if self._main_df is None or self._main_df.empty:
-            print("No data available.")
-            return pd.DataFrame(columns=["label_name", "start_time", "end_time"])
-
-            # 1️⃣ Entferne Zeilen ohne Labels
-        label_data = self._main_df.dropna(subset=["label_list"]).copy()
-
-        # 2️⃣ Explodiere `label_list`, damit jede Zeile nur ein Label hat
-        label_data = label_data.explode("label_list")
-
-        # 3️⃣ Berechne `start_time` und `end_time`
-        label_data["start_time"] = label_data["creation_datetime"] - pd.to_timedelta(5, unit='s')
-        label_data["end_time"] = label_data["creation_datetime"]
-
-        # 4️⃣ Sortiere nach Label-Name und Startzeit
-        label_data = label_data.sort_values(["label_list", "start_time"])
-
-        # 5️⃣ Gruppiere zusammenhängende Zeiträume mit einer Toleranz von 8 Sekunden
-        change_mask = (
-                (label_data["label_list"] != label_data["label_list"].shift(1)) |  # Anderes Label -> Neue Gruppe
-                ((label_data["start_time"] - label_data["end_time"].shift(1)).dt.total_seconds() > 8)  # Lücke > 8 Sek.
-        )
-        label_data["group"] = change_mask.cumsum()
-
-        # 6️⃣ Aggregiere Startzeit (erste Zeile) & Endzeit (letzte Zeile) pro Label-Gruppe
-        label_grouped_df = label_data.groupby(["label_list", "group"]).agg({
-            "start_time": "first",
-            "end_time": "last"
-        }).reset_index()
-
-        # 7️⃣ Umbenennen der Spalten für bessere Lesbarkeit
-        label_grouped_df = label_grouped_df.rename(columns={"label_list": "label_name"})
-
-        self._label_df = label_grouped_df[["label_name", "start_time", "end_time"]]
-
-    def analyze(self):
-        """
-        calls all protected analyzes functions
-        ORDER MATTERS!
-        """
-        if not self.empty:
-            self._time_analysis()
-            self._input_analysis()
-            if not self.is_app_based:
-                self._app_analysis()
-            if not self.is_label_based:
-                self._label_analysis()
-
-            self._is_analyzed = True
-
-    def _time_analysis(self):
-        self._main_df.sort_values(by=["creation_datetime"], ascending=True)
-        self.analysis_results["first_datetime"] = self._main_df["creation_datetime"].iloc[0]
-        self.analysis_results["last_datetime"] = self._main_df["creation_datetime"].iloc[-1]
-        self.analysis_results["time_frame_seconds"] = Seconds(int((self.analysis_results["last_datetime"]
-                                                                   - self.analysis_results["first_datetime"])
-                                                                  .total_seconds()))
-
-        self.analysis_results["entry_count"] = len(self._main_df)
-        self.analysis_results["tracked_seconds"] = Seconds(5 * self.analysis_results["entry_count"])
-        self.analysis_results["untracked_seconds"] = Seconds(self.analysis_results["time_frame_seconds"]
-                                                             - self.analysis_results["tracked_seconds"])
-
-        self.analysis_results["active_secs"] = Seconds(5 * len(self._main_df[self._main_df["activity"]]))
-        self.analysis_results["inactive_secs"] = (self.analysis_results["tracked_seconds"] -
-                                                  self.analysis_results["active_secs"])
-
-        self.analysis_results["percent_active"] = round((self.analysis_results["active_secs"]/(
-                                                    self.analysis_results["tracked_seconds"]/100)), 2)
-
-    def _input_analysis(self):
-        activity_points = getattr(self, "_number_activity_points", 100)
-
-        numeric_columns = [
-            "count_key_pressed",
-            "count_mouse_pressed",
-            "count_direction_key_pressed",
-            "count_char_key_pressed",
-            "count_special_key_pressed",
-            "count_mouse_scrolls",
-            "count_left_mouse_pressed",
-            "count_right_mouse_pressed",
-            "count_middle_mouse_pressed",
-            "all_activity_count"
-        ]
-
-        time_df = self._main_df[numeric_columns + ["creation_datetime"]].fillna(0)
-        time_df = time_df.sort_values("creation_datetime")
-
-        start_time = time_df["creation_datetime"].iloc[0]
-        end_time = time_df["creation_datetime"].iloc[-1]
-        total_seconds = int((end_time - start_time).total_seconds())
-
-        time_frame_per_point = max(5, round(total_seconds / activity_points / 5) * 5)
-        self.analysis_results["activity_interval"] = time_frame_per_point
-        # param freq uses a deprecated methode with "s" for seconds in the end, don't remove!
-        intervals = pd.interval_range(
-            start=start_time,
-            end=end_time + pd.Timedelta(seconds=time_frame_per_point),
-            freq=f"{time_frame_per_point}s",
-            closed="left"
-        )
-
-        time_df["time_bin"] = pd.cut(
-            time_df["creation_datetime"],
-            bins=intervals,
-            labels=range(len(intervals))
-        )
-
-        aggregated_data = time_df.groupby("time_bin", observed=True)[numeric_columns].sum()
-        aggregated_data = aggregated_data.reset_index(drop=True)
-
-        bins_df = pd.DataFrame({
-            "start_time": intervals.left,
-            "end_time": intervals.right
-        })
-        bins_df["middle_time"] = bins_df[["start_time", "end_time"]].mean(axis=1)
-
-        bins_df = bins_df.merge(aggregated_data, left_index=True, right_index=True, how="left").fillna(0)
-
-        bins_df[numeric_columns] = bins_df[numeric_columns].astype(int)
-
-        highest_activity_value = int(round(bins_df["all_activity_count"].max() * 0.75))
-        bins_df["activity_percent"] = bins_df["all_activity_count"].apply(
-            lambda x: min(round((x / (highest_activity_value / 100))), 100)).astype(int)
-        self.analysis_results["highest_activity_value"] = highest_activity_value
-        self._activity_df = bins_df
-
-
-    def _app_analysis(self):
-        app_win_count = self._main_df["window_type"].value_counts().to_dict()
-        self.analysis_results["apps"] = {"count_unique": len(app_win_count), "entries": app_win_count}
-
-    def _label_analysis(self):
-
-        all_labels = self._main_df["label_list"].dropna().explode()
-        label_counts = all_labels.value_counts().to_dict()
-        self.analysis_results["entry_count_labeled"] = len(self._main_df["label_list"].dropna())
-        self.analysis_results["entry_count_unlabeled"] = (self.analysis_results["entry_count"]
-                                                          - self.analysis_results["entry_count_labeled"])
-        self.analysis_results["labels"] = {
-            "count_unique": len(label_counts),
-            "entries": label_counts
-        }
-
 
 
 class Analyzer(ABC):
@@ -792,11 +1026,15 @@ if __name__ == "__main__":
     start_analysis = datetime.now()
     vdf = ViperDF("testing", test_df)
     vdf.analyze()
-    vdf.get_label_timeframe_df()
 
     fig, ax_all = plt.subplots(dpi=100)
-    ax_all = vdf._get_ax_bar_apps(ax=ax_all)
+
+
     ax_all = vdf._get_ax_line_activity(ax=ax_all)
+
+    ax_all = vdf._get_ax_hbar_apps(ax=ax_all)
+
+    ax_all = vdf._get_ax_hbar_labels(ax=ax_all)
 
 
 

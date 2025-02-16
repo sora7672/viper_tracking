@@ -4,7 +4,7 @@ This file is part of Viper Tracking.
 What it does:
 - Tracks user inputs, like key presses and mouse clicks, but NOT what is typed or clicked.
 - Counts and categorizes inputs for analysis, ensuring privacy.
-- Operates in the background and safely saves the counts in a database.
+- Operates in the background and saves the counts in a database.
 
 Key Privacy Note:
 We NEVER log or track what you type or where you click. We only count how many times certain actions
@@ -385,7 +385,7 @@ def stop_done() -> bool:
     :return: bool (Returns True when all threads are stopped.)
     """
 
-    global mouse_thread, keyboard_thread, input_writer_thread
+    global mouse_thread, keyboard_thread
 
     mouse_thread.join()
     keyboard_thread.join()

@@ -131,7 +131,6 @@ class ViperDF:
 
             return n_vdf
 
-    #############
 
     def _get_ax_line_activity(self, ax=None):
         if ax is None:
@@ -288,7 +287,7 @@ class ViperDF:
         ax.set_ylim(-50, 110)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
 
-        #FIXME: CLick and esc and arrow functions
+
         ##########################################
         # Hover & Static Line Elements
         hover_line, = ax.plot([0, 0], [-45, -5], color='red', linestyle='dotted', alpha=0.7, visible=False)
@@ -335,7 +334,8 @@ class ViperDF:
             ha = "left" if selected_index < midpoint else "right"  # Horizontal alignment
 
             annotation.xy = (x_pos, -5)
-            annotation.set_text(f"{start_time} -> {end_time}\n{window_type}\n{window_title}")
+            win_title = split_text_by_max_length(window_title, 35)
+            annotation.set_text(f"{start_time}\n{end_time}\n{window_type}\n{win_title}")
             annotation.set_visible(True)
             annotation.set_ha(ha)  # Align left or right
             annotation.set_position((text_offset, 10))  # Adjust position dynamically
@@ -350,6 +350,8 @@ class ViperDF:
             if event.ydata is None or not (-45 <= event.ydata <= -5):
                 hover_line.set_visible(False)
                 annotation.set_visible(False)
+                triangle_up.set_visible(False)
+                triangle_down.set_visible(False)
                 ax.figure.canvas.draw_idle()
                 return
 
@@ -395,6 +397,8 @@ class ViperDF:
                 selected_index = None
                 hover_line.set_visible(False)
                 annotation.set_visible(False)
+                triangle_up.set_visible(False)
+                triangle_down.set_visible(False)
                 ax.figure.canvas.draw_idle()
                 return
 
@@ -416,6 +420,42 @@ class ViperDF:
         return ax
 
     #####################
+
+    def get_label_timeframe_df(self):
+        if self._main_df is None or self._main_df.empty:
+            print("No data available.")
+            return pd.DataFrame(columns=["label_name", "start_time", "end_time"])
+
+            # 1️⃣ Entferne Zeilen ohne Labels
+        label_data = self._main_df.dropna(subset=["label_list"]).copy()
+
+        # 2️⃣ Explodiere `label_list`, damit jede Zeile nur ein Label hat
+        label_data = label_data.explode("label_list")
+
+        # 3️⃣ Berechne `start_time` und `end_time`
+        label_data["start_time"] = label_data["creation_datetime"] - pd.to_timedelta(5, unit='s')
+        label_data["end_time"] = label_data["creation_datetime"]
+
+        # 4️⃣ Sortiere nach Label-Name und Startzeit
+        label_data = label_data.sort_values(["label_list", "start_time"])
+
+        # 5️⃣ Gruppiere zusammenhängende Zeiträume mit einer Toleranz von 8 Sekunden
+        change_mask = (
+                (label_data["label_list"] != label_data["label_list"].shift(1)) |  # Anderes Label -> Neue Gruppe
+                ((label_data["start_time"] - label_data["end_time"].shift(1)).dt.total_seconds() > 8)  # Lücke > 8 Sek.
+        )
+        label_data["group"] = change_mask.cumsum()
+
+        # 6️⃣ Aggregiere Startzeit (erste Zeile) & Endzeit (letzte Zeile) pro Label-Gruppe
+        label_grouped_df = label_data.groupby(["label_list", "group"]).agg({
+            "start_time": "first",
+            "end_time": "last"
+        }).reset_index()
+
+        # 7️⃣ Umbenennen der Spalten für bessere Lesbarkeit
+        label_grouped_df = label_grouped_df.rename(columns={"label_list": "label_name"})
+
+        self._label_df = label_grouped_df[["label_name", "start_time", "end_time"]]
 
     def analyze(self):
         """
@@ -660,6 +700,56 @@ class AnalyzerThread:
             self._check_for_action()
 
 
+# # # # Helper functions # # # #
+def split_leading_special_chars(word: str):
+    """Teilt ein Wort in führende Sonderzeichen und den restlichen Text"""
+    special_chars = ""
+    while word and not word[0].isalnum():  # Sonderzeichen am Anfang sammeln
+        special_chars += word[0]
+        word = word[1:]
+    return special_chars, word
+
+
+def split_text_by_max_length(text: str, max_length: int) -> str:
+    """Splits text into lines with max_length, breaking at the nearest space.
+    Special characters like '!', '...', ',' at the start of words are kept with the previous word.
+    """
+    words = text.split()  # Wörter anhand von Leerzeichen splitten
+    processed_words = []
+
+    previous_word = ""  # Speichert das vorherige Wort, um Sonderzeichen anzuhängen
+
+    # 1️⃣ Verarbeitung der Sonderzeichen vor der eigentlichen Zeilenaufteilung
+    for word in words:
+        special_chars, cleaned_word = split_leading_special_chars(word)
+
+        if special_chars and processed_words:
+            # Falls das Wort Sonderzeichen hatte und nicht am Satzanfang steht, hänge es an das letzte Wort an
+            processed_words[-1] += special_chars
+
+        if cleaned_word:  # Falls nach dem Entfernen der Sonderzeichen noch ein Wort übrig bleibt
+            processed_words.append(cleaned_word)
+
+    # 2️⃣ Hauptprozess: Zeilenaufteilung basierend auf max_length
+    lines = []
+    current_line = ""
+
+    for word in processed_words:
+        if len(current_line) + len(word) + 1 <= max_length:
+            current_line += (" " if current_line else "") + word
+        else:
+            # Speichere die Zeile und starte eine neue
+            lines.append(current_line)
+            current_line = word  # Starte mit dem neuen Wort
+
+    # Letzte Zeile speichern, falls sie nicht leer ist
+    if current_line:
+        lines.append(current_line)
+
+    return "\n".join(lines)
+
+
+
 # # # # External Call functions # # # #
 def init_standard_analyzes():
     # ini the threading class, it analyzes on init once.
@@ -702,7 +792,7 @@ if __name__ == "__main__":
     start_analysis = datetime.now()
     vdf = ViperDF("testing", test_df)
     vdf.analyze()
-
+    vdf.get_label_timeframe_df()
 
     fig, ax_all = plt.subplots(dpi=100)
     ax_all = vdf._get_ax_bar_apps(ax=ax_all)

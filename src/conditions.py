@@ -89,7 +89,6 @@ class ObjectCondition:
             case _:
                 raise ValueError(f"Invalid value type {value_type}")
 
-
         self.lock = Lock()
 
     @property

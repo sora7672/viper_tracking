@@ -24,6 +24,7 @@ from datetime import datetime
 from input_manager import input_to_db, had_input
 
 window_thread: Thread = None
+
 # TODO: Add this to the config
 untracked_types = []
 

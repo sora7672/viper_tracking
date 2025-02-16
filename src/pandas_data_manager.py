@@ -271,7 +271,24 @@ class ViperDF:
         app_grouped_df["mid_time"] = app_grouped_df["start_time"] + (
                 app_grouped_df["end_time"] - app_grouped_df["start_time"]) / 2
 
+        app_grouped_df["duration"] = (app_grouped_df["end_time"] - app_grouped_df["start_time"]).dt.total_seconds()
+
         self._grouped_app_df = app_grouped_df.sort_values("start_time")
+        # 🔹 NEUES DATAFRAME: Summierte Dauer pro App + Prozentwerte 🔹
+        app_summary_df = app_grouped_df.groupby("window_type").agg({
+            "duration": "sum"
+        }).reset_index()
+
+        # Berechne die gesamte Nutzungszeit über alle Apps hinweg
+        total_app_time = app_summary_df["duration"].sum()
+
+        # Berechne den prozentualen Anteil für jede App
+        app_summary_df["overall_percent"] = (app_summary_df["duration"] / total_app_time) * 100
+        app_summary_df["overall_percent"] = app_summary_df["overall_percent"].apply(lambda x: max(x, 0.01))
+
+        # Speichern des neuen DataFrames
+        self._grouped_app_summary_df = app_summary_df
+
 
     def _create_grouped_label_df(self):
         if self._main_df is None or self._main_df.empty:
@@ -306,8 +323,25 @@ class ViperDF:
 
         # 7️⃣ Umbenennen der Spalten für bessere Lesbarkeit
         label_grouped_df = label_grouped_df.rename(columns={"label_list": "label_name"})
+        label_grouped_df["duration"] = (label_grouped_df["end_time"] - label_grouped_df["start_time"]).dt.total_seconds()
+        label_grouped_df = label_grouped_df.sort_values(["label_name", "start_time"])
 
-        self._grouped_label_df = label_grouped_df[["label_name", "start_time", "end_time"]]
+        self._grouped_label_df = label_grouped_df[["label_name", "start_time", "end_time", "duration"]]
+
+        label_summary_df = label_grouped_df.groupby("label_name").agg({
+            "duration": "sum"
+        }).reset_index()
+
+        # Berechne die gesamte Nutzungszeit über alle Labels hinweg
+        total_label_time = label_summary_df["duration"].sum()
+
+        # Berechne den prozentualen Anteil für jedes Label
+        label_summary_df["overall_percent"] = (label_summary_df["duration"] / total_label_time) * 100
+        label_summary_df["overall_percent"] = label_summary_df["overall_percent"].apply(lambda x: max(x, 0.01))
+
+        # Speichern des neuen DataFrames
+        self._grouped_label_summary_df = label_summary_df
+
 
     def _get_ax_line_activity(self, ax=None):
         if ax is None:

@@ -253,7 +253,7 @@ class ViperDF:
         change_mask = (
                 (app_data["window_type"] != app_data["window_type"].shift(1)) |
                 (app_data["window_title"] != app_data["window_title"].shift(1)) |
-                ((app_data["start_time"] - app_data["end_time"].shift(1)).dt.total_seconds() > 5)
+                ((app_data["start_time"] - app_data["end_time"].shift(1)).dt.total_seconds() > 8)
         )
 
         # Assign a unique group ID to each continuous block of identical entries
@@ -760,6 +760,7 @@ class ViperDF:
             update_selection(closest_index)
 
         def reset_annotation():
+            nonlocal static_mode, selected_index
             static_mode = False
             selected_index = None
             hover_line.set_visible(False)

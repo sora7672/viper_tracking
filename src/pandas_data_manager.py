@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
-import hashlib
 
 from config_manager import threads_are_stopped
 from db_connector import DBHandler, stop_db, start_db
@@ -31,6 +30,22 @@ class Seconds(int):
         if not isinstance(value, int):
             raise ValueError("Seconds must be initialized with an integer value.")
         return super().__new__(cls, value)
+
+    def __str__(self):
+        if self >= 604800:
+            return self.weeks
+        elif self >= 86400:
+            return self.days
+        elif self >= 3600:
+            return self.hours
+        elif self >= 60:
+            return self.mins
+        else:
+            return f"{self} seconds"
+
+    @property
+    def str(self):
+        return str(self)
 
     @property
     def mins(self):
@@ -48,7 +63,7 @@ class Seconds(int):
         mins, secs = divmod(self, 60)
         hours, mins = divmod(mins, 60)
         days, hours = divmod(hours, 24)
-        return f"{days}:{hours}:{mins}:{secs}"
+        return f"{days} days, {hours}:{mins}:{secs}"
 
     @property
     def weeks(self):
@@ -56,7 +71,7 @@ class Seconds(int):
         hours, mins = divmod(mins, 60)
         days, hours = divmod(hours, 24)
         weeks, days = divmod(days, 7)
-        return f"{weeks}:{days}:{hours}:{mins}:{secs}"
+        return f"{weeks} weeks, {days} days {hours}:{mins}:{secs}"
 
 
 class ViperDF:
@@ -190,11 +205,12 @@ class ViperDF:
 
         time_frame_per_point = max(5, round(total_seconds / activity_points / 5) * 5)
         self.analysis_results["activity_interval"] = time_frame_per_point
+
         # param freq uses a deprecated methode with "s" for seconds in the end, don't remove!
         intervals = pd.interval_range(
             start=start_time,
             end=end_time + pd.Timedelta(seconds=time_frame_per_point),
-            freq=f"{time_frame_per_point}s",
+            freq=f"{time_frame_per_point}s",  # Comment above
             closed="left"
         )
 
@@ -236,10 +252,8 @@ class ViperDF:
         self.analysis_results["entry_count_labeled"] = len(self._main_df["label_list"].dropna())
         self.analysis_results["entry_count_unlabeled"] = (self.analysis_results["entry_count"]
                                                           - self.analysis_results["entry_count_labeled"])
-        self.analysis_results["labels"] = {
-            "count_unique": len(label_counts),
-            "entries": label_counts
-        }
+
+        self.analysis_results["labels"] = {"count_unique": len(label_counts), "entries": label_counts}
         self._create_grouped_label_df()
 
     def _create_grouped_app_df(self):
@@ -274,20 +288,70 @@ class ViperDF:
         app_grouped_df["duration"] = (app_grouped_df["end_time"] - app_grouped_df["start_time"]).dt.total_seconds()
 
         self._grouped_app_df = app_grouped_df.sort_values("start_time")
-        # 🔹 NEUES DATAFRAME: Summierte Dauer pro App + Prozentwerte 🔹
-        app_summary_df = app_grouped_df.groupby("window_type").agg({
-            "duration": "sum"
-        }).reset_index()
+        # Adding colors:
+        unique_apps = self._grouped_app_df["window_type"].unique()
 
+        # Generate colors for unique apps
+        app_colors = ColorPicker.next_color_rgba(len(unique_apps))
+        app_color_map = dict(zip(unique_apps, app_colors))
+
+        # Assign colors to DataFrame
+        self._grouped_app_df["rgba_color"] = self._grouped_app_df["window_type"].map(app_color_map)
+
+        # 🔹 NEUES DATAFRAME: Summierte Dauer pro App + Prozentwerte 🔹
+        app_summary_df = self._grouped_app_df.groupby("window_type").agg({
+            "duration": "sum",
+            "rgba_color": "first"
+        }).reset_index()
         # Berechne die gesamte Nutzungszeit über alle Apps hinweg
         total_app_time = app_summary_df["duration"].sum()
 
         # Berechne den prozentualen Anteil für jede App
         app_summary_df["overall_percent"] = (app_summary_df["duration"] / total_app_time) * 100
         app_summary_df["overall_percent"] = app_summary_df["overall_percent"].apply(lambda x: max(x, 0.01))
+        app_summary_df["details"] = None
 
         # Speichern des neuen DataFrames
-        self._grouped_app_summary_df = app_summary_df
+        self._grouped_app_summary_df = app_summary_df.sort_values("overall_percent", ascending=False)
+        self._combine_small_app_entries()
+
+    def _combine_small_app_entries(self):
+        if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
+            return
+
+        df = self._grouped_app_summary_df.copy()
+
+        # Maske für alle Einträge unter 2%
+        mask = df["overall_percent"] < 2
+        small_entries = df[mask].copy()
+
+        # Falls es keine kleinen Einträge gibt, beenden
+        if small_entries.empty:
+            return
+
+        # Erstelle eine Liste mit Details (Dictionary für jede App)
+        details = small_entries[["window_type", "duration", "overall_percent"]].to_dict(orient="records")
+
+        # Summiere die Gesamtzeit & den Prozentwert der kleinen Einträge
+        others_total_time = small_entries["duration"].sum()
+        others_percent = small_entries["overall_percent"].sum()
+
+        # Entferne die kleinen Einträge aus dem Haupt-DF
+        df = df[~mask]
+
+        # Füge die "Andere"-Zeile hinzu
+        new_row = pd.DataFrame([{
+            "window_type": "Others",
+            "duration": others_total_time,
+            "overall_percent": others_percent,
+            "rgba_color": (0.5, 0.5, 0.5, 1.0),  # A neutral gray with full opacity
+            "details": details  # Speichert die kleinen Einträge als Liste von Dicts
+        }])
+
+        df = pd.concat([df, new_row], ignore_index=True)
+
+        # Speichern des neuen DataFrames mit "Andere"
+        self._grouped_app_summary_df = df
 
 
     def _create_grouped_label_df(self):
@@ -328,24 +392,77 @@ class ViperDF:
 
         self._grouped_label_df = label_grouped_df[["label_name", "start_time", "end_time", "duration"]]
 
-        label_summary_df = label_grouped_df.groupby("label_name").agg({
-            "duration": "sum"
-        }).reset_index()
+        # TODO: add databank entry for RGBA colors per label and read them in
+        #  also, add it to Labels in logs and for the GUI to add colors per label.
+        #  Dont forget manual label adding, just add green color to that as standard (if not changed)
+        #  or add a color picker in GUI?
+        # Adding colors:
+        unique_labels = self._grouped_label_df["label_name"].unique()
 
+        # Generate colors for unique apps
+        label_colors = ColorPicker.next_color_rgba(len(unique_labels))
+        label_color_map = dict(zip(unique_labels, label_colors))
+
+        # Assign colors to DataFrame
+        self._grouped_label_df["rgba_color"] = self._grouped_label_df["label_name"].map(label_color_map)
+        # END OF TO-DO
+        label_summary_df = self._grouped_label_df.groupby("label_name").agg({
+            "duration": "sum",
+            "rgba_color": "first"
+        }).reset_index()
         # Berechne die gesamte Nutzungszeit über alle Labels hinweg
         total_label_time = label_summary_df["duration"].sum()
 
         # Berechne den prozentualen Anteil für jedes Label
         label_summary_df["overall_percent"] = (label_summary_df["duration"] / total_label_time) * 100
         label_summary_df["overall_percent"] = label_summary_df["overall_percent"].apply(lambda x: max(x, 0.01))
-
+        label_summary_df["details"] = None
         # Speichern des neuen DataFrames
-        self._grouped_label_summary_df = label_summary_df
+        self._grouped_label_summary_df = label_summary_df.sort_values("overall_percent", ascending=False)
 
+        self._combine_small_label_entries()
+
+    def _combine_small_label_entries(self):
+        if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
+            return
+
+        df = self._grouped_label_summary_df.copy()
+
+        # Maske für alle Einträge unter 2%
+        mask = df["overall_percent"] < 2
+        small_entries = df[mask].copy()
+
+        # Falls es keine kleinen Einträge gibt, beenden
+        if small_entries.empty:
+            return
+
+        # Erstelle eine Liste mit Details (Dictionary für jedes Label)
+        details = small_entries[["label_name", "duration", "overall_percent"]].to_dict(orient="records")
+
+        # Summiere die Gesamtzeit & den Prozentwert der kleinen Einträge
+        others_total_time = small_entries["duration"].sum()
+        others_percent = small_entries["overall_percent"].sum()
+
+        # Entferne die kleinen Einträge aus dem Haupt-DF
+        df = df[~mask]
+
+        # Füge die "Andere"-Zeile hinzu
+        new_row = pd.DataFrame([{
+            "label_name": "Others",
+            "duration": others_total_time,
+            "overall_percent": others_percent,
+            "rgba_color": (0.5, 0.5, 0.5, 1.0),  # A neutral gray with full opacity
+            "details": details  # Speichert die kleinen Einträge als Liste von Dicts
+        }])
+
+        df = pd.concat([df, new_row], ignore_index=True)
+
+        # Speichern des neuen DataFrames mit "Andere"
+        self._grouped_label_summary_df = df
 
     def _get_ax_line_activity(self, ax=None):
         if ax is None:
-            granularity = 200  # Fixed granularity
+            granularity = 100  # Fixed granularity
             fig, ax = plt.subplots(dpi=granularity)
 
         if self._main_df is None or self._main_df.empty:
@@ -376,64 +493,69 @@ class ViperDF:
         activity_plot_data = pd.concat([original_data, left_offset_data, right_offset_data])
         activity_plot_data = activity_plot_data.sort_values(by="time").reset_index(drop=True)
 
+        # FIXME: Really needed?
         # Ensure first and last points are zero
         activity_plot_data.iloc[0, activity_plot_data.columns.get_loc("value")] = 0
         activity_plot_data.iloc[-1, activity_plot_data.columns.get_loc("value")] = 0
 
-        # Plot the line
-        line, = ax.plot(activity_plot_data["time"], activity_plot_data["value"], linestyle="-", color="black", )
+        self.__activity_plot_helper = {}
+        self.__activity_plot_helper["data"] = activity_plot_data
 
-        # Create hover annotation
-        marker, = ax.plot([], [], marker="o", color="red", markersize=3, visible=False)
-        annotation = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
-                                 bbox=dict(boxstyle="round", fc="w", ec="red", alpha=0.7),
-                                 visible=False)
+        self.__init_helper_activity_plot(ax)
 
-        def on_hover(event):
-            if event.inaxes != ax:
-                marker.set_visible(False)
-                annotation.set_visible(False)
-                ax.figure.canvas.draw_idle()
-                return
-
-            if event.ydata is None or not (-5 <= event.ydata <= 105):
-                marker.set_visible(False)
-                annotation.set_visible(False)
-                ax.figure.canvas.draw_idle()
-                return
-
-            x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)  # Ensure timezone naive
-
-            # Convert the DataFrame time column to timezone-naive format
-            activity_plot_data["time"] = activity_plot_data["time"].dt.tz_localize(None)
-
-            # Find the closest point
-            closest_index = (activity_plot_data["time"] - x_mouse).abs().idxmin()
-            closest_time = activity_plot_data.iloc[closest_index]["time"]
-            closest_value = activity_plot_data.iloc[closest_index]["value"]
-
-            # Update marker and annotation
-            marker.set_data([closest_time], [closest_value])
-            marker.set_visible(True)
-            annotation.xy = (closest_time, closest_value)
-            annotation.set_text(f"{closest_time.strftime('%H:%M:%S')}\n{closest_value:.2f} % Activity")
-            annotation.set_visible(True)
-
-            ax.figure.canvas.draw_idle()
-        # Connect hover event
-        ax.figure.canvas.mpl_connect("motion_notify_event", on_hover)
-
-        # Format x-axis for datetime display
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-        ax.set_xlim(mdates.date2num(self.analysis_results["first_datetime"]),
-                    mdates.date2num(self.analysis_results["last_datetime"]))
-        ax.set_ylim(-50, 110)
+        self._set_x_lim(ax)
 
         return ax
 
+    def __init_helper_activity_plot(self, ax):
+        # Plot the line
+        self.__activity_plot_helper["line"], = ax.plot(self.__activity_plot_helper["data"]["time"],
+                                                       self.__activity_plot_helper["data"]["value"],
+                                                       linestyle="-", color="black", )
+
+        # Create hover annotation
+        self.__activity_plot_helper["marker"], = ax.plot([], [], marker="o", color="red", markersize=3, visible=False)
+        self.__activity_plot_helper["annotation"] = ax.annotate("", xy=(0, 0), xytext=(10, 10),
+                                                                textcoords="offset points",
+                                                                bbox=dict(boxstyle="round", fc="w", ec="red",
+                                                                          alpha=0.7),
+                                                                visible=False)
+        self.__activity_plot_helper["ax"] = ax
+
+        # Connect hover event
+        ax.figure.canvas.mpl_connect("motion_notify_event", self.__activity_on_hover)
+
+    def __activity_on_hover(self,event):
+
+
+        if event.ydata is None or not (-5 <= event.ydata <= 105):
+            self.__activity_plot_helper["marker"].set_visible(False)
+            self.__activity_plot_helper["annotation"].set_visible(False)
+            self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
+            return
+
+        x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)  # Ensure timezone naive
+
+        # Convert the DataFrame time column to timezone-naive format
+        self.__activity_plot_helper["data"]["time"] = self.__activity_plot_helper["data"]["time"].dt.tz_localize(None)
+
+        # Find the closest point
+        closest_index = (self.__activity_plot_helper["data"]["time"] - x_mouse).abs().idxmin()
+        closest_time = self.__activity_plot_helper["data"].iloc[closest_index]["time"]
+        closest_value = self.__activity_plot_helper["data"].iloc[closest_index]["value"]
+
+        # Update marker and annotation
+        self.__activity_plot_helper["marker"].set_data([closest_time], [closest_value])
+        self.__activity_plot_helper["marker"].set_visible(True)
+        self.__activity_plot_helper["annotation"].xy = (closest_time, closest_value)
+        self.__activity_plot_helper["annotation"].set_text(f"{closest_time.strftime('%H:%M:%S')}\n{closest_value:.2f} % Activity")
+        self.__activity_plot_helper["annotation"].set_visible(True)
+
+        self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
+
     def _get_ax_hbar_apps(self, ax=None):
         if ax is None:
-            granularity = 200  # Fixed granularity
+            granularity = 100  # Fixed granularity
             fig, ax = plt.subplots(dpi=granularity)
 
         if self._main_df is None or self._main_df.empty:
@@ -448,28 +570,22 @@ class ViperDF:
         x2 = mdates.date2num(self._grouped_app_df["end_time"])
 
         # Create polygons for bar representation
-        verts = [np.array([[x1[i], start_y], [x2[i], start_y], [x2[i], end_y], [x1[i], end_y]]) for i in range(len(self._grouped_app_df))]
+        verts = [np.array([[x1[i], start_y], [x2[i], start_y], [x2[i], end_y], [x1[i], end_y]])
+                 for i in range(len(self._grouped_app_df))]
 
-        unique_apps = self._grouped_app_df["window_type"].unique()
+        # NEW:
+        # Extract colors directly from DataFrame
+        colors = np.array(self._grouped_app_df["rgba_color"].tolist())  # Convert to numpy array for alignment
 
-        app_colors = ColorPicker.next_color_rgba(len(unique_apps))
-        app_color_map = dict(zip(unique_apps, app_colors))
-
-        self._grouped_app_df["app_color"] = self._grouped_app_df["window_type"].map(app_color_map)
-
-        # Extract colors in the correct order
-        colors = np.array([app_color_map[app] for app in self._grouped_app_df["window_type"]])  # Ensure alignment
+        # Create polygons for bar representation
+        verts = [np.array([[x1[i], start_y], [x2[i], start_y], [x2[i], end_y], [x1[i], end_y]]) for i in
+                 range(len(self._grouped_app_df))]
 
         # Create the PolyCollection with correct mapping
         poly = PolyCollection(verts, facecolors=colors, alpha=0.7)
         ax.add_collection(poly)
 
-        # Ensure x-limits are valid
-        if len(x1) > 0:
-            ax.set_xlim(x1[0], x2[-1])
-
-
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        self._set_x_lim(ax)
 
         # Hover & Static Line Elements
         hover_line, = ax.plot([0, 0], [end_y, start_y], color='red', linestyle='dotted', alpha=0.7, visible=False)
@@ -609,15 +725,14 @@ class ViperDF:
         """
 
         if ax is None:
-            granularity = 200  # Fixed granularity
+            granularity = 100  # Fixed granularity
             fig, ax = plt.subplots(dpi=granularity)
 
         # Standard-Variablen
-        bar_height = 15
         start_y = -35
+        bar_height = 15
         y_spacing = 5
 
-        # Setze X-Grenzen basierend auf Analyseergebnissen
         x_start = mdates.date2num(self.analysis_results["first_datetime"])
         x_end = mdates.date2num(self.analysis_results["last_datetime"])
 
@@ -633,6 +748,9 @@ class ViperDF:
         elif isinstance(label_list, str):
             label_list = [label_list]
 
+        lowest_y = start_y + len(label_list) * (bar_height+y_spacing) * -1
+
+
         # Prüfen, ob alle angegebenen Labels existieren
         missing_labels = [label for label in label_list if label not in available_labels]
         if missing_labels:
@@ -642,32 +760,28 @@ class ViperDF:
         label_data = self._grouped_label_df[self._grouped_label_df["label_name"].isin(label_list)].copy()
 
         # Initiale Y-Position berechnen
-        y_positions = {}
         current_y = start_y
 
-        # Farben für die Labels generieren
-        colors = ColorPicker.next_color_rgba(len(label_list))
-        color_map = dict(zip(label_list, colors))
+        # Store Y positions for labels
+        label_y_mapping = {}
 
-        # Balken zeichnen
-        label_y_mapping = {}  # Speichert Y-Positionen für Labels
         for label in label_list:
             df_subset = label_data[label_data["label_name"] == label]
-            label_y_mapping[label] = current_y  # Speichert die Y-Position für das Label
+            label_y_mapping[label] = current_y  # Store the Y-position for the label
 
             for _, row in df_subset.iterrows():
                 x1 = mdates.date2num(row["start_time"])
                 x2 = mdates.date2num(row["end_time"])
 
-                # Balken zeichnen
+                # Fetch color directly from DataFrame
+                rgba_color = row["rgba_color"]
+
+                # Draw horizontal bar
                 ax.barh(y=current_y - (bar_height / 2), width=(x2 - x1), left=x1, height=bar_height,
-                        color=color_map[label], alpha=0.7)
+                        color=rgba_color, alpha=0.7)
 
             # Nächste Y-Position berechnen
             current_y -= bar_height + y_spacing
-
-        # Dynamische Y-Limits basierend auf Anzahl der Labels
-        ax.set_ylim(current_y, 110)  # Offset für Lesbarkeit
 
         # Hover & Static Line Elements
         hover_line, = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
@@ -835,7 +949,515 @@ class ViperDF:
         ax.figure.canvas.mpl_connect("button_press_event", on_click)
         ax.figure.canvas.mpl_connect("key_press_event", on_key)
 
+        self._set_x_lim(ax)
+        ax.set_ylim(lowest_y, 110)
+
         return ax
+
+    def _set_x_lim(self, ax):
+        x_min = mdates.date2num(self.analysis_results["first_datetime"])
+        x_max = mdates.date2num(self.analysis_results["last_datetime"])
+        ax.set_xlim(x_min, x_max)
+
+        # FIXME: Smart solution for showing time properly(based on interval)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+
+    def _combine_axes(self, ax_list: list):
+        highest_dpi = max(max(ax.figure.dpi for ax in ax_list), 100)
+        highest_x = max(ax.get_xlim()[1] for ax in ax_list)
+        lowest_x = min(ax.get_xlim()[0] for ax in ax_list)
+
+        highest_y = max(ax.get_ylim()[1] for ax in ax_list)
+        lowest_y = min(ax.get_ylim()[0] for ax in ax_list)
+
+        mirrored_formatter = None
+        if isinstance(ax_list[0].xaxis.get_major_formatter(), mdates.DateFormatter):
+            # Convert back to datetime for accuracy
+
+            mirrored_formatter = ax_list[0].xaxis.get_major_formatter()
+            lowest_x = mdates.num2date(lowest_x)
+            highest_x = mdates.num2date(highest_x)
+
+        # Check if y-axis is time-based (labels could use time on y)
+        if isinstance(ax_list[0].yaxis.get_major_formatter(), mdates.DateFormatter):
+            lowest_y = mdates.num2date(lowest_y)
+            highest_y = mdates.num2date(highest_y)
+
+        new_fig, new_ax = plt.subplots(dpi=highest_dpi)
+
+        # Copy elements from each provided axis
+        for old_ax in ax_list:
+
+            for line in old_ax.get_lines():  # Get all Line2D objects
+                x_data, y_data = line.get_xdata(), line.get_ydata()
+                new_ax.plot(x_data, y_data,
+                            linestyle=line.get_linestyle(),
+                            color=line.get_color(),
+                            linewidth=line.get_linewidth(),
+                            alpha=line.get_alpha() if line.get_alpha() else 1.0)
+
+            for patch in old_ax.patches:
+                edge_color = patch.get_edgecolor()
+
+                # Ensure no border if the original had no visible edge
+                if edge_color is None or edge_color[-1] == 0:  # If fully transparent (RGBA last value = 0)
+                    edge_color = "none"
+
+                new_patch = plt.Rectangle(
+                    xy=(patch.get_x(), patch.get_y()),
+                    width=patch.get_width(),
+                    height=patch.get_height(),
+                    facecolor=patch.get_facecolor(),
+                    edgecolor=edge_color,  # Ensure correct border handling
+                    alpha=patch.get_alpha() if patch.get_alpha() is not None else 1.0,
+                    linestyle=patch.get_linestyle(),
+                    linewidth=patch.get_linewidth(),
+                    zorder=patch.get_zorder()
+                )
+                new_ax.add_patch(new_patch)
+
+            for collection in old_ax.collections:
+                if isinstance(collection, PolyCollection):  # No 'plt.', directly 'PolyCollection'
+                    # Extract the vertices (shape coordinates)
+                    verts = [path.vertices for path in collection.get_paths()]
+
+                    # Extract colors in the correct order
+                    facecolors = collection.get_facecolors()
+                    edgecolors = collection.get_edgecolors()
+
+                    # Ensure proper transparency and styling
+                    new_poly = PolyCollection(
+                        verts,
+                        facecolors=facecolors,
+                        edgecolors=edgecolors,
+                        alpha=collection.get_alpha() if collection.get_alpha() is not None else 1.0,
+                        linewidths=collection.get_linewidths(),
+                        linestyles=collection.get_linestyles(),
+                        zorder=collection.get_zorder()
+                    )
+
+                    # Add to the new axis
+                    new_ax.add_collection(new_poly)
+
+
+
+        new_ax.set_ylim(lowest_y, highest_y)
+        new_ax.set_xlim(lowest_x, highest_x)
+        new_ax.xaxis.set_major_formatter(mirrored_formatter)
+        self.__init_helper_activity_plot(new_ax)
+
+        return new_fig, new_ax
+
+    def get_main_plot(self):
+        ax_activity = vdf._get_ax_line_activity()
+        ax_apps = vdf._get_ax_hbar_apps()
+        ax_labels = vdf._get_ax_hbar_labels()
+        fig, _ = self._combine_axes([ax_activity, ax_apps, ax_labels])
+        return fig
+
+    def get_vbar_apps(self):
+        if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
+            print("No app data available for plotting.")
+            return None
+
+        df = self._grouped_app_summary_df
+
+        # Erstelle das Diagramm
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(df["window_type"], df["overall_percent"], color=df["rgba_color"])
+
+        # Achsentitel setzen
+        ax.set_xlabel("Apps")
+        ax.set_ylabel("Percent usage")
+        ax.set_title("App usage")
+
+        ax.set_ylim(0, df["overall_percent"].max() + 5)
+
+        # X-Achse rotieren für bessere Lesbarkeit
+        plt.xticks(rotation=45, ha="right")
+
+        # Hover & Static Line Elements
+        hover_line, = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
+
+        # Zwei Dreiecke für die Markierung
+        triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Unten
+
+        # 🔹 Annotation-Box vorbereiten 🔹
+        annotation = ax.annotate("", xy=(0, 0), xytext=(0, 0),
+                                 textcoords="offset points", ha="center", va="bottom",
+                                 fontsize=10, color="black",
+                                 bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white"))
+        annotation.set_visible(False)
+
+        # 🔹 Hover-Funktion 🔹
+        def on_hover(event):
+            # Hide annotation if the cursor is outside the axes
+            if event.inaxes != ax:
+                annotation.set_visible(False)
+                triangle_up.set_visible(False)
+                hover_line.set_visible(False)
+                fig.canvas.draw_idle()
+                return
+
+            for bar, (app_name, percent, duration, details) in zip(bars, zip(df["window_type"], df["overall_percent"],
+                                                                             df["duration"], df.get("details", None))):
+                # Get bar's X range
+                bar_x_min = bar.get_x()
+                bar_x_max = bar.get_x() + bar.get_width()
+                bar_center_x = bar.get_x() + bar.get_width() / 2
+
+                # Check if cursor is inside the bar's X range
+                if bar_x_min <= event.xdata <= bar_x_max:
+                    # Convert `duration` to `hh:mm:ss`
+                    hours, remainder = divmod(duration, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    duration_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}(HH:MM:SS)"
+
+                    # Base annotation text
+                    annotation_text = f"{app_name}: {percent:.2f}%\n{duration_str}"
+
+                    # If "Others", show details
+                    if app_name == "Others" and details:
+                        detail_texts = [f"{d['window_type']}: {d['overall_percent']:.2f}%" for d in details]
+                        annotation_text += "\n" + "\n".join(detail_texts[:5])  # Show max 5 entries
+                        n_lines_space = annotation_text.count("\n") * 0.1
+                    else:
+                        n_lines_space = 0.5
+
+
+                    # Position annotation at the middle Y range
+                    mid_y = ax.get_ylim()[1] / 2  # Middle of the Y-axis
+                    annotation.xy = (bar_center_x, mid_y)
+                    annotation.set_text(annotation_text)
+                    annotation.set_visible(True)
+
+                    # Position hover line & triangle marker
+                    hover_line.set_data([bar_center_x, bar_center_x], [mid_y - n_lines_space, 0])
+                    hover_line.set_visible(True)
+
+                    triangle_up.set_data([bar_center_x], [mid_y - n_lines_space])  # Single point (marker)
+                    triangle_up.set_visible(True)
+
+                    fig.canvas.draw_idle()
+                    return
+
+            # Hide annotation if no bar is hovered
+            annotation.set_visible(False)
+            triangle_up.set_visible(False)
+            hover_line.set_visible(False)
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect("motion_notify_event", on_hover)
+
+        return fig
+
+    def get_vbar_labels(self):
+        if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
+            print("No label data available for plotting.")
+            return None
+
+        df = self._grouped_label_summary_df
+
+        # Create the figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        bars = ax.bar(df["label_name"], df["overall_percent"], color=df["rgba_color"])
+
+        # Set axis labels and title
+        ax.set_xlabel("Labels")
+        ax.set_ylabel("Percent usage")
+        ax.set_title("Label usage")
+
+        # Set Y-axis limit slightly above max value for padding
+        ax.set_ylim(0, df["overall_percent"].max() + 5)
+
+        # Rotate x-axis labels for readability
+        plt.xticks(rotation=45, ha="right")
+
+        # Hover & Static Line Elements
+        hover_line, = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
+        triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Triangle marker
+
+        # 🔹 Annotation Box 🔹
+        annotation = ax.annotate("", xy=(0, 0), xytext=(0, 0),
+                                 textcoords="offset points", ha="center", va="bottom",
+                                 fontsize=10, color="black",
+                                 bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white"))
+        annotation.set_visible(False)
+
+        # 🔹 Hover Function 🔹
+        def on_hover(event):
+            # Hide annotation if the cursor is outside the axes
+            if event.inaxes != ax:
+                annotation.set_visible(False)
+                triangle_up.set_visible(False)
+                hover_line.set_visible(False)
+                fig.canvas.draw_idle()
+                return
+
+            for bar, (label_name, percent, duration, details) in zip(bars, zip(df["label_name"], df["overall_percent"],
+                                                                               df["duration"], df.get("details", None))):
+                # Get bar's X range
+                bar_x_min = bar.get_x()
+                bar_x_max = bar.get_x() + bar.get_width()
+                bar_center_x = bar.get_x() + bar.get_width() / 2
+
+                # Check if cursor is inside the bar's X range
+                if bar_x_min <= event.xdata <= bar_x_max:
+                    # Convert `duration` to `HH:MM:SS`
+                    hours, remainder = divmod(duration, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    duration_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02} (HH:MM:SS)"
+
+                    # Base annotation text
+                    annotation_text = f"{label_name}: {percent:.2f}%\n{duration_str}"
+
+                    # If "Others", show details
+                    if label_name == "Others" and details:
+                        detail_texts = [f"{d['label_name']}: {d['overall_percent']:.2f}%" for d in details]
+                        annotation_text += "\n" + "\n".join(detail_texts[:5])  # Show max 5 entries
+                        n_lines_space = annotation_text.count("\n") * 0.1
+                    else:
+                        n_lines_space = 0.5
+
+                    # Position annotation at the middle Y range
+                    mid_y = ax.get_ylim()[1] / 2  # Middle of the Y-axis
+                    annotation.xy = (bar_center_x, mid_y)
+                    annotation.set_text(annotation_text)
+                    annotation.set_visible(True)
+
+                    # Position hover line & triangle marker
+                    hover_line.set_data([bar_center_x, bar_center_x], [mid_y - n_lines_space, 0])
+                    hover_line.set_visible(True)
+
+                    triangle_up.set_data([bar_center_x], [mid_y - n_lines_space])  # Single point (marker)
+                    triangle_up.set_visible(True)
+
+                    fig.canvas.draw_idle()
+                    return
+
+            # Hide annotation if no bar is hovered
+            annotation.set_visible(False)
+            triangle_up.set_visible(False)
+            hover_line.set_visible(False)
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect("motion_notify_event", on_hover)
+
+        return fig
+
+    def get_pie_apps(self):
+        if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
+            print("No app data available for plotting.")
+            return None
+
+        df = self._grouped_app_summary_df
+
+        # Create the pie chart
+        fig, ax = plt.subplots(figsize=(8, 8))
+
+        # Generate wedges with leader lines
+        wedges, texts, autotexts = ax.pie(
+            df["overall_percent"],
+            labels=None,  # Labels will be added manually
+            autopct="%1.1f%%",
+            colors=df["rgba_color"],
+            startangle=90,
+            counterclock=False,
+            wedgeprops={"edgecolor": "black", "linewidth": 0.3, "antialiased": True}
+        )
+
+        # 🔹 Reduce Pie Labels Font Size (Inside Pie Chart)
+        for autotext in autotexts:
+            autotext.set_fontsize(8)
+
+        # Store label positions for hover effect
+        label_annotations = []
+
+        for i, (wedge, label, percent, duration, color) in enumerate(zip(
+                wedges, df["window_type"], df["overall_percent"], df["duration"], df["rgba_color"])):
+            # Get angle of the wedge (middle of arc)
+            angle = (wedge.theta2 + wedge.theta1) / 2
+
+            # Offset every second label +10px further to prevent overlap
+            offset_factor = 1.345 if i % 2 == 1 else 1.2
+            x = np.cos(np.deg2rad(angle)) * offset_factor
+            y = np.sin(np.deg2rad(angle)) * offset_factor
+
+            # Add leader line
+            ax.plot([np.cos(np.deg2rad(angle)), x], [np.sin(np.deg2rad(angle)), y], color="black", lw=0.8)
+
+            # 🔹 Reduce Label Name Font Size & Adjust Box Size
+            bbox_props = dict(boxstyle="round,pad=0.4", edgecolor=color, facecolor="white", linewidth=1.2)
+            text = ax.text(x, y, f"{label}", ha="center", va="center", fontsize=8, bbox=bbox_props)
+
+            # Store values for hover effect
+            label_annotations.append((text, label, percent, duration, angle, x, y, color))
+
+        # 🔹 Fixed Annotation (95% Opaque) 🔹
+        annotation = ax.annotate("", xy=(0, 0), xytext=(0, 0),
+                                 textcoords="offset points", ha="center", va="bottom",
+                                 fontsize=10, color="black",
+                                 bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white", alpha=0.95))
+        annotation.set_visible(False)
+
+        # 🔹 Hover Function 🔹
+        def on_hover(event):
+            if event.inaxes != ax:
+                annotation.set_visible(False)
+                fig.canvas.draw_idle()
+                return
+
+            for text, label_name, percent, duration, angle, x, y, color in label_annotations:
+                bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
+
+                # 🔹 EXPAND hover detection:
+                expanded_bbox = bbox.expanded(1.4, 1.6)  # 40% wider, 60% taller
+                expanded_bbox.x0 -= 5  # Expand left
+                expanded_bbox.x1 += 5  # Expand right
+                expanded_bbox.y0 -= 5  # Expand bottom
+                expanded_bbox.y1 += 5  # Expand top
+
+                if expanded_bbox.contains(event.x, event.y):
+                    # Convert `duration` to `HH:MM:SS`
+                    hours, remainder = divmod(duration, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    duration_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02} (HH:MM:SS)"
+
+                    # Build annotation text
+                    annotation_text = f"{label_name}: {percent:.2f}%\n{duration_str}"
+
+                    # Check if "Others" and add details
+                    if label_name == "Others" and "details" in df.columns:
+                        details = df.loc[df["window_type"] == "Others", "details"].values[0]
+                        if details:
+                            detail_texts = [f"{d['window_type']}: {d['overall_percent']:.2f}%" for d in details]
+                            annotation_text += "\n" + "\n".join(detail_texts[:5])  # Show up to 5
+
+                    # Position annotation **below the label** in a fixed location
+                    annotation.xy = (x, y - 0.1)  # Keep annotation below the text box
+                    annotation.set_text(annotation_text)
+                    annotation.set_visible(True)
+
+                    fig.canvas.draw_idle()
+                    return
+
+            annotation.set_visible(False)
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect("motion_notify_event", on_hover)
+
+        # Expand space to prevent labels from being cut off
+        ax.set_xlim(-1.5, 1.5)
+        ax.set_ylim(-1.4, 1.4)
+
+        return fig
+
+    def get_pie_labels(self):
+        if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
+            print("No label data available for plotting.")
+            return None
+
+        df = self._grouped_label_summary_df
+
+        # Create the pie chart
+        fig, ax = plt.subplots(figsize=(8, 8))
+
+        # Generate wedges with leader lines
+        wedges, texts, autotexts = ax.pie(
+            df["overall_percent"],
+            labels=None,  # Labels will be added manually
+            autopct="%1.1f%%",
+            colors=df["rgba_color"],
+            startangle=90,
+            counterclock=False,
+            wedgeprops={"edgecolor": "black", "linewidth": 0.3, "antialiased": True}
+        )
+
+        # 🔹 Reduce Pie Labels Font Size (Inside Pie Chart)
+        for autotext in autotexts:
+            autotext.set_fontsize(8)
+
+        # Store label positions for hover effect
+        label_annotations = []
+
+        for i, (wedge, label, percent, duration, color) in enumerate(zip(
+                wedges, df["label_name"], df["overall_percent"], df["duration"], df["rgba_color"])):
+            # Get angle of the wedge (middle of arc)
+            angle = (wedge.theta2 + wedge.theta1) / 2
+
+            # Offset every second label +10px further to prevent overlap
+            offset_factor = 1.345 if i % 2 == 1 else 1.2
+            x = np.cos(np.deg2rad(angle)) * offset_factor
+            y = np.sin(np.deg2rad(angle)) * offset_factor
+
+            # Add leader line
+            ax.plot([np.cos(np.deg2rad(angle)), x], [np.sin(np.deg2rad(angle)), y], color="black", lw=0.8)
+
+            # 🔹 Reduce Label Name Font Size & Adjust Box Size
+            bbox_props = dict(boxstyle="round,pad=0.4", edgecolor=color, facecolor="white", linewidth=1.2)
+            text = ax.text(x, y, f"{label}", ha="center", va="center", fontsize=8, bbox=bbox_props)
+
+            # Store values for hover effect
+            label_annotations.append((text, label, percent, duration, angle, x, y, color))
+
+        # 🔹 Fixed Annotation (95% Opaque) 🔹
+        annotation = ax.annotate("", xy=(0, 0), xytext=(0, 0),
+                                 textcoords="offset points", ha="center", va="bottom",
+                                 fontsize=10, color="black",
+                                 bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white", alpha=0.95))
+        annotation.set_visible(False)
+
+        # 🔹 Hover Function 🔹
+        def on_hover(event):
+            if event.inaxes != ax:
+                annotation.set_visible(False)
+                fig.canvas.draw_idle()
+                return
+
+            for text, label_name, percent, duration, angle, x, y, color in label_annotations:
+                bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
+
+                # 🔹 EXPAND hover detection:
+                expanded_bbox = bbox.expanded(1.4, 1.6)  # 40% wider, 60% taller
+                expanded_bbox.x0 -= 5  # Expand left
+                expanded_bbox.x1 += 5  # Expand right
+                expanded_bbox.y0 -= 5  # Expand bottom
+                expanded_bbox.y1 += 5  # Expand top
+
+                if expanded_bbox.contains(event.x, event.y):
+                    # Convert `duration` to `HH:MM:SS`
+                    hours, remainder = divmod(duration, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    duration_str = f"{int(hours):02}:{int(minutes):02}:{int(seconds):02} (HH:MM:SS)"
+
+                    # Build annotation text
+                    annotation_text = f"{label_name}: {percent:.2f}%\n{duration_str}"
+
+                    # Check if "Others" and add details
+                    if label_name == "Others" and "details" in df.columns:
+                        details = df.loc[df["label_name"] == "Others", "details"].values[0]
+                        if details:
+                            detail_texts = [f"{d['label_name']}: {d['overall_percent']:.2f}%" for d in details]
+                            annotation_text += "\n" + "\n".join(detail_texts[:5])  # Show up to 5
+
+                    # Position annotation **below the label** in a fixed location
+                    annotation.xy = (x, y - 0.1)  # Keep annotation below the text box
+                    annotation.set_text(annotation_text)
+                    annotation.set_visible(True)
+
+                    fig.canvas.draw_idle()
+                    return
+
+            annotation.set_visible(False)
+            fig.canvas.draw_idle()
+
+        fig.canvas.mpl_connect("motion_notify_event", on_hover)
+
+        # Expand space to prevent labels from being cut off
+        ax.set_xlim(-1.5, 1.5)
+        ax.set_ylim(-1.4, 1.4)
+
+        return fig
 
 
 class Analyzer(ABC):
@@ -970,6 +1592,7 @@ class AnalyzerThread:
 
 
 # # # # Helper functions # # # #
+
 def split_leading_special_chars(word: str):
     """Teilt ein Wort in führende Sonderzeichen und den restlichen Text"""
     special_chars = ""
@@ -1062,23 +1685,22 @@ if __name__ == "__main__":
     vdf = ViperDF("testing", test_df)
     vdf.analyze()
 
-    fig, ax_all = plt.subplots(dpi=100)
 
-
+    fig_ori, ax_all = plt.subplots(dpi=100)
     ax_all = vdf._get_ax_line_activity(ax=ax_all)
-
     ax_all = vdf._get_ax_hbar_apps(ax=ax_all)
-
     ax_all = vdf._get_ax_hbar_labels(ax=ax_all)
+    show_figure_in_ttk(fig_ori)
 
 
-
+    show_figure_in_ttk(vdf.get_main_plot())
 
     end_analysis = datetime.now()
     time_used = (end_analysis - start_analysis).total_seconds()
-    print(f"{end_analysis} - {start_analysis} = {time_used}")
+    #print(f"{end_analysis} - {start_analysis} = {time_used}")
 
-    show_figure_in_ttk(fig)
+
+
     stop_db()
 
 

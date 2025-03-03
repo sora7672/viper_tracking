@@ -526,7 +526,11 @@ class ViperDF:
         ax.figure.canvas.mpl_connect("motion_notify_event", self.__activity_on_hover)
 
     def __activity_on_hover(self,event):
-
+        if event.inaxes != self.__activity_plot_helper["ax"]:
+            self.__activity_plot_helper["marker"].set_visible(False)
+            self.__activity_plot_helper["annotation"].set_visible(False)
+            self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
+            return
 
         if event.ydata is None or not (-5 <= event.ydata <= 105):
             self.__activity_plot_helper["marker"].set_visible(False)
@@ -562,8 +566,9 @@ class ViperDF:
             print("No data available for plotting.")
             return ax
 
-        start_y = -5
-        end_y = -30
+        self.__app_plot_helper = {}
+        self.__app_plot_helper["start_y"] = start_y = -5
+        self.__app_plot_helper["end_y"] = end_y = -30
 
         # Convert times to numeric values for plotting
         x1 = mdates.date2num(self._grouped_app_df["start_time"])
@@ -585,139 +590,138 @@ class ViperDF:
         poly = PolyCollection(verts, facecolors=colors, alpha=0.7)
         ax.add_collection(poly)
 
+        self.__init_helper_apps(ax)
         self._set_x_lim(ax)
 
-        # Hover & Static Line Elements
-        hover_line, = ax.plot([0, 0], [end_y, start_y], color='red', linestyle='dotted', alpha=0.7, visible=False)
+        return ax
+
+    def __init_helper_apps(self, ax):
+        self.__app_plot_helper["ax"] = ax
+        self.__app_plot_helper["hover_line"], = ax.plot([0, 0], [self.__app_plot_helper["end_y"], self.__app_plot_helper["start_y"]], color='red', linestyle='dotted', alpha=0.7, visible=False)
 
         # Two triangles pointing at the hover line
-        triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Triangle pointing down
-        triangle_down, = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Triangle pointing up
+        self.__app_plot_helper["triangle_up"], = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Triangle pointing down
+        self.__app_plot_helper["triangle_down"], = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Triangle pointing up
 
-        annotation = ax.annotate("", xy=(0, start_y), xytext=(10, 10), textcoords="offset points",
+        self.__app_plot_helper["annotation"] = ax.annotate("", xy=(0, self.__app_plot_helper["start_y"]), xytext=(10, 10), textcoords="offset points",
                                  bbox=dict(boxstyle="round", fc="white", ec="purple", alpha=0.9),
                                  visible=False)
 
-        static_mode = False
-        selected_index = None
+        self.__app_plot_helper["static_mode"] = False
+        self.__app_plot_helper["selected_index"] = None
 
-        def reset_annotation():
-            """ Reset all hover and selection elements. """
-            nonlocal static_mode, selected_index
-            static_mode = False
-            selected_index = None
-            hover_line.set_visible(False)
-            annotation.set_visible(False)
-            triangle_up.set_visible(False)
-            triangle_down.set_visible(False)
-            ax.figure.canvas.draw_idle()
+        ax.figure.canvas.mpl_connect("motion_notify_event", self.__app_on_hover)
+        ax.figure.canvas.mpl_connect("button_press_event", self.__app_on_click)
+        ax.figure.canvas.mpl_connect("key_press_event", self.__app_on_key)
 
-        def update_selection(index):
-            """ Update the selection line, annotation, and triangles based on given index """
-            nonlocal selected_index, static_mode
-            if index < 0 or index >= len(self._grouped_app_df):
-                return
+    def __app_reset_annotation(self):
+        """ Reset all hover and selection elements. """
 
-            selected_index = index
+        self.__app_plot_helper["static_mode"] = False
+        self.__app_plot_helper["selected_index"] = None
+        self.__app_plot_helper["hover_line"].set_visible(False)
+        self.__app_plot_helper["annotation"].set_visible(False)
+        self.__app_plot_helper["triangle_up"].set_visible(False)
+        self.__app_plot_helper["triangle_down"].set_visible(False)
+        self.__app_plot_helper["ax"].figure.canvas.draw_idle()
 
-            entry = self._grouped_app_df.iloc[selected_index]
-            start_time = entry["start_time"].strftime("%Y-%m-%d %H:%M:%S")
-            end_time = entry["end_time"].strftime("%Y-%m-%d %H:%M:%S")
-            window_type = entry["window_type"]
-            window_title = entry["window_title"]
+    def __app_update_selection(self,index):
+        """ Update the selection line, annotation, and triangles based on given index """
+        if index < 0 or index >= len(self._grouped_app_df):
+            return
 
-            x_pos = mdates.date2num(entry["mid_time"])
+        self.__app_plot_helper["selected_index"] = index
 
-            hover_line.set_xdata([x_pos])
-            hover_line.set_visible(True)
+        entry = self._grouped_app_df.iloc[self.__app_plot_helper["selected_index"]]
+        start_time = entry["start_time"].strftime("%Y-%m-%d %H:%M:%S")
+        end_time = entry["end_time"].strftime("%Y-%m-%d %H:%M:%S")
+        window_type = entry["window_type"]
+        window_title = entry["window_title"]
 
-            # Update triangle positions (centered on the line)
-            triangle_up.set_data([x_pos], [start_y])  # Triangle at top of line
-            triangle_down.set_data([x_pos], [end_y])  # Triangle at bottom of line
-            triangle_up.set_visible(True)
-            triangle_down.set_visible(True)
+        x_pos = mdates.date2num(entry["mid_time"])
 
-            # Determine annotation position
-            midpoint = len(self._grouped_app_df) / 2
-            text_offset = 10 if selected_index < midpoint else -10  # Right or left shift
-            ha = "left" if selected_index < midpoint else "right"  # Horizontal alignment
+        self.__app_plot_helper["hover_line"].set_xdata([x_pos])
+        self.__app_plot_helper["hover_line"].set_visible(True)
 
-            annotation.xy = (x_pos, start_y)
-            win_title = split_text_by_max_length(window_title, 35)
-            annotation.set_text(f"{start_time}\n{end_time}\n{window_type}\n{win_title}")
-            annotation.set_visible(True)
-            annotation.set_ha(ha)  # Align left or right
-            annotation.set_position((text_offset, 10))  # Adjust position dynamically
+        # Update triangle positions (centered on the line)
+        self.__app_plot_helper["triangle_up"].set_data([x_pos], [self.__app_plot_helper["start_y"]])  # Triangle at top of line
+        self.__app_plot_helper["triangle_down"].set_data([x_pos], [self.__app_plot_helper["end_y"]])  # Triangle at bottom of line
+        self.__app_plot_helper["triangle_up"].set_visible(True)
+        self.__app_plot_helper["triangle_down"].set_visible(True)
 
-            ax.figure.canvas.draw_idle()
+        # Determine annotation position
+        midpoint = len(self._grouped_app_df) / 2
+        text_offset = 10 if self.__app_plot_helper["selected_index"] < midpoint else -10  # Right or left shift
+        ha = "left" if self.__app_plot_helper["selected_index"] < midpoint else "right"  # Horizontal alignment
 
-        def on_hover(event):
-            """ Ensure the hover event only applies to the bar chart's y-range """
-            if event.inaxes != ax or static_mode:
-                return
+        self.__app_plot_helper["annotation"].xy = (x_pos, self.__app_plot_helper["start_y"])
+        win_title = split_text_by_max_length(window_title, 35)
+        self.__app_plot_helper["annotation"].set_text(f"{start_time}\n{end_time}\n{window_type}\n{win_title}")
+        self.__app_plot_helper["annotation"].set_visible(True)
+        self.__app_plot_helper["annotation"].set_ha(ha)  # Align left or right
+        self.__app_plot_helper["annotation"].set_position((text_offset, 10))  # Adjust position dynamically
 
-            if event.ydata is None or not (end_y <= event.ydata <= start_y):
-                reset_annotation()
-                return
+        self.__app_plot_helper["ax"].figure.canvas.draw_idle()
 
-            x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+    def __app_on_hover(self, event):
+        """ Ensure the hover event only applies to the bar chart's y-range """
+        if event.inaxes != self.__app_plot_helper["ax"] or self.__app_plot_helper["static_mode"]:
+            return
 
-            # Find the closest index based on mouse position
-            valid_entries = self._grouped_app_df[
-                (self._grouped_app_df["start_time"] <= x_mouse) &
-                (self._grouped_app_df["end_time"] >= x_mouse)
-                ]
+        if event.ydata is None or not (self.__app_plot_helper["end_y"] <= event.ydata <= self.__app_plot_helper["start_y"]):
+            self.__app_reset_annotation()
+            return
 
-            if not valid_entries.empty:
-                closest_index = valid_entries.index[0]
-            else:
-                closest_index = (self._grouped_app_df["start_time"] - x_mouse).abs().idxmin()
+        x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
 
-            update_selection(closest_index)
+        # Find the closest index based on mouse position
+        valid_entries = self._grouped_app_df[
+            (self._grouped_app_df["start_time"] <= x_mouse) &
+            (self._grouped_app_df["end_time"] >= x_mouse)
+            ]
 
-        def on_click(event):
-            """ Ensure clicks are only handled in the bar chart's axis """
-            nonlocal static_mode
-            if event.button == 1 and event.inaxes == ax:
-                if end_y <= event.ydata <= start_y:
-                    x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
-                    valid_entries = self._grouped_app_df[
-                        (self._grouped_app_df["start_time"] <= x_click) &
-                        (self._grouped_app_df["end_time"] >= x_click)
-                        ]
-                    static_mode = True
-                    if not valid_entries.empty:
-                        closest_index = valid_entries.index[0]
-                    else:
-                        closest_index = (self._grouped_app_df["start_time"] - x_click).abs().idxmin()
+        if not valid_entries.empty:
+            closest_index = valid_entries.index[0]
+        else:
+            closest_index = (self._grouped_app_df["start_time"] - x_mouse).abs().idxmin()
 
-                    update_selection(closest_index)
+        self.__app_update_selection(closest_index)
+
+    def __app_on_click(self, event):
+        """ Ensure clicks are only handled in the bar chart's axis """
+        if event.button == 1 and event.inaxes == self.__app_plot_helper["ax"]:
+            if self.__app_plot_helper["end_y"] <= event.ydata <= self.__app_plot_helper["start_y"]:
+                x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+                valid_entries = self._grouped_app_df[
+                    (self._grouped_app_df["start_time"] <= x_click) &
+                    (self._grouped_app_df["end_time"] >= x_click)
+                    ]
+                self.__app_plot_helper["static_mode"] = True
+                if not valid_entries.empty:
+                    closest_index = valid_entries.index[0]
                 else:
-                    # Klick außerhalb des Y-Bereichs -> Annotation zurücksetzen
-                    reset_annotation()
+                    closest_index = (self._grouped_app_df["start_time"] - x_click).abs().idxmin()
 
-        def on_key(event):
-            """ Ensure keyboard events are only processed when static mode is active """
-            nonlocal static_mode, selected_index
-            if not static_mode or selected_index is None:
-                return
+                self.__app_update_selection(closest_index)
+            else:
+                self.__app_reset_annotation()
 
-            if event.key == "escape":
-                reset_annotation()
-                return
+    def __app_on_key(self, event):
+        """ Ensure keyboard events are only processed when static mode is active """
+        if not self.__app_plot_helper["static_mode"] or self.__app_plot_helper["selected_index"] is None:
+            a = self.__app_plot_helper["static_mode"]
+            b = self.__app_plot_helper["selected_index"]
+            return
 
-            if event.key in ["right", "left"]:
-                step = 1 if event.key == "right" else -1
-                new_index = selected_index + step
-                new_index = 0 if new_index > len(self._grouped_app_df) - 1 else new_index
-                update_selection(new_index)
+        if event.key == "escape":
+            self.__app_reset_annotation()
+            return
 
-
-        ax.figure.canvas.mpl_connect("motion_notify_event", on_hover)
-        ax.figure.canvas.mpl_connect("button_press_event", on_click)
-        ax.figure.canvas.mpl_connect("key_press_event", on_key)
-
-        return ax
+        if event.key in ["right", "left"]:
+            step = 1 if event.key == "right" else -1
+            new_index = self.__app_plot_helper["selected_index"] + step
+            new_index = 0 if new_index > len(self._grouped_app_df) - 1 else new_index
+            self.__app_update_selection(new_index)
 
     def _get_ax_hbar_labels(self, ax=None, label_list: list[str] | str = None):
         """Erstellt ein horizontales Balkendiagramm (hbar) für Labels basierend auf `self._grouped_label_df`.
@@ -1044,7 +1048,9 @@ class ViperDF:
         new_ax.set_ylim(lowest_y, highest_y)
         new_ax.set_xlim(lowest_x, highest_x)
         new_ax.xaxis.set_major_formatter(mirrored_formatter)
+
         self.__init_helper_activity_plot(new_ax)
+        self.__init_helper_apps(new_ax)
 
         return new_fig, new_ax
 

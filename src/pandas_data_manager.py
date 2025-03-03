@@ -91,6 +91,13 @@ class ViperDF:
         self.is_app_based = name.startswith("app:")
         self.is_label_based = name.startswith("label:")
 
+        self.granularity = 100
+        self._activity_ax = None
+        self._app_ax = None
+        self._label_ax = None
+        self._is_plotted = False
+        self.mainplot = None
+
     def __repr__(self):
         return f"VDF '{self.name}'"
 
@@ -145,6 +152,19 @@ class ViperDF:
                 n_vdf[-1].analyze()
 
             return n_vdf
+
+    def plot(self):
+        if not self._is_analyzed:
+            raise ValueError("Main frame is not analyzed.")
+        self._get_ax_line_activity()
+        self._get_ax_hbar_apps()
+        self._update_ax_hbar_labels()
+        self._combine_axes()
+        self._is_plotted = True
+
+    def change_choosen_labels(self, label_list: str | list[str]):
+        # TODO: Delete all old used things that change on label change
+        self._update_ax_hbar_labels(label_list)
 
     def analyze(self):
         """
@@ -460,10 +480,9 @@ class ViperDF:
         # Speichern des neuen DataFrames mit "Andere"
         self._grouped_label_summary_df = df
 
-    def _get_ax_line_activity(self, ax=None):
-        if ax is None:
-            granularity = 100  # Fixed granularity
-            fig, ax = plt.subplots(dpi=granularity)
+    def _get_ax_line_activity(self):
+
+        fig, ax = plt.subplots(dpi=self.granularity)
 
         if self._main_df is None or self._main_df.empty:
             print("No data available for plotting.")
@@ -505,7 +524,7 @@ class ViperDF:
 
         self._set_x_lim(ax)
 
-        return ax
+        self._activity_ax = ax
 
     def __init_helper_activity_plot(self, ax):
         # Plot the line
@@ -557,10 +576,9 @@ class ViperDF:
 
         self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
 
-    def _get_ax_hbar_apps(self, ax=None):
-        if ax is None:
-            granularity = 100  # Fixed granularity
-            fig, ax = plt.subplots(dpi=granularity)
+    def _get_ax_hbar_apps(self):
+
+        fig, ax = plt.subplots(dpi=self.granularity)
 
         if self._main_df is None or self._main_df.empty:
             print("No data available for plotting.")
@@ -593,7 +611,7 @@ class ViperDF:
         self.__init_helper_apps(ax)
         self._set_x_lim(ax)
 
-        return ax
+        self._app_ax = ax
 
     def __init_helper_apps(self, ax):
         self.__app_plot_helper["ax"] = ax
@@ -709,8 +727,6 @@ class ViperDF:
     def __app_on_key(self, event):
         """ Ensure keyboard events are only processed when static mode is active """
         if not self.__app_plot_helper["static_mode"] or self.__app_plot_helper["selected_index"] is None:
-            a = self.__app_plot_helper["static_mode"]
-            b = self.__app_plot_helper["selected_index"]
             return
 
         if event.key == "escape":
@@ -723,22 +739,18 @@ class ViperDF:
             new_index = 0 if new_index > len(self._grouped_app_df) - 1 else new_index
             self.__app_update_selection(new_index)
 
-    def _get_ax_hbar_labels(self, ax=None, label_list: list[str] | str = None):
-        """Erstellt ein horizontales Balkendiagramm (hbar) für Labels basierend auf `self._grouped_label_df`.
-           Integriert Hover- und Click-Funktionen zur Interaktion.
-        """
+    def _update_ax_hbar_labels(self, label_list: list[str] | str = None):
 
-        if ax is None:
-            granularity = 100  # Fixed granularity
-            fig, ax = plt.subplots(dpi=granularity)
+        fig, ax = plt.subplots(dpi=self.granularity)
 
+        self.__label_plot_helper = {}
         # Standard-Variablen
-        start_y = -35
-        bar_height = 15
-        y_spacing = 5
+        self.__label_plot_helper["start_y"] = start_y = -35
+        self.__label_plot_helper["bar_height"] = bar_height = 15
+        self.__label_plot_helper["y_spacing"] = y_spacing = 5
 
-        x_start = mdates.date2num(self.analysis_results["first_datetime"])
-        x_end = mdates.date2num(self.analysis_results["last_datetime"])
+        self.__label_plot_helper["x_start"] = mdates.date2num(self.analysis_results["first_datetime"])
+        self.__label_plot_helper["x_end"] = mdates.date2num(self.analysis_results["last_datetime"])
 
         # Prüfen, ob `self._grouped_label_df` existiert und nicht leer ist
         if self._grouped_label_df is None or self._grouped_label_df.empty:
@@ -756,22 +768,22 @@ class ViperDF:
 
 
         # Prüfen, ob alle angegebenen Labels existieren
-        missing_labels = [label for label in label_list if label not in available_labels]
+        missing_labels = [label for label in label_list if label.lower() not in map(str.lower, available_labels)]
         if missing_labels:
             raise ValueError(f"Labels not found: {missing_labels}")
 
         # Daten filtern für die gewünschten Labels
-        label_data = self._grouped_label_df[self._grouped_label_df["label_name"].isin(label_list)].copy()
+        self.__label_plot_helper["label_data"] = self._grouped_label_df[self._grouped_label_df["label_name"].isin(label_list)].copy()
 
         # Initiale Y-Position berechnen
         current_y = start_y
 
         # Store Y positions for labels
-        label_y_mapping = {}
+        self.__label_plot_helper["label_y_mapping"] = {}
 
         for label in label_list:
-            df_subset = label_data[label_data["label_name"] == label]
-            label_y_mapping[label] = current_y  # Store the Y-position for the label
+            df_subset = self.__label_plot_helper["label_data"][self.__label_plot_helper["label_data"]["label_name"] == label]
+            self.__label_plot_helper["label_y_mapping"][label] = current_y  # Store the Y-position for the label
 
             for _, row in df_subset.iterrows():
                 x1 = mdates.date2num(row["start_time"])
@@ -787,176 +799,179 @@ class ViperDF:
             # Nächste Y-Position berechnen
             current_y -= bar_height + y_spacing
 
-        # Hover & Static Line Elements
-        hover_line, = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
 
-        # Zwei Dreiecke für die Markierung
-        triangle_up, = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Unten
-        triangle_down, = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Oben
-
-        annotation = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
-                                 bbox=dict(boxstyle="round", fc="white", ec="blue", alpha=0.9),
-                                 visible=False)
-
-        static_mode = False
-        selected_index = None
-
-        def update_selection(index):
-            """ Update selection and annotation. """
-            nonlocal selected_index, static_mode
-            if index < 0 or index >= len(label_data):
-                return
-
-            selected_index = index
-
-            entry = label_data.iloc[selected_index]
-            start_time = entry["start_time"].strftime("%H:%M:%S")
-            end_time = entry["end_time"].strftime("%H:%M:%S")
-            duration_seconds = int((entry["end_time"] - entry["start_time"]).total_seconds())
-            hours, remainder = divmod(duration_seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            duration = f"{hours:02}:{minutes:02}:{seconds:02}"
-
-            x_pos = mdates.date2num(entry["start_time"] + (entry["end_time"] - entry["start_time"]) / 2)
-            y_pos = label_y_mapping[entry["label_name"]]
-
-            hover_line.set_xdata([x_pos])
-            hover_line.set_ydata([y_pos - bar_height, y_pos])
-
-            hover_line.set_visible(True)
-
-            # Update triangle positions
-            triangle_up.set_data([x_pos], [y_pos])  # Triangle at center
-            triangle_down.set_data([x_pos], [y_pos - bar_height])  # Triangle at bottom
-            triangle_up.set_visible(True)
-            triangle_down.set_visible(True)
-
-            # Annotation position check
-            text_offset = 10 if x_pos < (x_start + x_end) / 2 else -10  # Rechts oder links verschieben
-            ha = "left" if x_pos < (x_start + x_end) / 2 else "right"
-
-            annotation.xy = (x_pos, y_pos)
-            annotation.set_text(f"{entry['label_name']}\n{start_time} - {end_time}\n{duration}")
-            annotation.set_visible(True)
-            annotation.set_ha(ha)
-            annotation.set_position((text_offset, 10))  # Dynamische Positionierung
-
-            ax.figure.canvas.draw_idle()
-
-        def on_hover(event):
-            """ Ensure hover event only affects label bars in the correct Y-zone. """
-            if event.inaxes != ax or static_mode:
-                return
-
-            closest_label = None
-            for label, y_pos in label_y_mapping.items():
-                if (y_pos - bar_height - int(y_spacing)) <= event.ydata <= (y_pos + int(y_spacing)):
-                    closest_label = label
-                    break  # Sobald das richtige Label gefunden wurde, abbrechen
-
-            if closest_label is None:
-                # Falls keine Übereinstimmung, alles ausblenden
-                reset_annotation()
-                return
-
-            # Jetzt innerhalb der richtigen Y-Zone nach dem nächsten X-Wert suchen
-            x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
-            valid_entries = label_data[
-                (label_data["start_time"] <= x_mouse) &
-                (label_data["end_time"] >= x_mouse) &
-                (label_data["label_name"] == closest_label)
-                ]
-
-            if not valid_entries.empty:
-                closest_index = valid_entries.index[0]
-            else:
-                closest_index = (label_data[
-                                     label_data["label_name"] == closest_label
-                                     ]["start_time"] - x_mouse).abs().idxmin()
-
-            update_selection(closest_index)
-
-        def on_click(event):
-            """ Ensure click event only affects label bars in the correct Y-zone. """
-            nonlocal static_mode
-            if event.inaxes != ax:
-                return  # Klick außerhalb des Plots ignorieren
-
-            closest_label = None
-            for label, y_pos in label_y_mapping.items():
-                if (y_pos - bar_height - y_spacing) <= event.ydata <= (y_pos - y_spacing):
-                    closest_label = label
-                    break  # Sobald das richtige Label gefunden wurde, abbrechen
-
-            if closest_label is None:
-                # Falls Klick außerhalb aller Labels → Zurücksetzen
-                reset_annotation()
-                return
-
-            # Jetzt innerhalb der richtigen Y-Zone nach dem nächsten X-Wert suchen
-            x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
-            valid_entries = label_data[
-                (label_data["start_time"] <= x_click) &
-                (label_data["end_time"] >= x_click) &
-                (label_data["label_name"] == closest_label)
-                ]
-
-            static_mode = True
-            if not valid_entries.empty:
-                closest_index = valid_entries.index[0]
-            else:
-                closest_index = (label_data[
-                                     label_data["label_name"] == closest_label
-                                     ]["start_time"] - x_click).abs().idxmin()
-
-            update_selection(closest_index)
-
-        def reset_annotation():
-            nonlocal static_mode, selected_index
-            static_mode = False
-            selected_index = None
-            hover_line.set_visible(False)
-            annotation.set_visible(False)
-            triangle_up.set_visible(False)
-            triangle_down.set_visible(False)
-            ax.figure.canvas.draw_idle()
-
-        def on_key(event):
-            """ Handle keyboard navigation in static mode with round-robin effect. """
-            nonlocal static_mode, selected_index
-            if not static_mode or selected_index is None:
-                return
-
-            if event.key == "escape":
-                reset_annotation()
-                return
-
-            if event.key in ["right", "left"]:
-                step = 1 if event.key == "right" else -1
-
-                # Hol das aktuelle Label
-                current_label = label_data.iloc[selected_index]["label_name"]
-
-                # Filtere nur die Einträge für dieses Label
-                same_label_entries = label_data[label_data["label_name"] == current_label]
-
-                # Bestimme den aktuellen Index innerhalb dieser gefilterten Liste
-                relative_index = same_label_entries.index.get_loc(selected_index)
-
-                # Round-Robin Logik: Springt zyklisch durch die Einträge des Labels
-                new_relative_index = (relative_index + step) % len(same_label_entries)
-                new_index = same_label_entries.index[new_relative_index]
-
-                update_selection(new_index)
-
-        ax.figure.canvas.mpl_connect("motion_notify_event", on_hover)
-        ax.figure.canvas.mpl_connect("button_press_event", on_click)
-        ax.figure.canvas.mpl_connect("key_press_event", on_key)
-
+        self.__init_helper_label(ax)
         self._set_x_lim(ax)
         ax.set_ylim(lowest_y, 110)
 
-        return ax
+        self._label_ax = ax
+
+    def __init_helper_label(self, ax):
+        # Hover & Static Line Elements
+
+        self.__label_plot_helper["ax"] = ax
+        self.__label_plot_helper["hover_line"], = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
+
+        # Zwei Dreiecke für die Markierung
+        self.__label_plot_helper["triangle_up"], = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Unten
+        self.__label_plot_helper["triangle_down"], = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Oben
+
+        self.__label_plot_helper["annotation"] = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
+                                 bbox=dict(boxstyle="round", fc="white", ec="blue", alpha=0.9),
+                                 visible=False)
+
+        self.__label_plot_helper["static_mode"] = False
+        self.__label_plot_helper["selected_index"] = None
+
+        ax.figure.canvas.mpl_connect("motion_notify_event", self.__label_on_hover)
+        ax.figure.canvas.mpl_connect("button_press_event", self.__label_on_click)
+        ax.figure.canvas.mpl_connect("key_press_event", self.__label_on_key)
+    def __label_reset_annotation(self):
+
+        self.__label_plot_helper["static_mode"] = False
+        self.__label_plot_helper["selected_index"] = None
+        self.__label_plot_helper["hover_line"].set_visible(False)
+        self.__label_plot_helper["annotation"].set_visible(False)
+        self.__label_plot_helper["triangle_up"].set_visible(False)
+        self.__label_plot_helper["triangle_down"].set_visible(False)
+        self.__label_plot_helper["ax"].figure.canvas.draw_idle()
+
+    def __label_update_selection(self, index):
+        """ Update selection and annotation. """
+
+        if index < 0 or index >= len(self.__label_plot_helper["label_data"]):
+            return
+
+        self.__label_plot_helper["selected_index"] = index
+
+        entry = self.__label_plot_helper["label_data"].iloc[self.__label_plot_helper["selected_index"]]
+        start_time = entry["start_time"].strftime("%H:%M:%S")
+        end_time = entry["end_time"].strftime("%H:%M:%S")
+        duration_seconds = int((entry["end_time"] - entry["start_time"]).total_seconds())
+        hours, remainder = divmod(duration_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        duration = f"{hours:02}:{minutes:02}:{seconds:02}"
+
+        x_pos = mdates.date2num(entry["start_time"] + (entry["end_time"] - entry["start_time"]) / 2)
+        y_pos = self.__label_plot_helper["label_y_mapping"][entry["label_name"]]
+
+        self.__label_plot_helper["hover_line"].set_xdata([x_pos])
+        self.__label_plot_helper["hover_line"].set_ydata([y_pos - self.__label_plot_helper["bar_height"], y_pos])
+
+        self.__label_plot_helper["hover_line"].set_visible(True)
+
+        # Update triangle positions
+        self.__label_plot_helper["triangle_up"].set_data([x_pos], [y_pos])  # Triangle at center
+        self.__label_plot_helper["triangle_down"].set_data([x_pos], [y_pos - self.__label_plot_helper["bar_height"]])  # Triangle at bottom
+        self.__label_plot_helper["triangle_up"].set_visible(True)
+        self.__label_plot_helper["triangle_down"].set_visible(True)
+
+        # Annotation position check
+        text_offset = 10 if x_pos < (self.__label_plot_helper["x_start"] + self.__label_plot_helper["x_end"]) / 2 else -10  # Rechts oder links verschieben
+        ha = "left" if x_pos < (self.__label_plot_helper["x_start"] + self.__label_plot_helper["x_end"]) / 2 else "right"
+
+        self.__label_plot_helper["annotation"].xy = (x_pos, y_pos)
+        self.__label_plot_helper["annotation"].set_text(f"{entry['label_name']}\n{start_time} - {end_time}\n{duration}")
+        self.__label_plot_helper["annotation"].set_visible(True)
+        self.__label_plot_helper["annotation"].set_ha(ha)
+        self.__label_plot_helper["annotation"].set_position((text_offset, 10))  # Dynamische Positionierung
+
+        self.__label_plot_helper["ax"].figure.canvas.draw_idle()
+
+    def __label_on_hover(self, event):
+        """ Ensure hover event only affects label bars in the correct Y-zone. """
+        if event.inaxes != self.__label_plot_helper["ax"] or self.__label_plot_helper["static_mode"]:
+            return
+
+        closest_label = None
+        for label, y_pos in self.__label_plot_helper["label_y_mapping"].items():
+            if (y_pos - self.__label_plot_helper["bar_height"] - int(self.__label_plot_helper["y_spacing"])) <= event.ydata <= (y_pos + int(self.__label_plot_helper["y_spacing"])):
+                closest_label = label
+                break  # Sobald das richtige Label gefunden wurde, abbrechen
+
+        if closest_label is None:
+            # Falls keine Übereinstimmung, alles ausblenden
+            self.__label_reset_annotation()
+            return
+
+        # Jetzt innerhalb der richtigen Y-Zone nach dem nächsten X-Wert suchen
+        x_mouse = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+        valid_entries = self.__label_plot_helper["label_data"][
+            (self.__label_plot_helper["label_data"]["start_time"] <= x_mouse) &
+            (self.__label_plot_helper["label_data"]["end_time"] >= x_mouse) &
+            (self.__label_plot_helper["label_data"]["label_name"] == closest_label)
+            ]
+
+        if not valid_entries.empty:
+            closest_index = valid_entries.index[0]
+        else:
+            closest_index = (self.__label_plot_helper["label_data"][
+                                 self.__label_plot_helper["label_data"]["label_name"] == closest_label
+                                 ]["start_time"] - x_mouse).abs().idxmin()
+
+        self.__label_update_selection(closest_index)
+
+    def __label_on_click(self, event):
+        """ Ensure click event only affects label bars in the correct Y-zone. """
+        if event.inaxes != self.__label_plot_helper["ax"]:
+            return  # Klick außerhalb des Plots ignorieren
+
+        closest_label = None
+        for label, y_pos in self.__label_plot_helper["label_y_mapping"].items():
+            if (y_pos - self.__label_plot_helper["bar_height"] - self.__label_plot_helper["y_spacing"]) <= event.ydata <= (y_pos - self.__label_plot_helper["y_spacing"]):
+                closest_label = label
+                break  # Sobald das richtige Label gefunden wurde, abbrechen
+
+        if closest_label is None:
+            # Falls Klick außerhalb aller Labels → Zurücksetzen
+            self.__label_reset_annotation()
+            return
+
+        # Jetzt innerhalb der richtigen Y-Zone nach dem nächsten X-Wert suchen
+        x_click = pd.Timestamp(mdates.num2date(event.xdata)).tz_localize(None)
+        valid_entries = self.__label_plot_helper["label_data"][
+            (self.__label_plot_helper["label_data"]["start_time"] <= x_click) &
+            (self.__label_plot_helper["label_data"]["end_time"] >= x_click) &
+            (self.__label_plot_helper["label_data"]["label_name"] == closest_label)
+            ]
+
+        self.__label_plot_helper["static_mode"] = True
+        if not valid_entries.empty:
+            closest_index = valid_entries.index[0]
+        else:
+            closest_index = (self.__label_plot_helper["label_data"][
+                                 self.__label_plot_helper["label_data"]["label_name"] == closest_label
+                                 ]["start_time"] - x_click).abs().idxmin()
+
+        self.__label_update_selection(closest_index)
+
+    def __label_on_key(self, event):
+        """ Handle keyboard navigation in static mode with round-robin effect. """
+
+        if not self.__label_plot_helper["static_mode"] or self.__label_plot_helper["selected_index"] is None:
+            return
+
+        if event.key == "escape":
+            self.__label_reset_annotation()
+            return
+
+        if event.key in ["right", "left"]:
+            step = 1 if event.key == "right" else -1
+
+            # Hol das aktuelle Label
+            current_label = self.__label_plot_helper["label_data"].iloc[self.__label_plot_helper["selected_index"]]["label_name"]
+
+            # Filtere nur die Einträge für dieses Label
+            same_label_entries = self.__label_plot_helper["label_data"][self.__label_plot_helper["label_data"]["label_name"] == current_label]
+
+            # Bestimme den aktuellen Index innerhalb dieser gefilterten Liste
+            relative_index = same_label_entries.index.get_loc(self.__label_plot_helper["selected_index"])
+
+            # Round-Robin Logik: Springt zyklisch durch die Einträge des Labels
+            new_relative_index = (relative_index + step) % len(same_label_entries)
+            new_index = same_label_entries.index[new_relative_index]
+
+            self.__label_update_selection(new_index)
 
     def _set_x_lim(self, ax):
         x_min = mdates.date2num(self.analysis_results["first_datetime"])
@@ -966,7 +981,11 @@ class ViperDF:
         # FIXME: Smart solution for showing time properly(based on interval)
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
 
-    def _combine_axes(self, ax_list: list):
+    def _combine_axes(self):
+        ax_list = [self._activity_ax, self._app_ax, self._label_ax]
+        if not all(ax_list):
+            raise ValueError("All axes must be specified.")
+
         highest_dpi = max(max(ax.figure.dpi for ax in ax_list), 100)
         highest_x = max(ax.get_xlim()[1] for ax in ax_list)
         lowest_x = min(ax.get_xlim()[0] for ax in ax_list)
@@ -1051,15 +1070,14 @@ class ViperDF:
 
         self.__init_helper_activity_plot(new_ax)
         self.__init_helper_apps(new_ax)
+        self.__init_helper_label(new_ax)
 
-        return new_fig, new_ax
+        self.mainplot = new_fig
 
     def get_main_plot(self):
-        ax_activity = vdf._get_ax_line_activity()
-        ax_apps = vdf._get_ax_hbar_apps()
-        ax_labels = vdf._get_ax_hbar_labels()
-        fig, _ = self._combine_axes([ax_activity, ax_apps, ax_labels])
-        return fig
+        if self.mainplot is None:
+            self._combine_axes()
+        return self.mainplot
 
     def get_vbar_apps(self):
         if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
@@ -1068,7 +1086,7 @@ class ViperDF:
 
         df = self._grouped_app_summary_df
 
-        # Erstelle das Diagramm
+        # TODO: maybe adding granularity?
         fig, ax = plt.subplots(figsize=(10, 6))
         bars = ax.bar(df["window_type"], df["overall_percent"], color=df["rgba_color"])
 
@@ -1164,7 +1182,7 @@ class ViperDF:
 
         df = self._grouped_label_summary_df
 
-        # Create the figure
+        # TODO: maybe adding granularity?
         fig, ax = plt.subplots(figsize=(10, 6))
         bars = ax.bar(df["label_name"], df["overall_percent"], color=df["rgba_color"])
 
@@ -1258,7 +1276,7 @@ class ViperDF:
 
         df = self._grouped_app_summary_df
 
-        # Create the pie chart
+        # TODO: maybe adding granularity?
         fig, ax = plt.subplots(figsize=(8, 8))
 
         # Generate wedges with leader lines
@@ -1365,7 +1383,7 @@ class ViperDF:
 
         df = self._grouped_label_summary_df
 
-        # Create the pie chart
+        # TODO: maybe adding granularity?
         fig, ax = plt.subplots(figsize=(8, 8))
 
         # Generate wedges with leader lines
@@ -1690,13 +1708,8 @@ if __name__ == "__main__":
     start_analysis = datetime.now()
     vdf = ViperDF("testing", test_df)
     vdf.analyze()
+    vdf.plot()
 
-
-    fig_ori, ax_all = plt.subplots(dpi=100)
-    ax_all = vdf._get_ax_line_activity(ax=ax_all)
-    ax_all = vdf._get_ax_hbar_apps(ax=ax_all)
-    ax_all = vdf._get_ax_hbar_labels(ax=ax_all)
-    show_figure_in_ttk(fig_ori)
 
 
     show_figure_in_ttk(vdf.get_main_plot())

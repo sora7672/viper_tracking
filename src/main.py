@@ -15,6 +15,7 @@ from config_manager import initialize_config_manager
 from log_handler import get_logger, init_logging
 from db_connector import start_db
 from settings_manager import init_user_settings
+from pandas_data_manager import init_day_analyzer
 
 
 def start_program() -> None:
@@ -47,6 +48,8 @@ def start_program() -> None:
 
     start_systray_icon()
     get_logger().debug("started systray icon")
+    init_day_analyzer()
+    get_logger().debug("started day analyzer done")
     get_logger().debug("Now starting mainloop")
     start_root_gui()
     get_logger().debug("Mainloop properly finished")

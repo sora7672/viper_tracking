@@ -11,7 +11,8 @@ Author: sora7672
 __author__ = "sora7672"
 
 from threading import Lock
-
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
 class Classproperty:
     """
@@ -293,3 +294,146 @@ class Seconds(int):
         days, hours = divmod(hours, 24)
         weeks, days = divmod(days, 7)
         return f"{weeks} weeks, {days} days {hours}:{mins}:{secs}"
+
+class DynamicTimeframe:
+    """
+    A class for handling dynamic timeframes with predefined relative and absolute date ranges.
+
+    This class provides a set of predefined timeframes (e.g., "last_24_hours", "current_week", "previous_month").
+    It calculates the start and end datetime based on the selected timeframe.
+
+    Attributes:
+        _predefined_dynamic_timeframes (dict): A dictionary defining available timeframes and their corresponding calculations.
+        value (str): The selected timeframe identifier.
+
+    Raises:
+        ValueError: If an invalid timeframe is provided during initialization.
+    """
+
+    _predefined_dynamic_timeframes = {
+
+        "last_hour": {"type": "relative", "unit": "hours", "difference": 1},
+        "last_6_hours": {"type": "relative", "unit": "hours", "difference": 6},
+        "last_12_hours": {"type": "relative", "unit": "hours", "difference": 12},
+        "last_24_hours": {"type": "relative", "unit": "hours", "difference": 24},
+        "last_48_hours": {"type": "relative", "unit": "hours", "difference": 48},
+        "last_72_hours": {"type": "relative", "unit": "hours", "difference": 72},
+        "last_7_days": {"type": "relative", "unit": "days", "difference": 7},
+        "last_14_days": {"type": "relative", "unit": "days", "difference": 14},
+        "last_28_days": {"type": "relative", "unit": "days", "difference": 28},
+
+        "current_day": {"type": "absolute", "unit": "days", "difference": 0},
+        "current_week": {"type": "absolute", "unit": "weeks", "difference": 0},
+        "current_month": {"type": "absolute", "unit": "months", "difference": 0},
+        "current_year": {"type": "absolute", "unit": "years", "difference": 0},
+
+        "previous_day": {"type": "absolute", "unit": "days", "difference": 1},
+        "previous_week": {"type": "absolute", "unit": "weeks", "difference": 1},
+        "previous_month": {"type": "absolute", "unit": "months", "difference": 1},
+        "previous_year": {"type": "absolute", "unit": "years", "difference": 1},
+    }
+
+    def __init__(self, dynamic_timeframe: str):
+        """
+        Initializes a DynamicTimeframe instance with a predefined timeframe.
+
+        :param dynamic_timeframe: str (The identifier of the predefined timeframe.)
+        :raises ValueError: If the provided timeframe is not in `_predefined_dynamic_timeframes`.
+        :return: None
+        """
+
+        if dynamic_timeframe not in DynamicTimeframe._predefined_dynamic_timeframes:
+            raise ValueError(f"Invalid dynamic timeframe: {dynamic_timeframe}\n"
+                             f"Valid values: {DynamicTimeframe._predefined_dynamic_timeframes.keys()}")
+        self.value = dynamic_timeframe
+
+    def __get_start_and_end_datetime(self) -> tuple[datetime, datetime]:
+        """
+        Computes the start and end datetime based on the selected timeframe.
+
+        The method determines whether the timeframe is relative (e.g., "last_7_days") or absolute (e.g., "current_month")
+        and calculates the appropriate datetime range accordingly.
+
+        Relative timeframes subtract a fixed duration from the current time.
+        Absolute timeframes are adjusted to align with full calendar units (e.g., start of the week, month, or year).
+
+        :raises ValueError: If the timeframe type or unit is invalid.
+        :return: tuple[datetime, datetime] (A tuple containing the calculated start and end datetime.)
+        """
+
+        time_frame_data = DynamicTimeframe._predefined_dynamic_timeframes[self.value]
+
+        if time_frame_data["type"] == 'relative':
+            end_datetime = datetime.now()
+            start_datetime = end_datetime - timedelta(**{time_frame_data["unit"]: time_frame_data["difference"]})
+
+        elif time_frame_data["type"] == 'absolute':
+            if time_frame_data["unit"] in {"years", "months"}:
+                minus = relativedelta(**{time_frame_data["unit"]: time_frame_data["difference"]})
+            else:
+                minus = timedelta(**{time_frame_data["unit"]: time_frame_data["difference"]})
+            tmp_datetime = datetime.now() - minus
+            tmp_datetime = tmp_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+
+            match time_frame_data["unit"]:
+                case "days":
+                    start_datetime = tmp_datetime
+
+                case "weeks":
+                    start_datetime = tmp_datetime - timedelta(
+                        days=tmp_datetime.isoweekday() - 1)
+
+                case "months":
+                    start_datetime = tmp_datetime.replace(day=1)
+
+                case "years":
+                    start_datetime = tmp_datetime.replace(month=1, day=1)
+
+                case _:
+                    raise ValueError(f"Invalid dynamic timeframe unit: {time_frame_data['unit']}")
+
+            if time_frame_data["unit"] in {"months", "years"}:
+                end_datetime = start_datetime + relativedelta(
+                    **{time_frame_data["unit"]: 1}) - timedelta(seconds=1)
+            else:
+                end_datetime = start_datetime + timedelta(
+                    **{time_frame_data["unit"]: 1}) - timedelta(seconds=1)
+
+        else:
+            raise ValueError(f"Invalid dynamic timeframe type: {time_frame_data['type']}")
+
+        return start_datetime, end_datetime
+
+    @property
+    def start_datetime(self) -> datetime:
+        """
+        Retrieves the calculated start datetime for the selected timeframe.
+
+        :return: datetime (The start datetime based on the selected timeframe.)
+        """
+
+        out, _ = self.__get_start_and_end_datetime()
+        return out
+
+    @property
+    def end_datetime(self) -> datetime:
+        """
+        Retrieves the calculated end datetime for the selected timeframe.
+
+        :return: datetime (The end datetime based on the selected timeframe.)
+        """
+
+        _, out = self.__get_start_and_end_datetime()
+        return out
+
+    @property
+    def datetime_range(self) -> tuple[datetime, datetime]:
+        """
+        Returns the start and end datetime as a tuple.
+
+        :return: tuple[datetime, datetime] (A tuple containing both the start and end datetime.)
+        """
+
+        return self.__get_start_and_end_datetime()
+
+

@@ -841,7 +841,8 @@ class DBHandler:
                 inputs = self.get_inputs_by_window_id(window_ids)
                 if inputs is not None:
                     input_merged = pandas_merge(window_df, inputs, on="window_id", how="left")
-                    input_merged["activity"] = input_merged["count_key_pressed"].apply(lambda x: True if x is not None and x >= 0 else False)
+                    input_merged["activity"] = input_merged["count_key_pressed"].apply(
+                        lambda x: True if x is not None and x >= 0 else False)
                     input_merged["all_activity_count"] = input_merged[
                         [
                             "count_key_pressed", "count_mouse_pressed", "count_direction_key_pressed",
@@ -857,6 +858,8 @@ class DBHandler:
                     labels_merged = pandas_merge(input_merged, labels, on="window_id", how="left")
                 else:
                     labels_merged = input_merged
+
+                labels_merged = labels_merged.drop_duplicates(subset=["window_id"], keep="first")
 
                 return labels_merged
             else:

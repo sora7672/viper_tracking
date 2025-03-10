@@ -226,6 +226,21 @@ class DBHandler:
                                )
                            ''')
             self.conn.commit()
+            self.cursor.execute('''
+                                CREATE TABLE IF NOT EXISTS filter_catalog (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                                dynamic_time_frame TEXT,
+                                window_type TEXT COLLATE NOCASE,
+                                window_title TEXT COLLATE NOCASE,
+                                word_list TEXT COLLATE NOCASE,
+                                label_list TEXT,
+                                start_datetime TEXT,
+                                end_datetime TEXT,
+                                creation_datetime TEXT NOT NULL
+                               )
+                           ''')
+            self.conn.commit()
         except sqlite3.IntegrityError as e:
             get_logger().error(f"Integrity error while database init: {e}")
             self.conn.rollback()
@@ -411,24 +426,19 @@ class DBHandler:
 
     def add_label(self, name:str, manually:bool, active:bool, creation_datetime:datetime,conditions= None) -> None | int:
         """
-        Inserts a label entry into the `labels` table.
+        Inserts a label entry into the `label_catalog` table.
 
-        Required Keys in `label_dict`:
-        - `name` (str): Name of the label.
-        - `manually` (bool): Whether the label is manually assigned.
-        - `active` (bool): Status of the label.
-        - `conditions` (dict): JSON-serializable conditions for the label.
-        - `creation_datetime` (datetime): Timestamp of the label creation.
+        The label can be either manually assigned or automatically determined based on conditions.
+        If conditions are provided, they will be serialized into a JSON string.
 
-        :param label_dict: dict (Details of the label.)
-        :return: int | None (ID of the newly added label, or None on failure.)
+        :param name: str (The name of the label.)
+        :param manually: bool (Indicates whether the label is manually assigned.)
+        :param active: bool (Indicates if the label is active.)
+        :param creation_datetime: datetime (The timestamp when the label was created.)
+        :param conditions: dict | None (Optional dictionary containing conditions for automatic labeling.)
+        :return: int | None (The ID of the newly inserted label, or None if insertion fails.)
+        :raises ValueError: If `creation_datetime` is not a valid datetime object.
         """
-
-        # keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
-        # if not all(key in label_dict for key in keys_needed):
-        #     get_logger().warn(f"At least one missing key: {keys_needed}\n"
-        #                       f"label_dict: {label_dict}")
-        #     return None
 
         json_conditions = _to_json(conditions) if conditions else "{}"
 
@@ -474,14 +484,19 @@ class DBHandler:
 
     def update_label(self, id:int, name:str, manually:bool, active:bool, creation_datetime:datetime, conditions=None) -> None:
         """
-        Updates an existing label in the `labels` table.
+        Updates an existing label in the `label_catalog` table.
 
-        Required Keys in `label_dict`:
-        - `id` (int): ID of the label to update.
-        - Other keys as described in `add_label`.
+        The method modifies an existing label entry based on the provided ID. If conditions are
+        provided, they will be serialized into a JSON string.
 
-        :param label_dict: dict (Updated label details.)
+        :param id: int (The ID of the label to update.)
+        :param name: str (The updated name of the label.)
+        :param manually: bool (Specifies if the label is manually assigned.)
+        :param active: bool (Indicates whether the label is active.)
+        :param creation_datetime: datetime (The timestamp of label creation.)
+        :param conditions: dict | None (Optional dictionary defining the label's conditions.)
         :return: None
+        :raises ValueError: If `creation_datetime` is not a valid datetime object.
         """
 
         # keys_needed = ["id", "name", "manually", "active", "conditions", "creation_datetime"]
@@ -866,6 +881,14 @@ class DBHandler:
                 return DataFrame()
 
     def get_inputs_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
+        """
+        Retrieves input logs for a given window ID or multiple window IDs.
+
+        This method fetches input logs from the `input_log` table based on the specified window IDs.
+
+        :param window_ids: int | tuple[int] (A single window ID or a tuple of window IDs.)
+        :return: DataFrame | None (A pandas DataFrame containing input logs, or None if an error occurs.)
+        """
 
         if window_ids is None:
             get_logger().error(f"Value Error, no window ids provided in get_inputs_by_window_id()")
@@ -905,6 +928,15 @@ class DBHandler:
 
 
     def get_labels_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
+        """
+        Retrieves labels assigned to a specific window ID or multiple window IDs.
+
+        The labels are aggregated into a single list for each window.
+
+        :param window_ids: int | tuple[int] (A single window ID or a tuple of window IDs.)
+        :return: DataFrame | None (A pandas DataFrame with labels for each window, or None if an error occurs.)
+        """
+
         if window_ids is None:
             get_logger().error(f"Value Error, no window ids provided in get_labels_by_window_id()")
             return None
@@ -952,6 +984,249 @@ class DBHandler:
             )
 
             return data_out
+
+    def add_filter(self, name:str, window_type: str = None, window_title: str = None,
+                  word_list: str | list[str] = None, label_list: int | list[int] = None,
+                  start_datetime: datetime = None, end_datetime: datetime = None,
+                  dynamic_time_frame: str = None):
+        """
+        Inserts a new filter entry into the `filter_catalog` table.
+
+        A filter can contain multiple conditions based on different attributes like window type,
+        title, labels, and time frames.
+
+        :param name: str (The name of the filter.)
+        :param window_type: str | None (The type of the window to filter.)
+        :param window_title: str | None (The title of the window to filter.)
+        :param word_list: str | list[str] | None (A list of words for filtering.)
+        :param label_list: int | list[int] | None (A list of label IDs to filter by.)
+        :param start_datetime: datetime | None (The start time for filtering.)
+        :param end_datetime: datetime | None (The end time for filtering.)
+        :param dynamic_time_frame: str | None (An optional dynamic time frame parameter.)
+        :return: int | None (The ID of the newly inserted filter, or None if insertion fails.)
+        """
+
+        json_label_list = _to_json(label_list) if label_list else "{}"
+        json_word_list = _to_json(word_list) if word_list else "{}"
+
+        if isinstance(start_datetime, datetime):
+            iso_start_datetime = start_datetime.isoformat()
+        else:
+            iso_start_datetime = None
+        if isinstance(end_datetime, datetime):
+            iso_end_datetime = end_datetime.isoformat()
+        else:
+            iso_end_datetime = None
+
+        # TODO: need to add some better error handeling, more visual for the user + the normal log writing
+        try:
+            with self.lock:
+                self.cursor.execute('''
+                            INSERT INTO filter_catalog (name, dynamic_time_frame, window_type, window_title, word_list, label_list,
+                            start_datetime, end_datetime, creation_datetime)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (name, dynamic_time_frame, window_type, window_title, json_word_list, json_label_list, iso_start_datetime,
+                              iso_end_datetime, datetime.now().isoformat()))
+
+                new_id = self.cursor.lastrowid
+                self.conn.commit()
+
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while adding filter {name}: {e}")
+            self.conn.rollback()
+            return None
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error while adding filter {name}: {e}")
+            self.conn.rollback()
+            return None
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while adding filter {name}: {e}")
+            self.conn.rollback()
+            return None
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error while adding filter {name}: {e}")
+            self.conn.rollback()
+            return None
+
+        else:
+            get_logger().info(f"Filter added successfully. ID: {new_id}")
+            return new_id
+
+    def update_filter(self, id: int, name: str = None, window_type: str = None, window_title: str = None,
+                      word_list: str | list[str] = None, label_list: int | list[int] = None,
+                      start_datetime: datetime = None, end_datetime: datetime = None,
+                      dynamic_time_frame: str = None):
+        """
+        Updates an existing filter in the `filter_catalog` table.
+
+        If any attributes are provided, they will replace the existing values for the given filter ID.
+
+        :param id: int (The ID of the filter to update.)
+        :param name: str | None (The updated name of the filter.)
+        :param window_type: str | None (Updated window type filter.)
+        :param window_title: str | None (Updated window title filter.)
+        :param word_list: str | list[str] | None (Updated list of words for filtering.)
+        :param label_list: int | list[int] | None (Updated list of label IDs.)
+        :param start_datetime: datetime | None (Updated start time for the filter.)
+        :param end_datetime: datetime | None (Updated end time for the filter.)
+        :param dynamic_time_frame: str | None (Updated dynamic time frame.)
+        :return: bool (True if the update was successful, False otherwise.)
+        """
+
+        json_label_list = _to_json(label_list) if label_list else "{}"
+        json_word_list = _to_json(word_list) if word_list else "{}"
+
+        if isinstance(start_datetime, datetime):
+            iso_start_datetime = start_datetime.isoformat()
+        else:
+            iso_start_datetime = None
+
+        if isinstance(end_datetime, datetime):
+            iso_end_datetime = end_datetime.isoformat()
+        else:
+            iso_end_datetime = None
+
+        # TODO: Need to add better error handling, more visual for the user + the normal log writing
+        try:
+            with self.lock:
+                self.cursor.execute('''
+                    UPDATE filter_catalog 
+                    SET name = ?, dynamic_time_frame = ?, window_type = ?, window_title = ?, word_list = ?, label_list = ?,
+                        start_datetime = ?, end_datetime = ?
+                    WHERE id = ?
+                ''', (name, dynamic_time_frame, window_type, window_title, json_word_list, json_label_list,
+                      iso_start_datetime, iso_end_datetime, id))
+
+                if self.cursor.rowcount == 0:
+                    get_logger().warning(f"Filter {id} not found. No update performed.")
+                    return False
+
+                self.conn.commit()
+
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        else:
+            get_logger().info(f"Filter {id} updated successfully.")
+            return True
+
+    def delete_filter(self, id: int):
+        """
+        Deletes a filter from the `filter_catalog` table.
+
+        If the filter does not exist, a warning is logged.
+
+        :param id: int (The ID of the filter to delete.)
+        :return: bool (True if the deletion was successful, False otherwise.)
+        """
+
+        try:
+            with self.lock:
+                self.cursor.execute("DELETE FROM filter_catalog WHERE id = ?", (id,))
+                if self.cursor.rowcount == 0:
+                    get_logger().warning(f"Filter {id} not found.")
+                    return False
+
+                self.conn.commit()
+
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error while updating filter {id}: {e}")
+            self.conn.rollback()
+            return False
+
+        else:
+            get_logger().info(f"Filter {id} deleted successfully.")
+            return True
+
+    def get_all_filters(self):
+        """
+        Retrieves all filters from the `filter_catalog` table.
+
+        The filters are returned as a list of dictionaries, with each dictionary representing a filter entry.
+
+        :return: list[dict] | None (A list of filter dictionaries, or None if an error occurs.)
+        """
+
+        try:
+            with self.lock:
+                self.cursor.execute(
+                    "SELECT id, name, dynamic_time_frame, window_type, window_title, word_list, "
+                    "label_list, start_datetime, end_datetime "
+                    "FROM filter_catalog")
+                rows = self.cursor.fetchall()
+
+        except sqlite3.IntegrityError as e:
+            get_logger().error(f"Integrity error while loading all filters: {e}")
+            self.conn.rollback()
+            return False
+
+        except sqlite3.OperationalError as e:
+            get_logger().error(f"Operational error while loading all filters: {e}")
+            self.conn.rollback()
+            return False
+
+        except sqlite3.DatabaseError as e:
+            get_logger().error(f"Database error while loading all filters: {e}")
+            self.conn.rollback()
+            return False
+
+        except Exception as e:
+            get_logger().error(f"Unexpected error while loading all filters: {e}")
+            self.conn.rollback()
+            return False
+
+        else:
+            filters = []
+            for row in rows:
+                filters.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "dynamic_time_frame": row[2],
+                    "window_type": row[3],
+                    "window_title": row[4],
+                    "word_list": _from_json(row[5]) if row[5] else None,
+                    "label_list": _from_json(row[6]) if row[6] else None,
+                    "start_datetime": row[7],
+                    "end_datetime": row[8],
+                })
+
+            get_logger().info(f"Retrieved {len(filters)} filters from the database.")
+            return filters
 
 
 # # # # External call functions for less import in other files # # # #

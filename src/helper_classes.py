@@ -327,6 +327,7 @@ class DynamicTimeframe:
         "last_14_days": {"type": "relative", "unit": "days", "difference": 14},
         "last_2_weeks": {"type": "relative", "unit": "days", "difference": 14},
         "last_month": {"type": "relative", "unit": "days", "difference": 28},
+        "last_28_days": {"type": "relative", "unit": "days", "difference": 28},
         "last_year": {"type": "relative", "unit": "days", "difference": 365},
 
         "current_day": {"type": "absolute", "unit": "days", "difference": 0},

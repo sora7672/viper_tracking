@@ -502,7 +502,7 @@ def update_all_labels_to_db() -> None:
     """
 
     for lab in Label.get_all_labels():
-        lab.update_in_db()
+        lab._update_in_db()
 
 
 if __name__ == "__main__":

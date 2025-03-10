@@ -2073,19 +2073,22 @@ def show_figure_in_ttk(figure):
 
 
 if __name__ == "__main__":
+    from filter_manager import DatabaseFilter
+    from helper_classes import DynamicTimeframe
     start_db()
     pd.set_option("display.max_columns", None)
     pd.set_option("display.width", None)
     start_analysis = datetime.now()
 
+    my_dbf = DatabaseFilter(dynamic_time_frame=DynamicTimeframe("previous_week"))
 
-    test_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
-    vdf = ViperDF("test", test_df)
+    #test_df = DBHandler().search_window_log(start_time=datetime(2025,1,16,0,0), end_time=datetime(2025,1,17,0,0))
+    vdf = ViperDF("test", my_dbf.get_dataframe())
     vdf.analyze()
     vdf.plot()
 
 
-    init_day_analyzer()
+
 
 
     end_analysis = datetime.now()
@@ -2097,4 +2100,4 @@ if __name__ == "__main__":
     stop_db()
 
 
-    #print("Please start with the main.py")
+    print("Please start with the main.py")

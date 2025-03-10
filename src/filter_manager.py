@@ -305,30 +305,4 @@ def init_all_filter_from_db() -> None:
 
 
 if __name__ == "__main__":
-    start_db()
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", None)
-    start_analysis = datetime.now()
-
-
-    init_all_filter_from_db()
-
-
-    dbf = DatabaseFilter(name="28days", dynamic_time_frame=DynamicTimeframe("last_28_days"))
-    #
-    # print(dbf.get_dataframe())
-    # dbf2 = DatabaseFilter(name="7days", dynamic_time_frame=DynamicTimeframe("last_7_days"))
-    # print(dbf2.get_dataframe())
-    #
-    #
-    # subtr = DatabaseFilter.combine_filters(dbf, dbf2, subtract=False)
-    # print(subtr)
-
-    end_analysis = datetime.now()
-    time_used = (end_analysis - start_analysis).total_seconds()
-    print(f"{end_analysis} - {start_analysis} = {time_used}")
-    stop_db()
-
-
-
     print("Please start with the main.py")

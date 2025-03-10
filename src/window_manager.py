@@ -494,15 +494,6 @@ def init_all_labels_from_db() -> None:
     Label.init_all_labels_from_db()
 
 
-def update_all_labels_to_db() -> None:
-    """
-    Updates all labels in the database. Useful for saving label states before exiting.
-
-    :return: None
-    """
-
-    for lab in Label.get_all_labels():
-        lab._update_in_db()
 
 
 if __name__ == "__main__":

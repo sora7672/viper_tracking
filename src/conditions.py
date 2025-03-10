@@ -409,3 +409,7 @@ class ConditionList:
     def __str__(self) -> str:
         conditions_str = f" {self.operator.upper()} ".join(str(cond) for cond in self.conditions)
         return f"ConditionList({conditions_str})"
+
+
+if __name__ == "__main__":
+    print("Please start with the main.py")

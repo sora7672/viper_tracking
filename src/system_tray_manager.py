@@ -18,7 +18,7 @@ from time import sleep
 from config_manager import stop_program_threads
 from log_handler import get_logger
 from input_manager import stop_done as input_stop_done
-from window_manager import Label, update_all_labels_to_db, stop_done as win_stop_done
+from window_manager import Label, stop_done as win_stop_done
 from gui_controller import stop_gui
 from db_connector import stop_db
 from gui_views import open_main_window, open_systray_label
@@ -137,10 +137,6 @@ class SystemTrayManager:
         stop_gui()
         sleep(0.3)
         get_logger().debug("stop_gui is done")
-
-        update_all_labels_to_db()
-        sleep(0.3)
-        get_logger().debug("update_all_labels_to_db() done")
 
         stop_db()
         sleep(0.3)

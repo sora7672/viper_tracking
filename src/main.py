@@ -16,6 +16,7 @@ from log_handler import get_logger, init_logging
 from db_connector import start_db
 from settings_manager import init_user_settings
 from pandas_data_manager import init_day_analyzer
+from filter_manager import init_all_filter_from_db
 
 
 def start_program() -> None:
@@ -35,7 +36,10 @@ def start_program() -> None:
     get_logger().debug("start_db done")
 
     init_all_labels_from_db()
-    get_logger().debug("imported from labels done")
+    get_logger().debug("init labels from db done")
+
+    init_all_filter_from_db()
+    get_logger().debug("init filter from db done")
 
     init_root_gui()
     get_logger().debug("init root gui done")
@@ -47,9 +51,10 @@ def start_program() -> None:
     get_logger().debug("window tracker start done")
 
     start_systray_icon()
-    get_logger().debug("started systray icon")
+    get_logger().debug("start systray icon done")
     init_day_analyzer()
-    get_logger().debug("started day analyzer done")
+    get_logger().debug("start day analyzer done")
+
     get_logger().debug("Now starting mainloop")
     start_root_gui()
     get_logger().debug("Mainloop properly finished")

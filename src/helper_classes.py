@@ -445,3 +445,5 @@ class DynamicTimeframe:
         return self.__get_start_and_end_datetime()
 
 
+if __name__ == "__main__":
+    print("Please start with the main.py")

@@ -289,7 +289,7 @@ class Label:
                 dict_no_id = {"name": self._name, "manually": self._manually, "active": self._active,
                               "conditions": self._condition_list.to_dict() if self._condition_list else None,
                               "creation_datetime": self._creation_datetime}
-                self._id = DBHandler().add_label(dict_no_id)
+                self._id = DBHandler().add_label(**dict_no_id)
 
         get_logger().debug(f"LABEL {self._name} lock release")
         return self
@@ -307,7 +307,7 @@ class Label:
                 dict_with_id = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
                                 "conditions": self._condition_list.to_dict() if self._condition_list else None,
                                 "creation_datetime": self._creation_datetime}
-                DBHandler().update_label(dict_with_id)
+                DBHandler().update_label(**dict_with_id)
 
             else:
                 get_logger().error("update_in_db only works if the Label._id is properly set!")
@@ -383,7 +383,8 @@ class Label:
 
         label_dicts = DBHandler().get_all_labels()
         for label_dict in label_dicts:
-            if label_dict["condition_json"] == "{}":
+            if label_dict["condition_json"] == "{}" or label_dict["condition_json"] is None:
+                # Fallback build in, if database row is corrupted with empty condition
                 tmp_conditionlist = None
             else:
                 tmp_conditionlist = ConditionList.from_json(label_dict["condition_json"])

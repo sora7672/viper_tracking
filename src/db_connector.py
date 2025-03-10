@@ -409,7 +409,7 @@ class DBHandler:
                   input_dict["count_right_mouse_pressed"], input_dict["count_middle_mouse_pressed"]))
             self.conn.commit()
 
-    def add_label(self, label_dict: dict) -> None | int:
+    def add_label(self, name:str, manually:bool, active:bool, creation_datetime:datetime,conditions= None) -> None | int:
         """
         Inserts a label entry into the `labels` table.
 
@@ -424,18 +424,18 @@ class DBHandler:
         :return: int | None (ID of the newly added label, or None on failure.)
         """
 
-        keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
-        if not all(key in label_dict for key in keys_needed):
-            get_logger().warn(f"At least one missing key: {keys_needed}\n"
-                              f"label_dict: {label_dict}")
-            return None
+        # keys_needed = ["name", "manually", "active", "conditions", "creation_datetime"]
+        # if not all(key in label_dict for key in keys_needed):
+        #     get_logger().warn(f"At least one missing key: {keys_needed}\n"
+        #                       f"label_dict: {label_dict}")
+        #     return None
 
-        conditions = _to_json(label_dict["conditions"]) if label_dict["conditions"] else "{}"
+        json_conditions = _to_json(conditions) if conditions else "{}"
 
-        if isinstance(label_dict["creation_datetime"], datetime):
-            creation_datetime = label_dict["creation_datetime"].isoformat()
+        if isinstance(creation_datetime, datetime):
+            iso_creation_datetime = creation_datetime.isoformat()
         else:
-            raise ValueError("label_dict['creation_datetime'] not a datetime")
+            raise ValueError("creation_datetime not a datetime")
 
         # TODO: need to add some better error handeling, more visual for the user + the normal log writing
         try:
@@ -443,37 +443,36 @@ class DBHandler:
                 self.cursor.execute('''
                     INSERT INTO label_catalog (name, manually, active, conditions, creation_datetime)
                     VALUES (?, ?, ?, ?, ?)
-                ''', (label_dict["name"], label_dict["manually"], label_dict["active"],
-                      conditions, creation_datetime))
+                ''', (name, manually, active, json_conditions, iso_creation_datetime))
 
                 new_id = self.cursor.lastrowid
                 self.conn.commit()
 
         except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while adding label {label_dict}: {e}")
+            get_logger().error(f"Integrity error while adding label {name}: {e}")
             self.conn.rollback()
             return None
 
         except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error while adding label {label_dict}: {e}")
+            get_logger().error(f"Operational error while adding label {name}: {e}")
             self.conn.rollback()
             return None
 
         except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while adding label {label_dict}: {e}")
+            get_logger().error(f"Database error while adding label {name}: {e}")
             self.conn.rollback()
             return None
 
         except Exception as e:
-            get_logger().error(f"Unexpected error while adding label {label_dict}: {e}")
+            get_logger().error(f"Unexpected error while adding label {name}: {e}")
             self.conn.rollback()
             return None
 
         else:
-            get_logger().info(f"{"Manually" if label_dict["manually"] else "Auto"} Label added successfully. ID: {new_id}")
+            get_logger().info(f"{"Manually" if manually else "Auto"} Label added successfully. ID: {new_id}")
             return new_id
 
-    def update_label(self, label_dict: dict) -> None:
+    def update_label(self, id:int, name:str, manually:bool, active:bool, creation_datetime:datetime, conditions=None) -> None:
         """
         Updates an existing label in the `labels` table.
 
@@ -485,20 +484,20 @@ class DBHandler:
         :return: None
         """
 
-        keys_needed = ["id", "name", "manually", "active", "conditions", "creation_datetime"]
-        if not all(key in label_dict for key in keys_needed):
-            get_logger().warn(f"At least one missing key: {keys_needed}\n"
-                              f"label_dict: {label_dict}")
-            return None
+        # keys_needed = ["id", "name", "manually", "active", "conditions", "creation_datetime"]
+        # if not all(key in label_dict for key in keys_needed):
+        #     get_logger().warn(f"At least one missing key: {keys_needed}\n"
+        #                       f"label_dict: {label_dict}")
+        #     return None
 
-        conditions = _to_json(label_dict["conditions"]) if label_dict["conditions"] else "{}"
-        if not conditions:
-            get_logger().warning(f"There is an error in the conditions dict!\n {label_dict}"
+        json_conditions = _to_json(conditions) if conditions else "{}"
+        if not json_conditions:
+            get_logger().warning(f"There is an error in the conditions!\n"
                                  f"\nNot added to the DB!")
             return None
 
-        if isinstance(label_dict["creation_datetime"], datetime):
-            creation_datetime = label_dict["creation_datetime"].isoformat()
+        if isinstance(creation_datetime, datetime):
+            iso_creation_datetime = creation_datetime.isoformat()
         else:
             raise ValueError("label_dict['creation_datetime'] not a datetime")
 
@@ -509,19 +508,19 @@ class DBHandler:
                     UPDATE label_catalog 
                     SET name = ?, manually = ?, active = ?, conditions = ?, creation_datetime = ?
                     WHERE id = ?
-                ''', (label_dict["name"], label_dict["manually"], label_dict["active"],
-                      conditions, creation_datetime, label_dict["id"]))
+                ''', (name, manually, active,
+                      json_conditions, iso_creation_datetime, id))
 
                 self.conn.commit()
         except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while updating label ID {label_dict["id"]}: {e}")
+            get_logger().error(f"Integrity error while updating label ID {id}: {e}")
             self.conn.rollback()
 
         except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error during update of label ID {label_dict["id"]}: {e}")
+            get_logger().error(f"Operational error during update of label ID ID {id}: {e}")
 
         except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while updating label ID {label_dict["id"]}: {e}")
+            get_logger().error(f"Database error while updating label ID ID {id}: {e}")
             self.conn.rollback()
 
         except Exception as e:
@@ -531,6 +530,7 @@ class DBHandler:
     def delete_label_by_id(self, label_id: int) -> None:
         """
         Deletes a label entry from the `labels` table based on its ID.
+        It sets the label as deleted if a window is connected. If not it deletes the row completely.
 
         :param label_id: int (The ID of the label to delete.)
         :return: None

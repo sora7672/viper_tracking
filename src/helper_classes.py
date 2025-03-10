@@ -14,6 +14,7 @@ from threading import Lock
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
+
 class Classproperty:
     """
     A decorator class that enables class-level properties.
@@ -316,11 +317,17 @@ class DynamicTimeframe:
         "last_6_hours": {"type": "relative", "unit": "hours", "difference": 6},
         "last_12_hours": {"type": "relative", "unit": "hours", "difference": 12},
         "last_24_hours": {"type": "relative", "unit": "hours", "difference": 24},
+        "last_day": {"type": "relative", "unit": "hours", "difference": 24},
         "last_48_hours": {"type": "relative", "unit": "hours", "difference": 48},
+        "last_2_days": {"type": "relative", "unit": "hours", "difference": 48},
         "last_72_hours": {"type": "relative", "unit": "hours", "difference": 72},
+        "last_3_days": {"type": "relative", "unit": "hours", "difference": 72},
         "last_7_days": {"type": "relative", "unit": "days", "difference": 7},
+        "last_week": {"type": "relative", "unit": "days", "difference": 7},
         "last_14_days": {"type": "relative", "unit": "days", "difference": 14},
-        "last_28_days": {"type": "relative", "unit": "days", "difference": 28},
+        "last_2_weeks": {"type": "relative", "unit": "days", "difference": 14},
+        "last_month": {"type": "relative", "unit": "days", "difference": 28},
+        "last_year": {"type": "relative", "unit": "days", "difference": 365},
 
         "current_day": {"type": "absolute", "unit": "days", "difference": 0},
         "current_week": {"type": "absolute", "unit": "weeks", "difference": 0},

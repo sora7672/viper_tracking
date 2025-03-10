@@ -392,7 +392,6 @@ class ConditionList:
         :param data: dict | str (A dictionary or JSON string containing 'operator' and 'conditions'.)
         :return: ConditionList (The constructed ConditionList instance.)
         """
-
         if isinstance(data, str):
             data = json.loads(data)
         elif not isinstance(data, dict):

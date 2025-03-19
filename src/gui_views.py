@@ -1420,9 +1420,11 @@ class LabelFrame(Frame):
         :return: None
         """
 
+        self.flex = FlexFrame(self, title_var=self.label_name)
+        self.flex.pack(fill=BOTH, expand=True)
+
         # Upper Frame for Label Name, Manually, Active Checkboxes, and Datetime Label
-        upper_frame = Frame(self)
-        upper_frame.name = "upper"
+        upper_frame = Frame(self.flex.inner_frame, name="upper")
         upper_frame.pack(fill="x", padx=(5, 0), pady=(5, 0))
 
         # Entry field for "Label name"
@@ -1444,14 +1446,17 @@ class LabelFrame(Frame):
         datetime_label.grid(row=0, column=4, padx=(5, 0), pady=(5, 0))
 
         # Delete Button
-        delete_btn = tb.Button(upper_frame, text="Delete", width=8, bootstyle="danger")
-        delete_btn.grid(row=0, column=5, padx=(170, 5), pady=(5, 0), sticky="e")  # Todo: better align this then with fixed
+        delete_btn = tb.Button(self.flex.inner_frame, text="Delete", width=8, bootstyle="danger")
+        delete_btn.place(relx=1.0, rely=0)
+        self.flex.inner_frame.update_idletasks()
+        button_width = delete_btn.winfo_width()
+        delete_btn.place_configure(x=-button_width)
         delete_btn.bind("<Button-1>", self.delete_label)
 
         conds_list = None
         if hasattr(self._label, "condition_list"):
             conds_list = self._label.condition_list
-        self.all_conditions_list_frame = ConditionListFrame(self, condition_list=conds_list, top_list=True)
+        self.all_conditions_list_frame = ConditionListFrame(self.flex.inner_frame, condition_list=conds_list, top_list=True)
 
         if self.manually_var.get():
             self.toggle_conditions()
@@ -1795,7 +1800,8 @@ class ViewController:
             btn_frame = event.widget.master
             btn_frame.pack_forget()
             n_lab = LabelFrame(parent=canvas_frame)
-            n_lab.pack(fill="x", padx=10, pady=5)
+            n_lab.pack(fill="x", padx=5, pady=5)
+            n_lab.flex.toggle_expanded()
             btn_frame.pack(fill="x", padx=5, pady=5)
 
 

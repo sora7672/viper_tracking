@@ -444,6 +444,12 @@ class DynamicTimeframe:
 
         return self.__get_start_and_end_datetime()
 
+    @classmethod
+    def get_entries(cls):#
+        out = []
+        for k in cls._predefined_dynamic_timeframes.keys():
+            out.append(k)
+        return out
 
 if __name__ == "__main__":
     print("Please start with the main.py")

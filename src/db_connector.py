@@ -1252,3 +1252,26 @@ def stop_db() -> None:
 
 if __name__ == "__main__":
     print("Please start with the main.py")
+
+
+# FIXME This error:
+#     Exception in thread Thread-8 (_thread_loop):
+#     Traceback (most recent call last):
+#       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+#         self.run()
+#       File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+#         self._target(*self._args, **self._kwargs)
+#       File "C:\git\python\viper_tracking\src\pandas_data_manager.py", line 1927, in _thread_loop
+#         self._check_for_action()
+#       File "C:\git\python\viper_tracking\src\pandas_data_manager.py", line 1904, in _check_for_action
+#         DayAnalyzer.this.refresh_data()
+#       File "C:\git\python\viper_tracking\src\pandas_data_manager.py", line 1941, in refresh_data
+#         tmp_df = self._db_call()
+#                  ^^^^^^^^^^^^^^^
+#       File "C:\git\python\viper_tracking\src\db_connector.py", line 856, in search_window_log
+#         inputs = self.get_inputs_by_window_id(window_ids)
+#                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+#       File "C:\git\python\viper_tracking\src\db_connector.py", line 926, in get_inputs_by_window_id
+#         data_out = DataFrame(self.cursor.fetchall(), columns=columns)
+#                              ^^^^^^^^^^^^^^^^^^^^^^
+#     sqlite3.ProgrammingError: Recursive use of cursors not allowed.

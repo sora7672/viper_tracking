@@ -21,6 +21,8 @@ from helper_classes import DynamicTimeframe
 from log_handler import get_logger
 from db_connector import DBHandler, start_db, stop_db
 
+def _return_datetime(str_or_datetime):
+    return str_or_datetime if isinstance(str_or_datetime, datetime) else datetime.fromisoformat(str_or_datetime)
 
 class DatabaseFilter:
     """
@@ -50,10 +52,10 @@ class DatabaseFilter:
 
     _all_filter = []
 
-    def __init__(self, name:str, window_type: str = None, window_title: str = None,
-                  word_list: str | list[str] = None, label_list: int | list[int] = None,
-                  start_datetime: datetime = None, end_datetime: datetime = None,
-                  dynamic_time_frame: DynamicTimeframe| str = None, id: int = None):
+    def __init__(self, name: str, window_type: str = None, window_title: str = None,
+                 word_list: str | list[str] = None, label_list: int | list[int] = None,
+                 start_datetime: datetime = None, end_datetime: datetime = None,
+                 dynamic_time_frame: DynamicTimeframe | str = None, id: int = None):
         """
         Initializes a `DatabaseFilter` instance.
 
@@ -73,6 +75,9 @@ class DatabaseFilter:
         :return: None
         """
 
+        if not dynamic_time_frame and (not start_datetime or not end_datetime):
+            raise ValueError("No dynamic time frame given, but also no start and end time given")
+
         self._lock = Lock()
         self._name = name
         self._id = id
@@ -81,16 +86,17 @@ class DatabaseFilter:
         self._window_title: str = window_title
         self._word_list: str | list[str] = word_list
         self._label_list: int | list[int] = label_list
-        if not dynamic_time_frame and (not start_datetime or not end_datetime):
-            raise ValueError("No dynamic time frame given, but also no start and end time given")
 
-        self._start_datetime: datetime = start_datetime
-        self._end_datetime: datetime = end_datetime
+
+        self._start_datetime: datetime = _return_datetime(start_datetime) if start_datetime else None
+        self._end_datetime: datetime = _return_datetime(end_datetime) if end_datetime else None
+
         if isinstance(dynamic_time_frame, DynamicTimeframe):
             self._dynamic_time_frame = dynamic_time_frame
-        else:
+        elif isinstance(dynamic_time_frame, str):
             self._dynamic_time_frame = DynamicTimeframe(dynamic_time_frame)
-
+        else:
+            self._dynamic_time_frame = None
         if self._id is None:
             self.save_to_db()
         DatabaseFilter._all_filter.append(self)
@@ -133,6 +139,24 @@ class DatabaseFilter:
                                        dynamic_time_frame=self._dynamic_time_frame.value)
                 self._id = filter_id
 
+    def as_dict(self):
+        with self._lock:
+            filter_dict = {
+                "name": self._name,
+                "id": self._id,
+                "window_type": self._window_type,
+                "window_title": self._window_title,
+                "word_list": self._word_list,
+                "label_list": self._label_list,
+                "dynamic_time_frame": self._dynamic_time_frame,
+                "start_date": self._start_datetime.date() if self._start_datetime else None,
+                "start_time": self._start_datetime.time().strftime("%H:%M") if self._start_datetime else None,
+                "end_date": self._end_datetime.date() if self._end_datetime else None,
+                "end_time": self._end_datetime.time().strftime("%H:%M") if self._end_datetime else None
+            }
+
+        return filter_dict
+
     def _update_in_db(self):
         """
         Updates the filter entry in the database with the current values.
@@ -142,21 +166,26 @@ class DatabaseFilter:
         :return: None
         """
 
-        with self._lock:
+        with (self._lock):
+            time_frame_value = self._dynamic_time_frame.value if isinstance(self._dynamic_time_frame,
+                                                                            DynamicTimeframe) else None
             DBHandler().update_filter(id=self._id, name=self._name, word_list=self._word_list,
                                       window_type=self._window_type, window_title=self._window_title,
-                                      label_list=self._label_list, dynamic_time_frame=self._dynamic_time_frame.value,
+                                      label_list=self._label_list, dynamic_time_frame=time_frame_value,
                                       end_datetime=self._end_datetime, start_datetime=self._start_datetime)
 
-    def update(self,name: str = None, word_list: str | list[str] = None, window_type: str = None,
+    def update(self, name: str = None, word_list: str | list[str] = None, window_type: str = None,
                window_title: str = None, label_list: int | list[int] = None,
                dynamic_time_frame: str | DynamicTimeframe = None, end_datetime: datetime | str = None,
                start_datetime: datetime | str = None):
         """
         Updates specific filter attributes and saves the changes to the database.
+        To reset filter attributes the parameter value needs to be "".
 
         If both `start_datetime`/`end_datetime` and `dynamic_time_frame` are provided,
-        an exception is raised since they are mutually exclusive.
+        a ValueError is raised since they are mutually exclusive.
+
+        If `start_datetime` is bigger equal than `end_datetime` a ValueError is raised.
 
         :param name: str | None (Updated name for the filter.)
         :param word_list: str | list[str] | None (Updated word-based filter.)
@@ -172,47 +201,78 @@ class DatabaseFilter:
         """
 
         changed = False
-        if (start_datetime or end_datetime) and dynamic_time_frame:
-            raise ValueError("Given start_datetime or end_datetime and dynamic_time_frame are mutually exclusive!")
-        if name is not None:
-            self._name = name
-            changed = True
-        if word_list is not None:
-            self._word_list = word_list
-            changed = True
-        if window_type is not None:
-            self._window_type = window_type
-            changed = True
-        if window_title is not None:
-            self._window_title = window_title
-            changed = True
-        if label_list is not None:
-            self._label_list = label_list
-            changed = True
 
-        if dynamic_time_frame is not None:
-            if isinstance(dynamic_time_frame, DynamicTimeframe):
-                self._dynamic_time_frame = dynamic_time_frame
-            elif dynamic_time_frame == "":
-                self._dynamic_time_frame = None
-            else:
-                self._dynamic_time_frame = DynamicTimeframe(dynamic_time_frame)
-            self._start_datetime = None
-            self._end_datetime = None
+        old_start_date = self._start_datetime
+        old_end_date = self._end_datetime
+        old_dynamic_time_frame = self._dynamic_time_frame
+
+        if dynamic_time_frame == "":
+            self._dynamic_time_frame = None
             changed = True
-        if start_datetime is not None:
+        elif dynamic_time_frame is not None:
+            if isinstance(dynamic_time_frame, str):
+                self._dynamic_time_frame = DynamicTimeframe(dynamic_time_frame)
+                changed = True
+            elif isinstance(dynamic_time_frame, DynamicTimeframe):
+                self._dynamic_time_frame = dynamic_time_frame
+                changed = True
+
+        if start_datetime is not None and self._start_datetime != start_datetime:
             self._start_datetime = None if start_datetime == "" else start_datetime
             changed = True
-        if end_datetime is not None:
+
+        if end_datetime is not None and self._end_datetime != end_datetime:
             self._end_datetime = None if end_datetime == "" else end_datetime
             changed = True
 
-        if not changed:
-            raise ValueError("No filters were changed")
-        else:
+        if (self._end_datetime is not None and self._start_datetime is None) or (
+                self._end_datetime is None and self._start_datetime is not None):
+            self._start_datetime = old_start_date
+            self._end_datetime = old_end_date
+            self._dynamic_time_frame = old_dynamic_time_frame
+            raise ValueError("End datetime or start datetime have to be set together.")
+
+        elif (self._end_datetime is not None and self._start_datetime is not None
+              and self._dynamic_time_frame is not None):
+            self._start_datetime = old_start_date
+            self._end_datetime = old_end_date
+            self._dynamic_time_frame = old_dynamic_time_frame
+            raise ValueError("Absolute time frame and dynamic time frame can't be set together.")
+
+        elif (self._end_datetime is None and self._start_datetime is None
+              and self._dynamic_time_frame is None):
+            self._start_datetime = old_start_date
+            self._end_datetime = old_end_date
+            self._dynamic_time_frame = old_dynamic_time_frame
+            raise ValueError("Absolute time frame or dynamic time frame has to be set.")
+
+        # if "" is the parameter value, it should reset  the attribute to None
+
+        if name is not None and self._name != name:
+            self._name = name
+            changed = True
+
+        if word_list is not None and self._word_list != word_list:
+            self._word_list = word_list
+            changed = True
+
+        if window_type is not None and self._window_type != window_type:
+            self._window_type = window_type
+            changed = True
+
+        if window_title is not None and self._window_title != window_title:
+            self._window_title = window_title
+            changed = True
+
+        if label_list is not None and self._label_list != label_list:
+            self._label_list = label_list
+            changed = True
+
+
+        if changed:
             self._update_in_db()
 
-    def delete(self):
+    def delete_in_db(self):
         """
         Deletes the filter from the database and removes it from the internal list.
 
@@ -224,6 +284,12 @@ class DatabaseFilter:
         DBHandler().delete_filter(id=self._id)
         DatabaseFilter._all_filter.remove(self)
         del self
+
+    @property
+    def id(self):
+        with self._lock:
+            return self._id
+
 
     @classmethod
     def load_from_db(cls):
@@ -238,6 +304,9 @@ class DatabaseFilter:
         for fil in filters:
             cls(**fil)
 
+    @classmethod
+    def get_all_filter(cls):
+        return cls._all_filter
 
     @classmethod
     def get_filter_by_id(cls, filter_id: int) -> 'DatabaseFilter':

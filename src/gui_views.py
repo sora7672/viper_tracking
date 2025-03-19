@@ -10,13 +10,20 @@ Author: sora7672
 """
 __author__ = 'sora7672'
 
-from datetime import datetime
-from tkinter.ttk import Combobox
-import ttkbootstrap as tb
-from ttkbootstrap import Frame, Window, Style
-from ttkbootstrap.dialogs import Messagebox
+from datetime import datetime, date
+from ttkbootstrap import Frame, Window, Style, DateEntry, Querybox
+from ttkbootstrap.dialogs import Messagebox, DatePickerDialog
+from ttkbootstrap.constants import *
 from tkinter import Toplevel, PhotoImage, Widget, ttk, IntVar, BooleanVar, StringVar, Canvas, TclError
+from tkinter.ttk import Combobox  # Fixme: This should use tb not tk
 
+import ttkbootstrap as tb
+import tkinter as tk
+import calendar
+import locale
+
+from helper_classes import DynamicTimeframe
+from filter_manager import DatabaseFilter
 from log_handler import get_logger
 from window_manager import Label
 from conditions import ObjectCondition, ConditionList
@@ -53,25 +60,847 @@ class FormValidationError(Exception):
     Exception raised when form validation fails.
 
     Attributes:
-        message: str (Error message detailing the validation issue.)
-        error_code: Any (Optional error code associated with the validation.)
-        faulty_fields: Any (Fields that failed validation.)
+        fields (list[str]): A list of strings representing the faulty fields.
+        error_code (Any, optional): An optional error code related to the validation error.
+        message (str): A formatted error message listing the faulty fields.
+
+    Raises:
+        ValueError: If any element in the provided list is not a string.
+        TypeError: If 'fields' is not a string or a list of strings.
     """
 
-    def __init__(self, message: str = None, error_code=None, faulty_fields=None):
+    def __init__(self, fields: str | list[str], error_code: str | int = None):
         """
-        Initializes the `FormValidationError` exception with a message, error code, and faulty fields.
+        Initializes the `FormValidationError` with faulty fields and an optional error code.
 
-        :param message: str (Custom error message. Defaults to a generic validation error message.)
-        :param error_code: Any (Optional error code for the validation error.)
-        :param faulty_fields: Any (Optional details about the fields that caused the validation error.)
-        :return: None
+        Parameters:
+            fields (str or list[str]): A single faulty field (string) or a list of faulty fields (list of strings).
+            error_code (Any, optional): An optional error code for the validation error.
+
+        Raises:
+            ValueError: If any element in 'fields' is not a string.
+            TypeError: If 'fields' is not a string or a list of strings.
         """
+        if isinstance(fields, str):
+            fields = [fields]
+        elif isinstance(fields, list):
+            if not all(isinstance(f, str) for f in fields):
+                raise ValueError("All elements in 'fields' must be strings.")
+        else:
+            raise TypeError("Expected a string or list of strings for 'fields'.")
 
-        self.message = message or (f"The validation was not ok. These fields are not filled properly:\n"
-                                   f"{faulty_fields}")
-        super().__init__(message)
+        self.fields = fields
         self.error_code = error_code
+        self.message = "Form Validation Failed!\nFaulty fields:\n- " + "\n- ".join(self.fields)
+
+        if error_code is not None:
+            self.message += f"\n\nError Code: {error_code}"
+
+        super().__init__(self.message)
+
+    def __str__(self):
+        """
+        Returns the error message when the exception is converted to a string.
+
+        Returns:
+            str: The formatted error message.
+        """
+        return self.message
+
+
+class SmartDateEntry(DateEntry):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, dateformat="%d.%m.%Y", firstweekday=0, *args, **kwargs)
+        self._dateformat = "%d.%m.%Y"
+        self.entry.delete(0, "end")
+        self.button.pack_forget()
+        self.entry.bind("<Button-1>", self._open_calender)
+        self.entry.bind("<Escape>", self._on_escape)
+        self.entry.bind("<Return>", self._on_return)
+
+    def set(self, value):
+
+        if isinstance(value, date):
+            value = value.strftime(self._dateformat)
+        elif isinstance(value, str):
+            value = datetime.fromisoformat(value).date().strftime(self._dateformat) if value != "" else ""
+        self.entry.delete(first=0, last=tk.END)
+        self.entry.insert(tk.END, value)
+
+    def get(self):
+        return self.entry.get()
+
+    def _on_return(self, event):
+        self._open_calender(event)
+
+    def _on_escape(self, event):
+        self.entry.delete(first=0, last=tk.END)
+
+    def _open_calender(self, event):
+        self.button.invoke()
+
+
+    def _on_date_ask(self):
+        """Callback for pushing the date button"""
+        _val = self.entry.get() or datetime.today().strftime(self._dateformat)
+        try:
+            self._startdate = datetime.strptime(_val, self._dateformat)
+        except Exception as e:
+            print("Date entry text does not match", self._dateformat)
+            self._startdate = datetime.today()
+            self.entry.delete(first=0, last=tk.END)
+            self.entry.insert(
+                tk.END, self._startdate.strftime(self._dateformat)
+            )
+
+        old_date = datetime.strptime(_val, self._dateformat)
+
+        # get the new date and insert into the entry
+        new_date = SmartQuerybox.get_date(
+            parent=self.entry,
+            startdate=old_date,
+            firstweekday=self._firstweekday,
+            bootstyle=self._bootstyle,
+        )
+        tmp_entry_value = self.entry.get()
+
+        self.entry.delete(first=0, last=tk.END)
+        if not new_date == "":
+            self.entry.insert(tk.END, new_date.strftime(self._dateformat))
+        else:
+            self.entry.insert(tk.END, tmp_entry_value)
+        self.entry.focus_force()
+
+class SmartQuerybox(Querybox):
+
+    @staticmethod
+    def get_date(
+        parent=None,
+        title=" ",
+        firstweekday=6,
+        startdate=None,
+        bootstyle="primary",
+    ):
+        """Shows a calendar popup and returns the selection.
+
+        ![](../../assets/dialogs/querybox-get-date.png)
+
+        Parameters:
+
+            parent (Widget):
+                The parent widget; the popup will appear to the
+                bottom-right of the parent widget. If no parent is
+                provided, the widget is centered on the screen.
+
+            title (str):
+                The text that appears on the popup titlebar.
+
+            firstweekday (int):
+                Specifies the first day of the week. `0` is Monday, `6` is
+                Sunday (the default).
+
+            startdate (datetime):
+                The date to be in focus when the widget is displayed;
+
+            bootstyle (str):
+                The following colors can be used to change the color of the
+                title and hover / pressed color -> primary, secondary, info,
+                warning, success, danger, light, dark.
+
+        Returns:
+
+            datetime:
+                The date selected; the current date if no date is selected.
+        """
+        chooser = SmartDatePickerDialog(
+            parent=parent,
+            title=title,
+            firstweekday=firstweekday,
+            startdate=startdate,
+            bootstyle=bootstyle,
+        )
+
+
+        return chooser.date_selected
+
+
+class SmartDatePickerDialog(DatePickerDialog):
+
+    locale.setlocale(locale.LC_ALL, locale.setlocale(locale.LC_TIME, ""))
+
+    def __init__(
+        self,
+        parent=None,
+        title=" ",
+        firstweekday=6,
+        startdate=None,
+        bootstyle=PRIMARY,
+    ):
+        """
+        Parameters:
+
+            parent (Widget):
+                The parent widget; the popup will appear to the
+                bottom-right of the parent widget. If no parent is
+                provided, the widget is centered on the screen.
+
+            title (str):
+                The text that appears on the titlebar.
+
+            firstweekday (int):
+                Specifies the first day of the week. 0=Monday,
+                1=Tuesday, etc...
+
+            startdate (datetime):
+                The date to be in focus when the widget is
+                displayed.
+
+            bootstyle (str):
+                The following colors can be used to change the color of
+                the title and hover / pressed color -> primary,
+                secondary, info, warning, success, danger, light, dark.
+        """
+        self.parent = parent
+        self.root = tb.Toplevel(
+            title=title,
+            transient=self.parent,
+            resizable=(False, False),
+            topmost=True,
+            minsize=(226, 1),
+            iconify=True,
+        )
+        # New binds for more dynamic usage
+        self.root.bind("<Escape>", self._on_escape)
+        self.root.bind("<Return>", self._on_return)
+        self.root.bind("<FocusOut>", self._on_focus_out)
+        self.root.bind("<Button-1>", self._on_click)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        self.root.bind("<KeyPress>", self._navigate_keys)
+
+        self.firstweekday = firstweekday
+        self.startdate = startdate or datetime.today().date()
+        self.bootstyle = bootstyle or PRIMARY
+
+        self.date_selected = self.startdate
+        self.date = startdate or self.date_selected
+        self.calendar = calendar.Calendar(firstweekday=firstweekday)
+
+        self.titlevar = tb.StringVar()
+        self.datevar = tb.IntVar()
+
+        self._setup_calendar()
+        self.root.grab_set()
+        self.root.wait_window()
+
+    def _navigate_keys(self, event):
+        keys = event.keysym
+        match keys:
+            case "Left" | "a":
+                add_value = -1
+            case "Right" | "d":
+                add_value = 1
+            case "Up" | "w":
+                add_value = -7
+            case "Down" | "s":
+                add_value = 7
+            case _:
+                return
+        self._calc_new_entry(add_value)
+
+
+    def _get_last_day_current_month(self):
+        return calendar.monthrange(self.date.year, self.date.month)[1]
+
+    def _calc_new_entry(self, add_val: int):
+        if self._current_button_index is not None:
+            current_ind = self._current_button_index
+            current_btn = self._day_buttons[current_ind]["btn"]
+            new_ind = current_ind + add_val
+            if new_ind < 0:
+
+                self.prev_period.invoke()
+                self.month_last_day = self._get_last_day_current_month()
+
+                new_ind = self.month_last_day + new_ind  # Ind is negative here so + subtracts
+                new_day = self._day_buttons[new_ind]["day"]
+                self.datevar.set(new_day)
+                self._current_button_index = new_ind
+                self.date_selected = self.date_selected.replace(day=new_day, month=self.date.month)
+
+
+            elif new_ind >= len(self._day_buttons):
+                new_ind = new_ind - len(self._day_buttons)
+                self.next_period.invoke()
+                self.month_last_day = self._get_last_day_current_month()
+                new_day = self._day_buttons[new_ind]["day"]
+                self.datevar.set(new_day)
+                self._current_button_index = new_ind
+                self.date_selected = self.date_selected.replace(day=new_day, month=self.date.month)
+
+
+            else:
+                new_day = self._day_buttons[new_ind]["day"]
+                self.datevar.set(new_day)
+                current_btn.configure(bootstyle=f"{self.bootstyle}-calendar")
+                self._current_button_index = new_ind
+                self.date_selected = self.date_selected.replace(day=new_day)
+
+
+    def _on_focus_out(self, event):
+        self._on_escape(event)
+
+    def _on_return(self, event):
+        # should take the current selection as return value
+        self.root.destroy()
+
+    def _on_click(self, event):
+        clicked_widget = self.root.winfo_containing(event.x_root, event.y_root)
+        if clicked_widget is None or clicked_widget.winfo_toplevel() is not self.root:
+            self._on_escape(event)
+
+    def _on_close(self):
+        self._on_escape(None)
+
+    def _on_escape(self, event):
+        self.date_selected = ""
+        self.root.destroy()
+
+
+    def _draw_calendar(self):
+        self._update_widget_bootstyle()
+        self._set_title()
+        self._current_month_days()
+        self.frm_dates = tb.Frame(self.frm_calendar)
+        self.frm_dates.pack(fill=BOTH, expand=YES)
+        self._day_buttons = []
+        self._current_button_index = None
+
+        for row, weekday_list in enumerate(self.monthdays):
+            for col, day in enumerate(weekday_list):
+                self.frm_dates.columnconfigure(col, weight=1)
+                if day == 0:
+                    tb.Label(
+                        master=self.frm_dates,
+                        text=self.monthdates[row][col].day,
+                        anchor=CENTER,
+                        padding=5,
+                        bootstyle=SECONDARY,
+                    ).grid(row=row, column=col, sticky=NSEW)
+                else:
+
+                    if all(
+                            [
+                                day == self.date_selected.day,
+                                self.date.month == self.date_selected.month,
+                                self.date.year == self.date_selected.year,
+                            ]
+                    ):
+                        day_style = "secondary-toolbutton"
+                    else:
+                        day_style = f"{self.bootstyle}-calendar"
+
+                    def selected(x=row, y=col):
+                        self._on_date_selected(x, y)
+
+                    btn = tb.Radiobutton(
+                        master=self.frm_dates,
+                        variable=self.datevar,
+                        value=day,
+                        text=day,
+                        bootstyle=day_style,
+                        padding=5,
+                        command=selected,
+                    )
+                    btn.grid(row=row, column=col, sticky=NSEW)
+                    if day_style == "secondary-toolbutton":
+                        self._current_button_index = len(self._day_buttons)
+                    self._day_buttons.append({"row": row, "col": col, "day": day, "btn": btn})
+
+        self.month_last_day = self._get_last_day_current_month()
+
+class FlexFrame(tb.Frame):
+    """
+    Make sure to add your widgets to <object>.inner_frame
+    not directly on <object>
+    """
+    _forbidden_methods_inner = {"pack", "grid", "place", "pack_forget", "grid_forget", "place_forget",
+                                "winfo_width", "winfo_height"}
+
+    def __init__(self, master=None, title_text: str = None, title_var: tk.StringVar = None,
+                 title_side: str = "left", expand_char: str = "▼", shrink_char: str = "▶", *args, **kwargs):
+        """
+        Make sure to add your widgets to <object>.inner_frame
+        not directly on <object>
+        """
+        super().__init__(master, *args, **kwargs)
+
+        if title_text is not None and title_var is not None:
+            raise ValueError("You can't specify both title_text and title_var.\n"
+                             "Rather set the value of your title_var beforehand.")
+        if len(expand_char) != 1:
+            raise ValueError("expand char has to be one char.")
+        if len(shrink_char) != 1:
+            raise ValueError("shrink char has to be one char.")
+
+        if title_text is None and title_var is None:
+            title_text = "Expand here"
+        self.title_var = title_var or tk.StringVar()
+
+        if title_text is not None:
+            self.title_var.set(title_text)
+
+        self.title_side = title_side
+
+
+
+        self.flex_text_var = tk.StringVar()
+        self.expanded = True
+        self.expand_char = expand_char
+        self.shrink_char = shrink_char
+        self.flex_text_var.set(self.shrink_char)
+
+        self.grid_rowconfigure(0, weight=0)
+        self.grid_rowconfigure(1, weight=0)
+
+        self.title_frame = tb.Frame(self)
+        self.title_frame.grid(row=0, column=0, sticky="ew")
+
+        self.flex_btn = tb.Button(self.title_frame, textvariable=self.flex_text_var, command=self.toggle_expanded, width=2)
+        self.title_label = tb.Label(self.title_frame, textvariable=self.title_var, font=("Arial", 16))
+
+
+        self.flex_btn.pack(side=self.title_side, padx=5, pady=5)
+        self.title_label.pack(side=self.title_side, padx=5, pady=5)
+
+        self.inner_frame = tb.Frame(self, name="inner_frame")
+        self.inner_frame.grid(row=1)
+
+        # Configure inner_frame restricted/forbidden methods
+        self.inner_frame._original_grid_forget = self.inner_frame.grid_forget
+        self.inner_frame._original_winfo_width = self.inner_frame.winfo_width
+        self.inner_frame._original_grid = self.inner_frame.grid
+        for fm in self._forbidden_methods_inner:
+            if hasattr(self.inner_frame, fm):
+                setattr(self.inner_frame, fm, self._forbidden_method)
+        self.inner_frame._original_configure = self.inner_frame.configure
+        self.inner_frame.configure = self._restricted_configure
+
+        self.placeholder: tb.Frame = None
+        self.after_idle(self.toggle_expanded)
+
+
+    def _forbidden_method(self, *args, **kwargs):
+
+        raise RuntimeError(f"You used a forbidden method on inner Frame of FlexFrame: "
+                           f"{', '.join(FlexFrame._forbidden_methods_inner)}."
+                           f"Try for this options <Object>.this")
+
+    def _restricted_configure(self, **kwargs):
+        restricted_keys = {"width", "height", "padx", "pady", "borderwidth", "relief"}
+        blocked_keys = [key for key in kwargs if key in restricted_keys]
+
+        if blocked_keys:
+            raise RuntimeError(
+                f"Cannot set configure options {', '.join(blocked_keys)} on inner Frame.\n"
+                f"Try for this <Object>.this.configure")
+
+        return self.inner_frame._original_configure(**kwargs)
+
+    def toggle_expanded(self):
+        if self.expanded:
+            self.expanded = False
+            self.flex_text_var.set(self.expand_char)
+            self._shrink()
+        else:
+            self.expanded = True
+            self.flex_text_var.set(self.shrink_char)
+            self._expand()
+
+    def _expand(self):
+        if self.placeholder is not None:
+            self.placeholder.grid_forget()
+            self.placeholder.destroy()
+            self.placeholder = None
+        self.inner_frame._original_grid(row=1)
+
+
+    def _shrink(self):
+        self.update_idletasks()
+        self.inner_frame._original_grid_forget()
+        width = self.inner_frame._original_winfo_width()
+
+        width = max(width, 1)
+        self.placeholder = tb.Frame(self, width=width, height=0)
+        self.placeholder.grid(row=1, column=0, sticky="ew")
+
+
+class InfoBoxFrame(tb.Frame):
+
+    def __init__(self, master, info_text: str | list[str] = None, *args, **kwargs):
+        borderwidth = kwargs.pop("borderwidth", 5)
+        relief = kwargs.pop("relief", "sunken")
+        super().__init__(master, borderwidth=borderwidth, relief=relief, width=32, height=35, *args, **kwargs)
+        self.pack_propagate(False)
+        if info_text:
+            self._info_text = info_text if isinstance(info_text, str) else "".join([f"{inf}\n" for inf in info_text])
+        else:
+            self._info_text = ""
+        self.info_window = None
+        tb.Label(self, text="?", font=("Arial", 12, "bold")).pack(expand=True)
+        self.bind("<Enter>", self._on_hover)
+        self.bind("<Leave>", self._on_hover_out)
+
+    @property
+    def info_text(self):
+        return self._info_text
+
+    @info_text.setter
+    def info_text(self, info_text: str | list[str]):
+        self._info_text = info_text if isinstance(info_text, str) else "".join([f"{inf}\n" for inf in info_text])
+
+    def _on_hover(self, event):
+        """Create a tooltip-like window above and slightly right of the frame."""
+        if self.info_window:
+            return  # Prevent duplicate windows
+
+        self.info_window = tk.Toplevel(self)
+        self.info_window.overrideredirect(True)  # Remove window borders
+        self.info_window.geometry(f"+{self.winfo_rootx() + 40}+{self.winfo_rooty() - 10}")  # Position above
+
+        # Tooltip label inside the floating window
+        tb.Label(self.info_window, text=self._info_text, font=("Arial", 10), background="lightyellow", relief="solid",
+                 borderwidth=1).pack()
+
+    def _on_hover_out(self, event):
+        """Destroy tooltip when mouse leaves the frame."""
+        if self.info_window:
+            self.info_window.destroy()
+            self.info_window = None
+
+class TimeRangeFrame(tb.Frame):
+    # TODO: Add date picker & time picker
+    #  If pushed esc while inside a entry, remove content
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.start_date = tk.StringVar()
+        self.start_time = tk.StringVar()
+        self.end_date = tk.StringVar()
+        self.end_time = tk.StringVar()
+        self.dynamic_time_frame = tk.StringVar()
+        self.dynamic_time_frame_list = ["", *DynamicTimeframe.get_entries()]
+        self.columnconfigure(0, weight=0, minsize=300)
+        self.columnconfigure(1, weight=0, minsize=150)
+
+        self.left_frame = tb.Frame(self)
+        self.right_frame = tb.Frame(self)
+
+        self.left_frame.grid(column=0, row=0, sticky="NEW")
+        self.right_frame.grid(column=1, row=0, sticky="NEW", padx=(20,0))
+
+        self.left_frame.rowconfigure(0, weight=0)
+        self.left_frame.rowconfigure(1, weight=0)
+        self.left_frame.columnconfigure(0, weight=0)
+        self.left_frame.columnconfigure(1, weight=0)
+        self.left_frame.columnconfigure(2, weight=0)
+        self.left_frame.columnconfigure(3, weight=0)
+        tb.Label(self.left_frame, text="Start Date:").grid(column=0, row=0, sticky="W")
+        self.start_date_entry = SmartDateEntry(self.left_frame, width=12, name="start_date")
+        self.start_date_entry.grid(row=0, column=1, pady=2, sticky="W")
+        self.start_date_entry.bind("<FocusOut>", self._check_change)
+
+
+        tb.Label(self.left_frame, text="Time:").grid(row=0, column=2, pady=2, sticky="W")
+        tb.Entry(self.left_frame, textvariable=self.start_time, width=8).grid(row=0, column=3,  pady=2, sticky="W")
+
+        tb.Label(self.left_frame, text="End Date:").grid(row=1, column=0, pady=2, sticky="W")
+        self.end_date_entry = SmartDateEntry(self.left_frame, width=12, name="end_date")
+        self.end_date_entry.grid(row=1, column=1, pady=2, sticky="W")
+        self.end_date_entry.bind("<FocusOut>", self._check_change)
+
+        tb.Label(self.left_frame, text="Time:").grid(row=1, column=2, pady=2, sticky="W")
+        tb.Entry(self.left_frame, textvariable=self.end_time, width=8).grid(row=1, column=3, pady=2, sticky="W")
+
+        self.right_frame.rowconfigure(0, weight=0)
+        self.right_frame.rowconfigure(1, weight=0)
+        tb.Label(self.right_frame, text="Dynamic Timeframe:").grid(column=0, row=0, sticky="W")
+        self.dynamic_combobox = tb.Combobox(self.right_frame, textvariable=self.dynamic_time_frame, values=self.dynamic_time_frame_list,
+                                            width=15, state="readonly")
+
+        self.dynamic_combobox.current(0)
+        self.dynamic_combobox.bind("<Escape>", lambda event: self.dynamic_combobox.current(0))
+        self.dynamic_combobox.grid(row=1, column=0, pady=2, sticky="W")
+
+    def _check_change(self, event):
+        txt = event.widget.entry.get()
+        if not txt == "":
+            if event.widget.winfo_name() == "start_date":
+                if self.start_time.get() == "":
+                    self.start_time.set("00:00")
+            else:
+                if self.end_time.get() == "":
+                    self.end_time.set("23:59")
+
+
+    def get_fields(self):
+        """
+        Needs to except FormValidationError, if wrong entries.
+        Else returns values of all fields.
+        """
+        faulty_fields = []
+        dynamic_time_frame = self.dynamic_time_frame.get()
+        start_date = self.start_date_entry.entry.get()
+        start_time = self.start_time.get()
+        end_date = self.end_date_entry.entry.get()
+        end_time = self.end_time.get()
+
+        dynamic_has_value = dynamic_time_frame == "" or dynamic_time_frame in self.dynamic_time_frame_list
+        if not dynamic_has_value:
+            faulty_fields.append("Dynamic Timeframe has no proper value")
+        if not dynamic_time_frame and not (start_date or end_date):
+            faulty_fields.append("No Absolute or Dynamic Timeframe was chosen.")
+
+        if start_date or end_date:
+            if not (start_date and end_date):
+                faulty_fields.append("Start Date missing" if end_date else "End Date missing")
+            if not dynamic_time_frame == "":
+                faulty_fields.append("Dynamic Timeframe can't be used with fixed dates")
+
+            # fallback for no entry set
+            if not start_time:
+                self.start_time.set("00:00")
+            if not end_time:
+                self.end_time.set("23:59")
+
+        if not dynamic_time_frame:
+            try:
+                start_date = datetime.strptime(start_date, "%d.%m.%Y")
+            except ValueError:
+                faulty_fields.append("Start Date not a valid Date (dd.mm.yyyy)")
+
+            try:
+                start_time = datetime.strptime(start_time, "%H:%M")
+            except ValueError:
+                faulty_fields.append("Start Time not a valid Time (HH:MM)")
+
+            try:
+                end_date = datetime.strptime(end_date, "%d.%m.%Y")
+            except ValueError:
+                faulty_fields.append("End  Date is not a valid date format (dd.mm.yyyy)")
+
+            try:
+                end_time = datetime.strptime(end_time, "%H:%M")
+            except ValueError:
+                faulty_fields.append("End Time not a valid Time (HH:MM)")
+
+        if faulty_fields:
+            raise FormValidationError(faulty_fields)
+
+        if dynamic_time_frame:
+            start_datetime = ""
+            end_datetime = ""
+        else:
+            start_datetime = datetime.combine(start_date.date(), start_time.time())
+            end_datetime = datetime.combine(end_date.date(), end_time.time())
+
+        return dynamic_time_frame, start_datetime, end_datetime
+
+
+class FilterFrame(tb.Frame):
+    def __init__(self, parent, database_filter=None, *args, **kwargs):
+
+        super().__init__(parent, *args, **kwargs)
+
+        self.filter = database_filter
+
+        self.filter_id = self.filter.id if self.filter else None
+
+        self.name = tk.StringVar()
+        self.window_type = tk.StringVar()
+        self.window_title = tk.StringVar()
+        self.word_list = tk.StringVar()
+        self.text_label_list = tk.StringVar()
+        self.choice_box_label_list = tk.StringVar()
+        self.chosen_label_dict = {}
+        self.all_labels_dict: dict = {lab.id: lab.name for lab in Label.get_all_labels()}
+
+
+        # Widgets
+        self.flex = FlexFrame(self, title_var=self.name)
+        self.flex.pack(fill=tk.BOTH, expand=True)
+        [self.flex.inner_frame.rowconfigure(i, weight=0) for i in range(7)]
+        self.flex.inner_frame.columnconfigure(0, weight=0)
+        self.flex.inner_frame.columnconfigure(1, weight=1)
+
+        tb.Label(self.flex.inner_frame, text="Filter Name:").grid(column=0, row=0, padx=(0, 5), pady=3, sticky="W")
+        tb.Entry(self.flex.inner_frame, textvariable=self.name).grid(column=1, row=0, pady=1, sticky="W")
+
+        self.time_frame = TimeRangeFrame(self.flex.inner_frame)
+        self.time_frame.grid(column=0, columnspan=2, row=1, padx=(0, 5), pady=3, sticky="W")
+
+        tb.Label(self.flex.inner_frame, text="Window Type:").grid(column=0, row=2, padx=(0, 5), pady=3, sticky="W")
+        tb.Entry(self.flex.inner_frame, textvariable=self.window_type).grid(column=1, row=2, pady=1, sticky="W")
+
+        tb.Label(self.flex.inner_frame, text="Window Title:").grid(column=0, row=3, padx=(0, 5), pady=3, sticky="W")
+        tb.Entry(self.flex.inner_frame, textvariable=self.window_title).grid(column=1, row=3, pady=1, sticky="W")
+
+        tb.Label(self.flex.inner_frame, text="Word List:").grid(column=0, row=4, padx=(0, 5), pady=3, sticky="W")
+        tb.Entry(self.flex.inner_frame, textvariable=self.word_list).grid(column=1, row=4, pady=1, sticky="W")
+
+        # Stuff for labels
+        tb.Label(self.flex.inner_frame, text="Chosen Labels").grid(row=5, column=0, sticky="W")
+        info_text = ("Choose from the dropdown the Labels you want to include in your filter.\n"
+                     "If you set labels, it only results in entries which have at least 1 of them.\n"
+                     "Use the reset button to remove all saved entries so far.")
+        InfoBoxFrame(self.flex.inner_frame, info_text=info_text).grid(column=1, row=5, padx=(0, 5), pady=5,  sticky="W")
+        tb.Entry(self.flex.inner_frame, textvariable=self.text_label_list, state="disabled").grid(row=6, column=0, columnspan=2, sticky="EW")
+
+        label_names = [name for name in self.all_labels_dict.values()]
+        self.label_choice_box = tb.Combobox(self.flex.inner_frame, textvariable=self.choice_box_label_list, values=label_names,
+                    width=15, state="readonly")
+        self.label_choice_box.grid(row=7, column=0, sticky="W")
+
+        label_buttons_frame = tb.Frame(self.flex.inner_frame)
+        label_buttons_frame.grid(row=7, column=1, sticky="W")
+
+        label_buttons_frame.rowconfigure(0, weight=0)
+        label_buttons_frame.rowconfigure(1, weight=0)
+        tb.Button(label_buttons_frame, text="Add", command=self._change_label)\
+            .grid(column=2, row=0, sticky="W", padx=5, pady=5)
+        tb.Button(label_buttons_frame, text="Reset", command=self._reset_labels) \
+            .grid(column=2, row=1, sticky="W", padx=5, pady=5)
+
+        # TODO: delete button with bind for command !
+        delete_btn = tb.Button(self.flex.inner_frame, text="Delete", width=8, bootstyle="danger")
+        delete_btn.place(relx=1.0, rely=0)
+        self.flex.inner_frame.update_idletasks()
+        button_width = delete_btn.winfo_width()
+        delete_btn.place_configure(x=-button_width)
+
+        delete_btn.bind("<Button-1>", self.delete_filter)
+
+        if self.filter is not None:
+            self._fill_with_filter()
+
+    def _fill_with_filter(self):
+        # FIll all vars / entries with filter values
+
+        filter_dict = self.filter.as_dict()
+
+        self.name.set(filter_dict["name"] or "")
+
+        self.time_frame.start_date_entry.set(filter_dict["start_date"] or "")
+        self.time_frame.start_time.set(filter_dict["start_time"] or "")
+        self.time_frame.end_date_entry.set(filter_dict["end_date"] or "")
+        self.time_frame.end_time.set(filter_dict["end_time"] or "")
+
+        if filter_dict["dynamic_time_frame"] and filter_dict["dynamic_time_frame"].value \
+                in self.time_frame.dynamic_time_frame_list:
+            value_index = self.time_frame.dynamic_time_frame_list.index(filter_dict["dynamic_time_frame"].value)
+            self.time_frame.dynamic_combobox.current(value_index)
+        else:
+            self.time_frame.dynamic_combobox.current(0)
+
+        self.window_type.set(filter_dict["window_type"] or "")
+        self.window_title.set(filter_dict["window_title"] or "")
+        self.word_list.set(", ".join(filter_dict["word_list"]) if filter_dict.get("word_list") else "")
+
+        if filter_dict["label_list"]:
+            self.text_label_list.set(", ".join(self.all_labels_dict[lab_id] for lab_id in filter_dict["label_list"]
+                                          if lab_id in self.all_labels_dict))
+            self.chosen_label_dict = {}
+            for lab_id in filter_dict["label_list"]:
+                self.chosen_label_dict[lab_id] = self.all_labels_dict[lab_id]
+
+
+
+    def delete_filter(self, event):
+        if not event.state & 0x0001:  # Shift key flag
+            result = Messagebox.okcancel(f"Do you want to delete filter '{self.name.get()}'({
+            self.filter._name if self.filter else ""}) ?",
+                                         "WARNING! Delete Filter", parent=self.master.master)
+            if result != "OK":
+                return
+
+        if self.filter is not None:
+            self.filter.delete_in_db()
+        self.destroy()
+
+
+    def save_to_db(self):
+
+        db_dict = {}
+        try:
+            db_dict["dynamic_time_frame"], db_dict["start_datetime"], db_dict["end_datetime"] \
+                = self.time_frame.get_fields()
+
+            (db_dict["name"], db_dict["window_type"], db_dict["window_title"], db_dict["word_list"],
+             db_dict["label_list"]) = self.validate_fields()
+
+        except FormValidationError as e:
+            Messagebox.show_warning(e.message, "Form Validation Failed")
+        else:
+            if self.filter_id is not None:
+                # update mechanic
+                self.filter.update(**db_dict)
+            else:
+                # create new filter
+                self.filter = DatabaseFilter(**db_dict)
+                self.filter_id = self.filter.id
+
+    def validate_fields(self):
+
+        faulty_fields = []
+        name = self.name.get().strip() or ""
+        window_type = self.window_type.get().strip() or ""
+        window_title = self.window_title.get().strip() or ""
+        word_list = self.word_list.get().strip() or ""
+
+        if not name:
+            faulty_fields.append("Name is required")
+
+        allowed_chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_."
+        if window_type:
+            if any(char not in allowed_chars for char in window_type):
+                faulty_fields.append("Window Type field includes invalid characters")
+
+        allowed_chars = allowed_chars + ",+!? "
+        if window_title:
+            if any(char not in allowed_chars for char in window_title):
+                faulty_fields.append("Window Title field includes invalid characters")
+        if word_list:
+            if any(char not in allowed_chars for char in word_list):
+                faulty_fields.append("Word List field includes invalid characters")
+
+        if faulty_fields:
+            raise FormValidationError(faulty_fields)
+        word_list = FilterFrame.split_comma_separated_entries(word_list) if word_list else ""
+        label_list = [label_id for label_id in self.chosen_label_dict.keys()]
+        return name, window_type, window_title, word_list, label_list
+
+    def _change_label(self):
+
+        label_index = self.label_choice_box.current()
+        if label_index == -1:
+            return
+        self.text_label_list.set("")
+
+        label_key = list(self.all_labels_dict)[label_index]
+        self.chosen_label_dict[label_key] = self.all_labels_dict[label_key]
+        n_text = [f"{self.chosen_label_dict[lab]}, " for lab in self.chosen_label_dict]
+
+        self.text_label_list.set("".join(n_text))
+
+    def _reset_labels(self):
+        self.text_label_list.set("")
+        self.chosen_label_dict = {}
+
+    @staticmethod
+    def split_comma_separated_entries(entry_string: str):
+        return list(set([entry.strip() for entry in entry_string.split(',') if entry.strip()]))
+
 
 
 class ScrollableFrame(Frame):
@@ -538,7 +1367,7 @@ class ConditionFrame(Frame):
 
         self.destroy()
 
-# FIXME: Labelframes make comoboxes scrollabale, remove that because it changes value before saving
+
 class LabelFrame(Frame):
     """
     Frame for creating, editing, and managing labels.
@@ -692,6 +1521,7 @@ class LabelFrame(Frame):
         self.destroy()
 
 
+
 class ViewController:
     """
     Controller for managing the main GUI views of the application.
@@ -756,11 +1586,13 @@ class ViewController:
         main_tab = ttk.Frame(notebook)
         analysis_tab = ttk.Frame(notebook)
         label_tab = ttk.Frame(notebook)
+        filter_tab = ttk.Frame(notebook)
         settings_tab = ttk.Frame(notebook)
 
         notebook.add(main_tab, text="Overview")
         notebook.add(analysis_tab, text="Analysis")
         notebook.add(label_tab, text="Label")
+        notebook.add(filter_tab, text="Filter")
         notebook.add(settings_tab, text="Settings")
         notebook.pack(expand=True, fill="both", padx=0, pady=0)
         self.update_main_tab(main_tab)
@@ -789,7 +1621,9 @@ class ViewController:
                 self.update_analysis_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
             case 2:  # LabelTab
                 self.update_label_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
-            case 3:  # SettingsTab
+            case 3:  # FilterTab
+                self.update_filter_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+            case 4:  # SettingsTab
                 self.update_settings_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
 
     def update_main_tab(self, tab) -> None:
@@ -951,13 +1785,87 @@ class ViewController:
         if event is None:
             print("error no button provided")
         else:
+            # Order of master's
+            # <class 'tkinter.ttk.Frame'>
+            # <class 'tkinter.ttk.Frame'>
+            # <class 'tkinter.Canvas'>
+            # <class 'gui_views.ScrollableFrame'>
 
-            tab_frame = event.widget.master.master
+            canvas_frame = event.widget.master.master
             btn_frame = event.widget.master
             btn_frame.pack_forget()
-            n_lab = LabelFrame(parent=tab_frame)
+            n_lab = LabelFrame(parent=canvas_frame)
             n_lab.pack(fill="x", padx=10, pady=5)
             btn_frame.pack(fill="x", padx=5, pady=5)
+
+
+
+    def update_filter_tab(self, tab) -> None:
+        """
+        updates the filter tab
+        """
+
+        scrollable_frame = ScrollableFrame(tab)
+        scrollable_frame.pack(fill="both", expand=True)
+
+        for fil in DatabaseFilter.get_all_filter():
+            filter_frame = FilterFrame(parent=scrollable_frame.scrollable_frame, database_filter=fil)
+            filter_frame.pack(fill="x", padx=5, pady=5)
+
+        btn_frame = Frame(scrollable_frame.scrollable_frame)
+        btn_frame.pack(fill="x", padx=5, pady=5)
+
+        new_filter_button = tb.Button(btn_frame, text="Add new Filter")
+        new_filter_button.pack(padx=5, pady=5, side="left", expand=True)  # Center with expand=True
+
+        save_filter_button = tb.Button(btn_frame, text="Save")
+        save_filter_button.pack(padx=5, pady=5, side="right")  # Move to the right side and block space for lbl btn
+
+        new_filter_button.bind("<Button-1>", self.add_new_filter)
+        save_filter_button.bind("<Button-1>", self.save_all_filter)
+
+
+    def save_all_filter(self, event=None) -> None:
+
+        """
+        Saves all labels in the "Labels" tab to the database.
+
+        Iterates through all active `LabelFrame` instances, validates their data, and saves
+        the labels and their associated conditions to persistent storage. Alerts the user
+        to any validation errors.
+
+        :param event: Event (The event triggering the save operation, typically a button press.)
+        :return: None
+        """
+        # FIXME: MAYBE ERROR: to fast clicking results in multiple filter creation
+        if event is None:
+            print("error no button provided")
+        else:
+            parent = event.widget.master.master
+            for filter_frame in parent.winfo_children():
+                if isinstance(filter_frame, FilterFrame):
+
+                    filter_frame.save_to_db()
+
+    def add_new_filter(self, event=None) -> None:
+
+        if event is None:
+            print("error no button provided")
+        else:
+            # Order of master's
+            # <class 'tkinter.ttk.Frame'>
+            # <class 'tkinter.ttk.Frame'>
+            # <class 'tkinter.Canvas'>
+            # <class 'gui_views.ScrollableFrame'>
+
+            canvas_frame = event.widget.master.master
+            btn_frame = event.widget.master
+            btn_frame.pack_forget()
+            n_filter = FilterFrame(parent=canvas_frame)
+            n_filter.pack(fill="x", padx=5, pady=5)
+            n_filter.flex.toggle_expanded()
+            btn_frame.pack(fill="x", padx=5, pady=5)
+
 
     def update_settings_tab(self, tab) -> None:
         """

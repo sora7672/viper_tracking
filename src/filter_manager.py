@@ -131,13 +131,12 @@ class DatabaseFilter:
         :return: None
         """
 
-        if not self._id:
-            with self._lock:
-                filter_id = DBHandler().add_filter(name=self._name, word_list=self._word_list, window_type=self._window_type,
-                                       window_title=self._window_title, label_list=self._label_list,
-                                       start_datetime=self._start_datetime, end_datetime=self._end_datetime,
-                                       dynamic_time_frame=self._dynamic_time_frame.value)
-                self._id = filter_id
+        with self._lock:
+            filter_id = DBHandler().add_filter(name=self._name, word_list=self._word_list, window_type=self._window_type,
+                                   window_title=self._window_title, label_list=self._label_list,
+                                   start_datetime=self._start_datetime, end_datetime=self._end_datetime,
+                                   dynamic_time_frame=self._dynamic_time_frame.value)
+            self._id = filter_id
 
     def as_dict(self):
         with self._lock:
@@ -201,73 +200,72 @@ class DatabaseFilter:
         """
 
         changed = False
+        with self._lock:
+            old_start_date = self._start_datetime
+            old_end_date = self._end_datetime
+            old_dynamic_time_frame = self._dynamic_time_frame
 
-        old_start_date = self._start_datetime
-        old_end_date = self._end_datetime
-        old_dynamic_time_frame = self._dynamic_time_frame
-
-        if dynamic_time_frame == "":
-            self._dynamic_time_frame = None
-            changed = True
-        elif dynamic_time_frame is not None:
-            if isinstance(dynamic_time_frame, str):
-                self._dynamic_time_frame = DynamicTimeframe(dynamic_time_frame)
+            if dynamic_time_frame == "":
+                self._dynamic_time_frame = None
                 changed = True
-            elif isinstance(dynamic_time_frame, DynamicTimeframe):
-                self._dynamic_time_frame = dynamic_time_frame
+            elif dynamic_time_frame is not None:
+                if isinstance(dynamic_time_frame, str):
+                    self._dynamic_time_frame = DynamicTimeframe(dynamic_time_frame)
+                    changed = True
+                elif isinstance(dynamic_time_frame, DynamicTimeframe):
+                    self._dynamic_time_frame = dynamic_time_frame
+                    changed = True
+
+            if start_datetime is not None and self._start_datetime != start_datetime:
+                self._start_datetime = None if start_datetime == "" else start_datetime
                 changed = True
 
-        if start_datetime is not None and self._start_datetime != start_datetime:
-            self._start_datetime = None if start_datetime == "" else start_datetime
-            changed = True
+            if end_datetime is not None and self._end_datetime != end_datetime:
+                self._end_datetime = None if end_datetime == "" else end_datetime
+                changed = True
 
-        if end_datetime is not None and self._end_datetime != end_datetime:
-            self._end_datetime = None if end_datetime == "" else end_datetime
-            changed = True
+            if (self._end_datetime is not None and self._start_datetime is None) or (
+                    self._end_datetime is None and self._start_datetime is not None):
+                self._start_datetime = old_start_date
+                self._end_datetime = old_end_date
+                self._dynamic_time_frame = old_dynamic_time_frame
+                raise ValueError("End datetime or start datetime have to be set together.")
 
-        if (self._end_datetime is not None and self._start_datetime is None) or (
-                self._end_datetime is None and self._start_datetime is not None):
-            self._start_datetime = old_start_date
-            self._end_datetime = old_end_date
-            self._dynamic_time_frame = old_dynamic_time_frame
-            raise ValueError("End datetime or start datetime have to be set together.")
+            elif (self._end_datetime is not None and self._start_datetime is not None
+                  and self._dynamic_time_frame is not None):
+                self._start_datetime = old_start_date
+                self._end_datetime = old_end_date
+                self._dynamic_time_frame = old_dynamic_time_frame
+                raise ValueError("Absolute time frame and dynamic time frame can't be set together.")
 
-        elif (self._end_datetime is not None and self._start_datetime is not None
-              and self._dynamic_time_frame is not None):
-            self._start_datetime = old_start_date
-            self._end_datetime = old_end_date
-            self._dynamic_time_frame = old_dynamic_time_frame
-            raise ValueError("Absolute time frame and dynamic time frame can't be set together.")
+            elif (self._end_datetime is None and self._start_datetime is None
+                  and self._dynamic_time_frame is None):
+                self._start_datetime = old_start_date
+                self._end_datetime = old_end_date
+                self._dynamic_time_frame = old_dynamic_time_frame
+                raise ValueError("Absolute time frame or dynamic time frame has to be set.")
 
-        elif (self._end_datetime is None and self._start_datetime is None
-              and self._dynamic_time_frame is None):
-            self._start_datetime = old_start_date
-            self._end_datetime = old_end_date
-            self._dynamic_time_frame = old_dynamic_time_frame
-            raise ValueError("Absolute time frame or dynamic time frame has to be set.")
+            # if "" is the parameter value, it should reset  the attribute to None
 
-        # if "" is the parameter value, it should reset  the attribute to None
+            if name is not None and self._name != name:
+                self._name = name
+                changed = True
 
-        if name is not None and self._name != name:
-            self._name = name
-            changed = True
+            if word_list is not None and self._word_list != word_list:
+                self._word_list = word_list
+                changed = True
 
-        if word_list is not None and self._word_list != word_list:
-            self._word_list = word_list
-            changed = True
+            if window_type is not None and self._window_type != window_type:
+                self._window_type = window_type
+                changed = True
 
-        if window_type is not None and self._window_type != window_type:
-            self._window_type = window_type
-            changed = True
+            if window_title is not None and self._window_title != window_title:
+                self._window_title = window_title
+                changed = True
 
-        if window_title is not None and self._window_title != window_title:
-            self._window_title = window_title
-            changed = True
-
-        if label_list is not None and self._label_list != label_list:
-            self._label_list = label_list
-            changed = True
-
+            if label_list is not None and self._label_list != label_list:
+                self._label_list = label_list
+                changed = True
 
         if changed:
             self._update_in_db()
@@ -280,16 +278,20 @@ class DatabaseFilter:
 
         :return: None
         """
-
-        DBHandler().delete_filter(id=self._id)
-        DatabaseFilter._all_filter.remove(self)
-        del self
+        with self.lock():
+            DBHandler().delete_filter(id=self._id)
+            DatabaseFilter._all_filter.remove(self)
+            del self
 
     @property
     def id(self):
         with self._lock:
             return self._id
 
+    @property
+    def name(self):
+        with self._lock:
+            return self._name
 
     @classmethod
     def load_from_db(cls):
@@ -336,27 +338,31 @@ class DatabaseFilter:
 
     # TODO: think about a deeper way to connect filters. this is just one layer, but we need multilayer
     @classmethod
-    def combine_filters(cls, main_filter, sub_filter, subtract: bool = False) -> DataFrame:
+    def combine_filters(cls, main_filter, sub_filter_list) -> DataFrame:
         """
         Combines two filters into a single DataFrame, either merging or subtracting their data.
 
-        If `subtract=True`, the resulting DataFrame contains all entries from `main_filter`
-        except those present in `sub_filter`. Otherwise, both DataFrames are combined.
+        The parameter sub_filter_list includes a 2D list, each of the lists inside are
+        created by a filter and a bool value, the bool value is for checking if added or not.
+        If the value is false, the sub filter will be subtracted from the main filter.
+        Otherwise, it will be added adn drops duplicates.
 
         :param main_filter: DatabaseFilter (The main filter to use.)
-        :param sub_filter: DatabaseFilter (The secondary filter to combine with the main filter.)
-        :param subtract: bool (If True, removes overlapping entries instead of merging.)
+        :param sub_filter_list: list[list[DatabaseFilter, bool]]
         :return: DataFrame (The resulting pandas DataFrame after applying the combination logic.)
         """
 
         main_df = main_filter.get_dataframe()
-        sub_df = sub_filter.get_dataframe()
-        if subtract:
-            df = main_df[~main_df["window_id"].isin(sub_df["window_id"])]
-        else:
-            df = pd.concat([main_df, sub_df]).drop_duplicates(subset="window_id", keep="first")
-
-        return df
+        for fil_list in sub_filter_list:
+            sub_filter = fil_list[0]
+            add_it = fil_list[1]
+            sub_df = sub_filter.get_dataframe()
+            if sub_df is not None and not sub_df.empty:
+                if add_it:
+                    main_df = pd.concat([main_df, sub_df]).drop_duplicates(subset="window_id", keep="first")
+                else:
+                    main_df = main_df[~main_df["window_id"].isin(sub_df["window_id"])]
+        return main_df
 
 
 # # # # External call functions for less import in other files # # # #
@@ -370,7 +376,6 @@ def init_all_filter_from_db() -> None:
     """
 
     DatabaseFilter.load_from_db()
-
 
 
 if __name__ == "__main__":

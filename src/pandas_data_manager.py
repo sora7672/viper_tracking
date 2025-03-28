@@ -28,6 +28,24 @@ from db_connector import DBHandler, stop_db, start_db
 from helper_classes import Classproperty, ColorPicker, Seconds
 
 
+from io import BytesIO
+from PIL import Image, ImageTk
+
+def fig_to_tk_image(fig, dpi=100) -> ImageTk.PhotoImage:
+    """
+    Converts a Matplotlib figure to a Tkinter-compatible PhotoImage.
+
+    :param fig: Matplotlib figure object.
+    :param dpi: Resolution for rendering (default: 100).
+    :return: Tkinter-compatible PhotoImage.
+    """
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    buf.seek(0)
+    pil_image = Image.open(buf)
+    return ImageTk.PhotoImage(pil_image)
+
+
 class ViperDF:
     """
     A class that encapsulates a pandas DataFrame and provides analysis and plotting methods.
@@ -42,7 +60,7 @@ class ViperDF:
         analysis_results (dict): Dictionary storing computed results (time frame, counts, etc.) after analysis.
         is_app_based (bool): True if the dataset name starts with "app:", indicating app-specific data.
         is_label_based (bool): True if the dataset name starts with "label:", indicating label-specific data.
-        granularity (int): DPI setting used for plot resolution (default is 100).
+        plot_dpi (int): DPI setting used for plot resolution (default is 100).
         mainplot (Figure | None): Combined Matplotlib figure containing all subplots (created after calling plot()).
     """
 
@@ -72,7 +90,17 @@ class ViperDF:
         self.is_app_based = name.startswith("app:")
         self.is_label_based = name.startswith("label:")
 
-        self.granularity = 100
+        self.main_plot_size = None # (500,300)
+        self.sub_plot_size = None # (100, 100)
+        self.plot_dpi = 100
+
+        self.image_main_plot = None
+        self.image_app_pie_plot = None
+        self.image_label_pie_plot = None
+        self.image_app_vbar_plot = None
+        self.image_label_vbar_plot = None
+
+
         self.analysis_results["major_formatter_x"] = mdates.DateFormatter("%H:%M:%S")
         self._activity_ax = None
         self._app_ax = None
@@ -130,6 +158,34 @@ class ViperDF:
             return True
         else:
             return False
+
+    @property
+    def time_range_str(self) -> str:
+        start = self.analysis_results.get("first_datetime", "")
+        end = self.analysis_results.get("last_datetime", "")
+        return f"{start} - {end}" if start and end else ""
+
+    def main_infos(self) -> list[tuple[str, str]]:
+        if not self._is_analyzed:
+            return []
+
+        ar = self.analysis_results
+        label_data = ar.get("labels", {})
+        app_data = ar.get("apps", {})
+
+        return [
+            ("Different apps: ", str(app_data.get("count_unique", ""))),
+            ("Different labels: ", str(label_data.get("count_unique", ""))),
+            ("Whole timeframe: ", str(ar.get("time_frame_seconds", ""))),
+            ("Tracked time: ", str(ar.get("tracked_seconds", ""))),
+            ("Untracked time: ", str(ar.get("untracked_seconds", ""))),
+            ("Active time: ", str(ar.get("active_secs", ""))),
+            ("Inactive time: ", str(ar.get("inactive_secs", ""))),
+            ("Active percentage(tracked): ", str(ar.get("percent_active", ""))),
+            ("Entry count: ", str(ar.get("entry_count", ""))),
+            ("Labeled entries: ", str(ar.get("entry_count_labeled", ""))),
+            ("Unlabeled entries: ", str(ar.get("entry_count_unlabeled", ""))),
+        ]
 
     def split_data_on_label(self) -> list:
         """
@@ -202,11 +258,16 @@ class ViperDF:
 
         if not self._is_analyzed:
             raise ValueError("Main frame is not analyzed.")
+        if self.main_plot_size is not None:
+            self.main_plot_size = self._px_to_inch(self.main_plot_size[0]), self._px_to_inch(self.main_plot_size[1])
+        if self.sub_plot_size is not None:
+            self.sub_plot_size = self._px_to_inch(self.sub_plot_size[0]), self._px_to_inch(self.sub_plot_size[1])
         self._get_ax_line_activity()
         self._get_ax_hbar_apps()
         self._update_ax_hbar_labels()
         self._combine_axes()
         self._is_plotted = True
+        return self
 
     def change_chosen_labels(self, label_list: str | list[str]):
         """
@@ -247,6 +308,7 @@ class ViperDF:
             if not self.is_label_based:
                 self._label_analysis()
             self._is_analyzed = True
+        return self
 
     def _time_analysis(self):
         """
@@ -288,7 +350,7 @@ class ViperDF:
                                                              - self.analysis_results["tracked_seconds"])
 
         self.analysis_results["active_secs"] = Seconds(5 * len(self._main_df[self._main_df["activity"]]))
-        self.analysis_results["inactive_secs"] = (self.analysis_results["tracked_seconds"] -
+        self.analysis_results["inactive_secs"] = Seconds(self.analysis_results["tracked_seconds"] -
                                                   self.analysis_results["active_secs"])
 
         self.analysis_results["percent_active"] = round((self.analysis_results["active_secs"]/(
@@ -610,6 +672,9 @@ class ViperDF:
         df = pd.concat([df, new_row], ignore_index=True)
         self._grouped_label_summary_df = df
 
+    def _px_to_inch(self, px):
+        return px / self.plot_dpi
+
     def _get_ax_line_activity(self):
         """
         Creates the activity line plot Axes and prepares it for interactivity.
@@ -620,9 +685,10 @@ class ViperDF:
 
         :return: Axes (The Matplotlib Axes object for the activity line plot. Returns an Axes even if no data is available.)
         """
-
-        fig, ax = plt.subplots(dpi=self.granularity)
-
+        if self.main_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
         if self._main_df is None or self._main_df.empty:
             # TODO: Needs better error handling
             print("No data available for plotting.")
@@ -687,7 +753,7 @@ class ViperDF:
         # Create hover annotation
         self.__activity_plot_helper["marker"], = ax.plot([], [], marker="o", color="red", markersize=3, visible=False)
         self.__activity_plot_helper["annotation"] = ax.annotate("", xy=(0, 0), xytext=(10, 10),
-                                    textcoords="offset points",visible=False,
+                                    textcoords="offset points", visible=False,
                                     bbox=dict(boxstyle="round", fc="w", ec="red", alpha=0.7))
         self.__activity_plot_helper["ax"] = ax
 
@@ -751,7 +817,10 @@ class ViperDF:
         :return: Axes (The Matplotlib Axes object for the application horizontal bar chart.)
         """
 
-        fig, ax = plt.subplots(dpi=self.granularity)
+        if self.main_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
 
         if self._main_df is None or self._main_df.empty:
             # TODO: Logging
@@ -984,7 +1053,7 @@ class ViperDF:
         Creates or updates the horizontal bar chart Axes for label usage segments.
 
         If `label_list` is provided, the plot will include only those labels (in the given order, up to 5 labels).
-        Otherwise, it will default to the first 5 labels in the data.
+        Otherwise, it will default to the first 4 labels in the data.
         Each label's continuous usage segments (from `_grouped_label_df`) are drawn as horizontal bars at a distinct y-level.
 
         :param label_list: list[str] | str | None (Optional. A label or list of labels to display. If None, the top 5 labels by occurrence are shown.)
@@ -992,18 +1061,52 @@ class ViperDF:
         :return: Axes (The Matplotlib Axes object for the label horizontal bar chart.)
         """
 
-        fig, ax = plt.subplots(dpi=self.granularity)
+        if self.main_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
 
         self.__label_plot_helper["x_start"] = mdates.date2num(self.analysis_results["first_datetime"])
         self.__label_plot_helper["x_end"] = mdates.date2num(self.analysis_results["last_datetime"])
 
         if self._grouped_label_df is None or self._grouped_label_df.empty:
             raise ValueError("No data available in `_grouped_label_df`.")
+        # FIXME: error with no data:
+        #     Exception in Tkinter
+        #     callback
+        #     Traceback(most
+        #     recent
+        #     call
+        #     last):
+        #     File
+        #     "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line
+        #     1968, in __call__
+        #     return self.func(*args)
+        #     ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+        #     File
+        #     "C:\git\python\viper_tracking\src\gui_views.py", line
+        #     1439, in _analyze
+        #     self.analyzing_return_function(main_df)
+        #     File
+        #     "C:\git\python\viper_tracking\src\gui_views.py", line
+        #     1525, in add_vdf_to_show
+        #     new_vdf.analyze().plot()
+        #     File
+        #     "C:\git\python\viper_tracking\src\pandas_data_manager.py", line
+        #     207, in plot
+        #     self._update_ax_hbar_labels()
+        #     File
+        #     "C:\git\python\viper_tracking\src\pandas_data_manager.py", line
+        #     1003, in _update_ax_hbar_labels
+        #     raise ValueError("No data available in `_grouped_label_df`.")
+        #     ValueError: No
+        #     data
+        #     available in `_grouped_label_df`.
 
         available_labels = self._grouped_label_df["label_name"].unique()
 
         if label_list is None:
-            label_list = available_labels[:5]
+            label_list = available_labels[:4]
         elif isinstance(label_list, str):
             label_list = [label_list]
 
@@ -1332,7 +1435,10 @@ class ViperDF:
             lowest_y = mdates.num2date(lowest_y)
             highest_y = mdates.num2date(highest_y)
 
-        new_fig, new_ax = plt.subplots(dpi=highest_dpi)
+        if self.main_plot_size is not None:
+            new_fig, new_ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
+        else:
+            new_fig, new_ax = plt.subplots(dpi=self.plot_dpi)
 
         # Copy elements from each provided axis
         for old_ax in ax_list:
@@ -1390,7 +1496,9 @@ class ViperDF:
                     new_ax.add_collection(new_poly)
 
 
-
+        new_ax.set_yticks([])
+        new_ax.set_yticklabels([])
+        
         new_ax.set_ylim(lowest_y, highest_y)
         new_ax.set_xlim(lowest_x, highest_x)
         new_ax.xaxis.set_major_formatter(mirrored_formatter)
@@ -1399,6 +1507,10 @@ class ViperDF:
         self.__init_plot_data_activity(new_ax)
         self.__init_plot_data_apps(new_ax)
         self.__init_plot_data_label(new_ax)
+
+        new_fig.tight_layout()
+
+        self.image_main_plot = fig_to_tk_image(new_fig, self.plot_dpi)
 
         self.mainplot = new_fig
 
@@ -1431,16 +1543,17 @@ class ViperDF:
             return None
 
         df = self._grouped_app_summary_df
-
-        # TODO: maybe adding granularity?
-        fig, ax = plt.subplots(figsize=(10, 6))
+        if self.sub_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.sub_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
         bars = ax.bar(df["window_type"], df["overall_percent"], color=df["rgba_color"])
 
 
         # TODO: Maybe not needed infos, check after implementing into GUI
-        ax.set_xlabel("Apps")
-        ax.set_ylabel("Percent usage")
-        ax.set_title("App usage")
+        # ax.set_xlabel("Apps")
+        # ax.set_ylabel("Percent usage")
+        # ax.set_title("App usage")
 
         ax.set_ylim(0, df["overall_percent"].max() + 5)
 
@@ -1508,6 +1621,10 @@ class ViperDF:
             fig.canvas.draw_idle()
 
         fig.canvas.mpl_connect("motion_notify_event", on_hover)
+        # TODO: Working all fine?
+        fig.tight_layout()
+
+        self.image_app_vbar_plot = fig_to_tk_image(fig, self.plot_dpi)
 
         return fig
 
@@ -1528,8 +1645,11 @@ class ViperDF:
 
         df = self._grouped_label_summary_df
 
-        # TODO: maybe adding granularity?
-        fig, ax = plt.subplots(figsize=(10, 6))
+        if self.sub_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.sub_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
+
         bars = ax.bar(df["label_name"], df["overall_percent"], color=df["rgba_color"])
 
         # Set axis labels and title
@@ -1607,6 +1727,10 @@ class ViperDF:
 
         fig.canvas.mpl_connect("motion_notify_event", on_hover)
 
+        fig.tight_layout()
+
+        self.image_label_vbar_plot = fig_to_tk_image(fig, self.plot_dpi)
+
         return fig
 
     def get_pie_apps(self):
@@ -1626,8 +1750,10 @@ class ViperDF:
 
         df = self._grouped_app_summary_df
 
-        # TODO: maybe adding granularity?
-        fig, ax = plt.subplots(figsize=(8, 8))
+        if self.sub_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.sub_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
 
         # Generate wedges with leader lines
         wedges, texts, autotexts = ax.pie(
@@ -1718,6 +1844,10 @@ class ViperDF:
         ax.set_xlim(-1.5, 1.5)
         ax.set_ylim(-1.4, 1.4)
 
+        fig.tight_layout()
+
+        self.image_app_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
+
         return fig
 
     def get_pie_labels(self):
@@ -1736,8 +1866,10 @@ class ViperDF:
 
         df = self._grouped_label_summary_df
 
-        # TODO: maybe adding granularity?
-        fig, ax = plt.subplots(figsize=(8, 8))
+        if self.sub_plot_size is not None:
+            fig, ax = plt.subplots(figsize=self.sub_plot_size, dpi=self.plot_dpi)
+        else:
+            fig, ax = plt.subplots(dpi=self.plot_dpi)
 
         # Generate wedges with leader lines
         wedges, texts, autotexts = ax.pie(
@@ -1824,6 +1956,10 @@ class ViperDF:
         ax.set_xlim(-1.5, 1.5)
         ax.set_ylim(-1.4, 1.4)
 
+        fig.tight_layout()
+
+
+        self.image_label_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
         return fig
 
 
@@ -1879,7 +2015,7 @@ class DayAnalyzer:
             self._vdf = ViperDF("day_analysis", tmp_df)
             self._vdf.analyze()
 
-            self._check_interval = 2  # Minutes
+            self._check_interval = 5  # Minutes
             self._next_check_timestamp = datetime.now() + timedelta(minutes=self._check_interval)
 
             self._thread = Thread(target=self._thread_loop)
@@ -2042,35 +2178,6 @@ def init_day_analyzer():
     """
 
     DayAnalyzer()
-    pass
-
-
-import ttkbootstrap as tb
-from ttkbootstrap.constants import *
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-
-
-
-# # # # # Test functions below! can be ignored! # # # #
-def show_figure_in_ttk(figure):
-    """Opens a ttkbootstrap window and displays the given Matplotlib figure."""
-
-    # Create a ttkbootstrap window with a modern theme
-    root = tb.Window(themename="darkly")  # Change theme if needed
-    root.title("Matplotlib in ttkbootstrap")
-
-    # Create a frame to hold the figure
-    frame = tb.Frame(root)
-    frame.pack(fill=BOTH, expand=True, padx=10, pady=10)
-
-    # Convert Matplotlib figure to a Tk-compatible canvas
-    canvas = FigureCanvasTkAgg(figure, master=frame)
-    canvas_widget = canvas.get_tk_widget()
-    canvas_widget.pack(fill=BOTH, expand=True)
-
-    # Run the GUI loop
-    root.mainloop()
-
 
 if __name__ == "__main__":
     print("Please start with the main.py")

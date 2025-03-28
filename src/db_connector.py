@@ -769,7 +769,7 @@ class DBHandler:
         if end_time is None:
             end_time = datetime.now()
         query = '''
-            SELECT id, window_type, window_title, word_list, creation_datetime
+            SELECT window_log.id, window_log.window_type, window_log.window_title, window_log.word_list, window_log.creation_datetime
             FROM window_log'''
         if label_list:
             query += '''
@@ -795,7 +795,7 @@ class DBHandler:
                 params.append(label_list)
 
         if window_type:
-            query += " AND window_type LIKE ?"
+            query += " AND window_log.window_type LIKE ?"
             params.append(f"%{_make_searchable(window_type)}%")
 
         if window_title:
@@ -804,7 +804,7 @@ class DBHandler:
                 query += f" AND {condition}"
                 params.extend(values)
             else:
-                query += " AND window_title LIKE ?"
+                query += " AND window_log.window_title LIKE ?"
                 params.append(f"%{_make_searchable(window_title)}%")
 
         if word_list:
@@ -813,10 +813,10 @@ class DBHandler:
                 query += f" AND {condition}"
                 params.extend(values)
             else:
-                query += " AND word_list LIKE ?"
+                query += " AND window_log.word_list LIKE ?"
                 params.append(f"%{_make_searchable(word_list)}%")
 
-        query += " ORDER BY creation_datetime ASC"
+        query += " ORDER BY window_log.creation_datetime ASC"
 
         try:
             with self.lock:

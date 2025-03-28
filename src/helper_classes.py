@@ -246,7 +246,7 @@ class Seconds(int):
         """
 
         mins, secs = divmod(self, 60)
-        return f"{mins}:{secs}"
+        return f"{mins}:{secs} minutes"
 
     @property
     def hours(self):
@@ -261,7 +261,7 @@ class Seconds(int):
 
         mins, secs = divmod(self, 60)
         hours, mins = divmod(mins, 60)
-        return f"{hours}:{mins}:{secs}"
+        return f"{hours}:{mins}:{secs} hours"
 
     @property
     def days(self):
@@ -277,7 +277,7 @@ class Seconds(int):
         mins, secs = divmod(self, 60)
         hours, mins = divmod(mins, 60)
         days, hours = divmod(hours, 24)
-        return f"{days} days, {hours}:{mins}:{secs}"
+        return f"{days} days, {hours}:{mins} hours"
 
     @property
     def weeks(self):
@@ -294,7 +294,7 @@ class Seconds(int):
         hours, mins = divmod(mins, 60)
         days, hours = divmod(hours, 24)
         weeks, days = divmod(days, 7)
-        return f"{weeks} weeks, {days} days {hours}:{mins}:{secs}"
+        return f"{weeks} weeks, {days} days, {hours} hours"
 
 class DynamicTimeframe:
     """

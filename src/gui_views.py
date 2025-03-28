@@ -11,11 +11,14 @@ Author: sora7672
 __author__ = 'sora7672'
 
 from datetime import datetime, date
-from ttkbootstrap import Frame, Window, Style, DateEntry, Querybox
+from ttkbootstrap import Frame, Window, Style, DateEntry, Querybox, Scrollbar
 from ttkbootstrap.dialogs import Messagebox, DatePickerDialog
 from ttkbootstrap.constants import *
 from tkinter import Toplevel, PhotoImage, Widget, ttk, IntVar, BooleanVar, StringVar, Canvas, TclError
 from tkinter.ttk import Combobox  # Fixme: This should use tb not tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from pandas import DataFrame
+from PIL import ImageTk, Image
 
 import ttkbootstrap as tb
 import tkinter as tk
@@ -23,12 +26,14 @@ import calendar
 import locale
 
 from helper_classes import DynamicTimeframe
+from pandas_data_manager import ViperDF, DayAnalyzer
 from filter_manager import DatabaseFilter
 from log_handler import get_logger
 from window_manager import Label
 from conditions import ObjectCondition, ConditionList
 from gui_controller import GuiController
 from settings_manager import UserSettingsManager
+from db_connector import DBHandler
 
 
 # TODO: Styles and such infos need to be initialized properly with a function or on the gui_controller
@@ -53,6 +58,81 @@ dict_resolution: dict[str, tuple[int, int]] = {
 # FIXME: styl needs to be created inside the mainloop anyhow
 # Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
 # Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
+
+# TODO: remove temp debug function
+def debug_widget_infos(widget, flag=""):
+    print(f"\n======= DEBUG {flag if flag else ''} =======")
+    current = widget
+
+    while current:
+
+        full_name = str(current)
+        widget_name = full_name.split("!")[-1]
+        print(f"\n----- {widget_name} -----")
+
+        current.update_idletasks()
+        width = current.winfo_width()
+        height = current.winfo_height()
+        print(f"{width}x{height}")
+        print(f"Pixels in area : {width * height}")
+        print(f"Y From {current.winfo_rooty()} to {current.winfo_rooty() + height}")
+        print(f"X From {current.winfo_rootx()} to {current.winfo_rootx() + width}")
+
+        layout_found = False
+
+        # Check for grid
+        try:
+            grid_info = current.grid_info()
+            if grid_info:
+                print("[Grid]")
+                for k, v in grid_info.items():
+                    print(f"  {k}: {v}")
+                propagate = current.grid_propagate() if hasattr(current, "grid_propagate") else False
+                print(f"  grid_propagate: {propagate if propagate is not None else "False"}")
+                layout_found = True
+        except:
+            pass
+
+        # Check for pack
+        if not layout_found:
+            try:
+                pack_info = current.pack_info()
+                if pack_info:
+                    print("[Pack]")
+                    for k, v in pack_info.items():
+                        print(f"  {k}: {v}")
+                    propagate = current.pack_propagate() if hasattr(current, "pack_propagate") else False
+                    print(f"  pack_propagate: {propagate if propagate is not None else "False"}")
+                    layout_found = True
+            except:
+                pass
+
+        # Check for place
+        if not layout_found:
+            try:
+                place_info = current.place_info()
+                if place_info:
+                    print("[Place]")
+                    for k, v in place_info.items():
+                        print(f"  {k}: {v}")
+                    propagate = current.place_propagate() if hasattr(current, "place_propagate") else False
+                    print(f"  place_propagate: {propagate if propagate is not None else "False"}")
+                    layout_found = True
+            except:
+                pass
+
+        if not layout_found:
+            print("[No layout manager info available]")
+
+        # Sub infos
+        bg = current.cget("background") if "background" in current.keys() else "Not set"
+        relief = current.cget("relief") if "relief" in current.keys() else "Not set"
+        bd = current.cget("bd") if "bd" in current.keys() else "Not set"
+        print(f"Style: relief={relief}, border={bd}, bg={bg}")
+
+        current = current.master
+
+
 
 
 class FormValidationError(Exception):
@@ -107,6 +187,249 @@ class FormValidationError(Exception):
         """
         return self.message
 
+class ScrollFrame(Frame):
+    """
+    A scrollable frame with configurable scrollbar orientation and placement.
+
+    Use `inner_frame` to place widgets instead of this outer container directly.
+    Supports mousewheel scrolling with automatic binding when hovered.
+
+    Allowed scrollbar positions: ["e", "s", "w", "n", "top", "left", "right", "bottom"]
+    """
+
+    _allowed_scrollbar_positions = ["e", "s", "w", "n", "top", "left", "right", "bottom"]
+
+    def __init__(self, parent, scrollbar_position: str | tuple[str, str] | list[str, str]= "e", canvas_height: int = None, canvas_width: int = None, *args, **kwargs):
+        """
+        Initializes a scrollable frame with optional scrollbar position.
+
+        :param parent: Widget (The parent widget to attach the scroll frame to.)
+        :param _scrollbar_position: str (Scrollbar position: 'top', 'bottom', 'left', or 'right')
+        :param canvas_height: int (if a fixed size is needed)
+        :param canvas_width: int (if a fixed size is needed)
+        :param args: Any additional positional arguments for Frame.
+        :param kwargs: Any additional keyword arguments for Frame.
+        :raises TypeError: If scrollbar_position is not a string.
+        :raises ValueError: If scrollbar_position is not one of the allowed values.
+        """
+        super().__init__(parent, *args, **kwargs)
+
+        if canvas_height is not None:
+            if not isinstance(canvas_height, int):
+                raise TypeError("canvas_height must be an integer or None.")
+
+        if canvas_width is not None and not isinstance(canvas_width, int):
+            raise TypeError("canvas_width must be an integer or None.")
+
+        self.scrollbar_list = []  #  Max 2!
+        self.scrollbar_configs = []  # List of dicts that should hold each config option per scrollbar
+        # scrollbar_position = "left"
+        # orientation = "vertical"
+        # canvas_side = "right"
+        config_keys = ["scrollbar_position", "orientation", "canvas_side"]
+        self._canvas_side = None   # needed for saving where the canvas is even on 2 bars
+
+
+
+        if isinstance(scrollbar_position, tuple) or isinstance(scrollbar_position, list):
+            if len(scrollbar_position) != 2:
+                raise ValueError("Scrollbar position must be a tuple/list of exactly 2 entries.")
+            else:
+
+                self.scrollbar_configs.append(dict(zip(config_keys,
+                                                     self._check_scrollbar_position(scrollbar_position[0]))))
+                self.scrollbar_configs.append(dict(zip(config_keys,
+                                                     self._check_scrollbar_position(scrollbar_position[1]))))
+
+                x_num_lr = 0
+                for sbar in self.scrollbar_configs:
+                    if sbar["scrollbar_position"] in ["left", "right"]:
+                        self._canvas_side = "left" if sbar["position"] == "right" else "right"
+                        x_num_lr += 1
+                if x_num_lr != 1:
+                    raise ValueError("Scrollbar position can only have one for each: ['left','right'] & ['top','bottom']")
+                self._orientation = "vertical"
+                # allways vertical on 2 scrollbars
+
+        elif isinstance(scrollbar_position, str):
+            self.scrollbar_configs.append(dict(zip(config_keys,
+                                                 self._check_scrollbar_position(scrollbar_position))))
+        else:
+            raise TypeError("scrollbar_position must be a string or tuple/list of 2 strings.")
+
+        for sbar in self.scrollbar_configs:
+            sbar["is_positioned"] = True
+
+        self.canvas = Canvas(self)
+        if canvas_height:
+            self.canvas.configure(height=canvas_height)
+        if canvas_width:
+            self.canvas.configure(width=canvas_width)
+
+        self.inner_frame = Frame(self.canvas)
+
+        if len(self.scrollbar_configs) == 1:
+            if self.scrollbar_configs[0]["orientation"] == "vertical":
+                self.scrollbar_list.append(Scrollbar(self, orient="vertical", command=self.canvas.yview))
+                self.canvas.configure(yscrollcommand=self.scrollbar_list[0].set)
+                #self.scrollbar_list[0].pack(side=self.scrollbar_configs[0]["scrollbar_position"], fill="y")
+            else:
+                self.scrollbar_list.append(Scrollbar(self, orient="horizontal", command=self.canvas.xview))
+                self.canvas.configure(xscrollcommand=self.scrollbar_list[0].set)
+                #self.scrollbar_list[0].pack(side=self.scrollbar_configs[0]["scrollbar_position"], fill="x")
+
+        elif len(self.scrollbar_configs) == 2:
+            y_command = None
+            x_command = None
+
+            for sbar in self.scrollbar_configs:
+                if sbar["orientation"] == "vertical":
+                    self.scrollbar_list.append(Scrollbar(self, orient="vertical", command=self.canvas.yview))
+                    y_command = self.scrollbar_list[-1].set
+                    #self.scrollbar_list[-1].pack(side=sbar["scrollbar_position"], fill="y")
+
+                else:
+                    self.scrollbar_list.append(Scrollbar(self, orient="horizontal", command=self.canvas.xview))
+                    x_command = self.scrollbar_list[-1].set
+                    #self.scrollbar_list[-1].pack(side=sbar["scrollbar_position"], fill="x")
+
+            self.canvas.configure(yscrollcommand=y_command)
+            self.canvas.configure(xscrollcommand=x_command)
+        else:
+            raise ValueError("Scrollbar position must be a tuple/list of exactly 2 entries.")
+
+
+        self.canvas.pack(side=self._canvas_side, fill="both", expand=True)
+        self.canvas.pack_propagate(False)
+        self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+
+        self.inner_frame.bind("<Configure>", self._frame_size_changed)
+        self.canvas.bind("<Enter>", self._bind_mousewheel)
+        self.canvas.bind("<Leave>", self._unbind_mousewheel)
+
+
+
+
+    def _check_scrollbar_position(self, position_string):
+        match position_string.lower():
+            case "e" | "left":
+                scrollbar_position = "left"
+                orientation = "vertical"
+                canvas_side = "right"
+            case "w" | "right":
+                scrollbar_position = "right"
+                orientation = "vertical"
+                canvas_side = "left"
+            case "s" | "bottom":
+                scrollbar_position = "bottom"
+                orientation = "horizontal"
+                canvas_side = "top"
+            case "n" | "top":
+                scrollbar_position = "top"
+                orientation = "horizontal"
+                canvas_side = "bottom"
+            case _:
+                raise ValueError(f"Invalid scrollbar position {position_string}.\n"
+                                 f"Allowed: {self._allowed_scrollbar_positions}")
+
+        return scrollbar_position, orientation, canvas_side
+
+    def _frame_size_changed(self, event=None) -> None:
+        """
+        Updates the canvas scroll region whenever the size of the inner frame changes.
+
+        :param event: Event (Optional tkinter event.)
+        :return: None
+        """
+
+        self.update_idletasks()
+        frame_width = self.inner_frame.winfo_width()
+        frame_height = self.inner_frame.winfo_height()
+        canvas_width = self.canvas.winfo_width()
+        canvas_height= self.canvas.winfo_height()
+        v_scroll_needed = frame_height > canvas_height
+        h_scroll_needed = frame_width > canvas_width
+
+        for bar, config in zip(self.scrollbar_list, self.scrollbar_configs):
+            if config["orientation"] == "vertical" and v_scroll_needed:
+                bar.pack(side=config["scrollbar_position"], fill="y")
+
+                if config["is_positioned"] == False:
+                    self.canvas.pack_forget()
+                    self.canvas.pack(side=self._canvas_side, fill="both", expand=True)
+                    config["is_positioned"] = True
+
+
+            elif config["orientation"] == "horizontal" and h_scroll_needed:
+                bar.pack(side=config["scrollbar_position"], fill="x")
+
+                if config["is_positioned"] == False:
+                    self.canvas.pack_forget()
+                    self.canvas.pack(side=self._canvas_side, fill="both", expand=True)
+                    config["is_positioned"] = True
+
+            else:
+                bar.pack_forget()
+                if config["is_positioned"] == True:
+                    config["is_positioned"] = False
+
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+
+
+    def _bind_mousewheel(self, event=None) -> None:
+        """
+        Binds mousewheel scroll events to this widget when hovered.
+
+        :param event: Event (Optional tkinter event.)
+        :return: None
+        """
+        self.canvas.bind_all("<MouseWheel>", self._on_mouse_scroll)
+        self.canvas.bind_all("<Button-4>", self._on_mouse_scroll)
+        self.canvas.bind_all("<Button-5>", self._on_mouse_scroll)
+
+    def _unbind_mousewheel(self, event=None) -> None:
+        """
+        Unbinds mousewheel scroll events when mouse leaves this widget.
+
+        :param event: Event (Optional tkinter event.)
+        :return: None
+        """
+        self.canvas.unbind("<MouseWheel>")
+        self.canvas.unbind("<Button-4>")
+        self.canvas.unbind("<Button-5>")
+
+    def _on_mouse_scroll(self, event=None) -> None:
+        """
+        Handles vertical scroll movement when a scroll event occurs.
+
+        Only scrolls if the event originated from within this ScrollFrame's widget path.
+
+        :param event: Event (Mouse scroll event.)
+        :return: None
+        :raises ValueError: If no event is provided.
+        """
+        if event is None:
+            raise ValueError("No event provided")
+        if not str(event.widget).startswith(str(self)):
+            return
+
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        inner_width = self.inner_frame.winfo_reqwidth()
+        inner_height = self.inner_frame.winfo_reqheight()
+
+        if len(self.scrollbar_list) == 1:
+            orientation = self.scrollbar_configs[0]["orientation"]
+        else:
+            orientation = "vertical"
+
+        if orientation == "vertical" and inner_height > canvas_height:
+            direction = 1 if event.num == 5 or event.delta == -120 else -1
+            self.canvas.yview_scroll(direction, "units")
+        elif orientation == "horizontal" and inner_width > canvas_width:
+            direction = 1 if event.num == 5 or event.delta == -120 else -1
+            self.canvas.xview_scroll(direction, "units")
 
 class SmartDateEntry(DateEntry):
 
@@ -420,7 +743,7 @@ class SmartDatePickerDialog(DatePickerDialog):
 
         self.month_last_day = self._get_last_day_current_month()
 
-class FlexFrame(tb.Frame):
+class FlexFrame(Frame):
     """
     Make sure to add your widgets to <object>.inner_frame
     not directly on <object>
@@ -453,8 +776,6 @@ class FlexFrame(tb.Frame):
 
         self.title_side = title_side
 
-
-
         self.flex_text_var = tk.StringVar()
         self.expanded = True
         self.expand_char = expand_char
@@ -469,7 +790,6 @@ class FlexFrame(tb.Frame):
 
         self.flex_btn = tb.Button(self.title_frame, textvariable=self.flex_text_var, command=self.toggle_expanded, width=2)
         self.title_label = tb.Label(self.title_frame, textvariable=self.title_var, font=("Arial", 16))
-
 
         self.flex_btn.pack(side=self.title_side, padx=5, pady=5)
         self.title_label.pack(side=self.title_side, padx=5, pady=5)
@@ -488,7 +808,6 @@ class FlexFrame(tb.Frame):
         self.inner_frame.configure = self._restricted_configure
 
         self.placeholder: tb.Frame = None
-        self.after_idle(self.toggle_expanded)
 
 
     def _forbidden_method(self, *args, **kwargs):
@@ -529,9 +848,8 @@ class FlexFrame(tb.Frame):
     def _shrink(self):
         self.update_idletasks()
         self.inner_frame._original_grid_forget()
-        width = self.inner_frame._original_winfo_width()
+        width = max(self.inner_frame._original_winfo_width(), 1)
 
-        width = max(width, 1)
         self.placeholder = tb.Frame(self, width=width, height=0)
         self.placeholder.grid(row=1, column=0, sticky="ew")
 
@@ -772,12 +1090,8 @@ class FilterFrame(tb.Frame):
         tb.Button(label_buttons_frame, text="Reset", command=self._reset_labels) \
             .grid(column=2, row=1, sticky="W", padx=5, pady=5)
 
-        # TODO: delete button with bind for command !
-        delete_btn = tb.Button(self.flex.inner_frame, text="Delete", width=8, bootstyle="danger")
-        delete_btn.place(relx=1.0, rely=0)
-        self.flex.inner_frame.update_idletasks()
-        button_width = delete_btn.winfo_width()
-        delete_btn.place_configure(x=-button_width)
+        delete_btn = tb.Button(self.flex.inner_frame, text="Del", bootstyle="danger")
+        delete_btn.place(relx=1.0, rely=0, x=-55)
 
         delete_btn.bind("<Button-1>", self.delete_filter)
 
@@ -900,81 +1214,6 @@ class FilterFrame(tb.Frame):
     @staticmethod
     def split_comma_separated_entries(entry_string: str):
         return list(set([entry.strip() for entry in entry_string.split(',') if entry.strip()]))
-
-
-
-class ScrollableFrame(Frame):
-    """
-    A scrollable frame widget.
-
-    This widget allows content to exceed the visible area, adding scrollbars for navigation.
-    """
-
-    # TODO: weirdly build up frame, needs some refining, because it seems like there is some DUPES
-    def __init__(self, parent):
-        """
-        Initializes the `ScrollableFrame` with a parent widget.
-
-        :param parent: Widget (The parent widget for this scrollable frame.)
-        """
-
-        super().__init__(parent)
-
-        # Create a canvas for scrolling
-        self.canvas = Canvas(self)
-        self.canvas.pack(side="left", fill="both", expand=True)
-
-        # Add a vertical scrollbar linked to the canvas
-        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
-        self.scrollbar.pack(side="right", fill="y")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        # Create a frame within the canvas to hold scrollable content
-        self.scrollable_frame = tb.Frame(self.canvas)
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-
-        # Update the scroll region whenever the scrollable frame changes size
-        self.scrollable_frame.bind("<Configure>", self.update_scroll_region)
-
-        # Bind the mouse scroll event to the canvas
-        self.bind_mouse_scroll()
-
-    def update_scroll_region(self, event=None) -> None:
-        """
-        Updates the scrollable region of the canvas based on its content.
-
-        :param event: Event (Optional event triggering the update. Defaults to None.)
-        :return: None
-        """
-
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-
-    def bind_mouse_scroll(self) -> None:
-        """
-        Binds mouse scroll events to the canvas for vertical scrolling.
-
-        :return: None
-        """
-
-        self.canvas.bind_all("<MouseWheel>", self.on_mouse_scroll)
-
-    def on_mouse_scroll(self, event) -> None:
-        """
-        Handles mouse scroll events for the canvas.
-
-        :param event: Event (Mouse scroll event.)
-        :return: None
-        """
-
-        notebook = self.master.master
-        selected_tab_id = notebook.select()
-        selected_tab_widget = notebook.nametowidget(selected_tab_id)
-
-        if self.master == selected_tab_widget:
-            if event.num == 5 or event.delta == -120:
-                self.canvas.yview_scroll(1, "units")  # Scroll down
-            elif event.num == 4 or event.delta == 120:
-                self.canvas.yview_scroll(-1, "units")  # Scroll up
 
 
 class ConditionListFrame(Frame):
@@ -1160,6 +1399,8 @@ class ConditionFrame(Frame):
     _text_checks = ObjectCondition.get_operators_for_string()
     _all_checks = _number_checks + _text_checks
     _condition_types = ["window_type", "window_title", "window_text_words", "timestamp"]
+    # TODO: Timestanmp really needed??? Maybe later smth like dynamic things predefined: morning/evening,
+    #  monday, tuesday etc.
 
     def __init__(self, parent, condition:ObjectCondition = None,  first_element=False):
         """
@@ -1368,6 +1609,571 @@ class ConditionFrame(Frame):
         self.destroy()
 
 
+class FilterChoiceFrame(Frame):
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self._is_analyzing = False
+        self.analyzing_return_function = None
+        filter_list = DatabaseFilter.get_all_filter()
+        self.all_filter_dict = {fil.id : fil.name for fil in filter_list}
+        self.all_filter_name_list = list(self.all_filter_dict.values())
+
+        self.main_frame = Frame(self)
+        self.wrapper_scroll_frame = Frame(self)
+        self.scroll_frame = ScrollFrame(self.wrapper_scroll_frame, scrollbar_position="bottom", canvas_height=237)
+        self.sub_filter_frame = self.scroll_frame.inner_frame
+        self.sub_filter_index = 0
+        self.free_grid_sub_filter_list = []
+
+
+        self.main_filter_combobox = Combobox(self.main_frame, values=self.all_filter_name_list, state="readonly")
+        self.main_filter_combobox_textlabel = tb.Label(self.main_frame, text="Main filter:")
+        self.btn_add_sub = tb.Button(self.main_frame, text="Add sub filter", command=self._new_subfilter)
+        self.btn_analyze = tb.Button(self.main_frame, text="Combine & Analyze", command=self._analyze)
+
+        self.columnconfigure(0, weight=0, minsize=100)
+        self.columnconfigure(1, weight=1)
+        self.main_frame.grid(column=0, row=0, sticky="nsew")
+        self.wrapper_scroll_frame.grid(column=1, row=0, sticky="ew")
+        self.wrapper_scroll_frame.grid_propagate(False)
+        self.scroll_frame.pack(fill="both", expand=False)
+
+
+        # TODO: this 2 things should be hidden for now and are not in use
+        self.main_filter_combobox_textlabel.pack(anchor="w", pady=(5,0), padx=3)
+        self.main_filter_combobox.pack(anchor="w", pady=(0,5), padx=3)
+        self.btn_add_sub.pack(anchor="w", pady=5, padx=3)
+        self.btn_analyze.pack(anchor="w", pady=5, padx=3)
+
+
+    def set_analyzing_return_function(self, function) -> None:
+        self.analyzing_return_function = function
+
+    def _new_subfilter(self):
+
+        sf = SubFilterFrame(self.sub_filter_frame)
+        sf.bind("<Destroy>", self._sub_destroyed)
+
+        if len(self.free_grid_sub_filter_list) > 0:
+            row, column = self.free_grid_sub_filter_list.pop(0)
+        else:
+            row = self.sub_filter_index % 2
+            column = (self.sub_filter_index) // 2
+            self.sub_filter_index += 1
+        sf._row= row
+        sf._column = column
+        sf.grid(row=row, column=column)
+
+
+    def _sub_destroyed(self, event) -> None:
+        self.free_grid_sub_filter_list.append((event.widget._row, event.widget._column))
+
+    def _get_main_filter(self):
+        filter_index = self.main_filter_combobox.current()
+        if filter_index == -1:
+            raise FormValidationError("No main filter chosen")
+
+        filter_id = list(self.all_filter_dict)[filter_index]
+        return DatabaseFilter.get_filter_by_id(filter_id)
+
+
+    def _analyze(self):
+        if self._is_analyzing:
+            return
+        else:
+            self._is_analyzing= True
+            sub_filter_list = []  # in the end list[list[filter, bool]]
+            for sub in self.sub_filter_frame.winfo_children():
+                if isinstance(sub, SubFilterFrame):
+                    fil_id, add_it = sub.get_sub_filter()
+                    fil = DatabaseFilter.get_filter_by_id(fil_id)
+                    sub_filter_list.append([fil, add_it])
+
+            main_filter = self._get_main_filter()
+            main_df = DatabaseFilter.combine_filters(main_filter, sub_filter_list)
+
+            self.after(1000, lambda : setattr(self, '_is_analyzing', False))
+
+            if self.analyzing_return_function is not None:
+                self.analyzing_return_function(main_df)
+
+
+class SubFilterFrame(Frame):
+
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, borderwidth=1, relief="raised", *args, **kwargs)
+        self.subfilter_name_var = StringVar()
+        self.sub_change_var = StringVar()
+        self.use_add = True
+        self.sub_change_var.set("COMBINE")
+        filter_list = DatabaseFilter.get_all_filter()
+        self.all_filter_dict = {fil.id : fil.name for fil in filter_list}
+        self.all_filter_name_list = list(self.all_filter_dict.values())
+
+        self.change_type_btn = tb.Button(self, textvariable=self.sub_change_var,
+                                         command=self.change_sub_connector, bootstyle="success")
+        self.sub_label = tb.Label(self, text="Subfilter:")
+        self.sub_combobox = Combobox(self, values=self.all_filter_name_list, state="readonly")
+        self.sub_combobox.bind("<MouseWheel>", lambda e: "break")
+        self.delete_btn = tb.Button(self, text="X", bootstyle="danger")
+        self.delete_btn.bind("<Button-1>", self.delete_sub_filter)
+
+        self.rowconfigure(0, weight=0)
+        self.rowconfigure(1, weight=0)
+        self.rowconfigure(2, weight=0)
+
+
+        self.sub_label.grid(row=0, column=0, padx=2, pady=(4,8))
+        self.sub_combobox.grid(row=1, column=0, padx=5, sticky="w")
+        self.change_type_btn.grid(row=2, column=0, padx=5, pady=5)
+        self.delete_btn.place(relx=1, rely=0, anchor="ne")
+
+    def change_sub_connector(self):
+        if self.sub_change_var.get() == "COMBINE":
+            self.sub_change_var.set("REDUCE")
+            self.change_type_btn.configure(bootstyle="danger")
+            self.use_add = False
+        else:
+            self.sub_change_var.set("COMBINE")
+            self.change_type_btn.configure(bootstyle="success")
+            self.use_add = True
+
+    def delete_sub_filter(self, event):
+        self.destroy()
+
+    def get_sub_filter(self):
+        """
+        use this to get each subfilter and then make a list and iterate thorugh it with fo each
+        returns filter ID & boolean if it should be added(true=add)
+        """
+
+        filter_index = self.sub_combobox.current()
+        if filter_index == -1:
+            return
+
+        filter_id = list(self.all_filter_dict)[filter_index]
+
+        return filter_id, self.use_add
+
+
+
+class AnalysisFrame(Frame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        # TODO: This all need to be placeholder
+        self.vdf = None
+        self.rowconfigure(0, weight=2)
+        self.rowconfigure(1, weight=1)
+        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=1)
+
+        self.main_plot_frame = MainPlotFrame(self)
+        self.main_plot_frame.grid(row=0, column=0, columnspan=2, sticky="nesw")
+        self.main_plot_frame.grid_propagate(False)
+
+        self.app_plot_frame = AppPlotFrame(self)
+        self.app_plot_frame.grid(row=1, column=0, sticky="nesw")
+        self.app_plot_frame.grid_propagate(False)
+        self.label_plot_frame = LabelPlotFrame(self)
+        self.label_plot_frame.grid_propagate(False)
+        self.label_plot_frame.grid(row=1, column=1, sticky="nesw")
+
+
+    def add_vdf_to_show(self, vdf: DataFrame | ViperDF):
+        # Either add a vdf of df, if df mke it to a vdf(it will analyze itself)
+        if isinstance(vdf, ViperDF):
+            new_vdf = vdf
+        elif isinstance(vdf, DataFrame):
+            new_vdf = ViperDF(name="analysis", main_df=vdf)
+            new_vdf.analyze().plot()
+        else:
+            raise TypeError("Unsupported type. Not [ViperDF, DataFrame]")
+        self.vdf = new_vdf
+        self.update_frames()
+
+    def update_frames(self):
+        if self.vdf is not None:
+            self.main_plot_frame.add_vdf(self.vdf)
+            self.app_plot_frame.add_vdf(self.vdf)
+            self.label_plot_frame.add_vdf(self.vdf)
+
+
+class ImageFrame(Frame):
+    """
+
+    """
+    def __init__(self, parent, tk_photoimage: PhotoImage, on_click = None, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.showing_image = tk_photoimage
+        self._original_tk_photoimage = tk_photoimage
+        self.old_parent_width = None
+        self.old_parent_height = None
+
+        self.image_label = tb.Label(self)
+        self.image_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        self._on_click_function = on_click
+
+        self.bind("<Configure>", self._on_resize)
+        self.bind("<Button-1>", self.on_click)
+        self.image_label.bind("<Button-1>", self.on_click)
+
+    def set_on_click(self, on_click):
+        self._on_click_function = on_click
+
+    def on_click(self, event):
+        if self._on_click_function is None:
+            return
+        else:
+            self._on_click_function(event)
+
+
+    def _on_resize(self, event=None):
+        if hasattr(self, "_resize_job") and self._resize_job:
+            self.after_cancel(self._resize_job)
+        self._resize_job = self.after(100, self._perform_resize)
+
+    def _perform_resize(self):
+        self.update_idletasks()
+
+        parent_width = self.master.winfo_width()
+        parent_height = self.master.winfo_height()
+
+        if parent_height == self.old_parent_height:
+            return
+
+        photo_width = self._original_tk_photoimage.width()
+        photo_height = self._original_tk_photoimage.height()
+
+        scale = min(parent_height / photo_height, 1)
+
+        if scale < 1:
+            pil = ImageTk.getimage(self._original_tk_photoimage)
+            resized_image = pil.resize((int(photo_width * scale), int(photo_height * scale)), Image.Resampling.LANCZOS)
+            self.showing_image = ImageTk.PhotoImage(resized_image)
+
+            self.image_label.config(image=self.showing_image)
+            self.old_parent_height = parent_height
+
+        else:
+            self.image_label.config(image=self._original_tk_photoimage)
+            self.old_parent_height = parent_height
+
+class OverlayFrame(Frame):
+    """
+    Every widget need to be placed/packed/grided on:
+    OverlayFrame.inner_frame
+    or it wont be shown/existing.
+    Binds also need to be set onto this.
+    use the OverlayFrame.expand methode to show the frame
+    """
+    def __init__(self, parent, name: str = None, *args, **kwargs):
+
+        self._inner_name = name
+        super().__init__(parent, *args, **kwargs)
+
+        self.original_master = parent
+        self.top_level_master = parent.winfo_toplevel()
+        if self._inner_name is not None:
+            self.inner_frame = Frame(self.top_level_master, name=self._inner_name, bootstyle="dark")
+        else:
+            self.inner_frame = Frame(self.top_level_master, bootstyle="dark")
+        self.close_btn = tb.Button(self.inner_frame, text="X", bootstyle="danger", command=self.shrink)
+        self.close_btn.place(relx=1.0, rely=0, anchor="ne")
+        self.overlay_active = False
+
+
+    def _on_click_outside(self, event):
+        x_pos, y_pos = event.x_root, event.y_root
+
+        left_x = self.inner_frame.winfo_rootx()
+        right_x = left_x + self.inner_frame.winfo_width()
+
+        bottom_y = self.inner_frame.winfo_rooty()
+        top_y = bottom_y + self.inner_frame.winfo_height()
+
+        if not (left_x <= x_pos <= right_x and  bottom_y <= y_pos <= top_y):
+            self.shrink()
+
+    def _on_focus_out(self, event):
+        if not self.top_level_master.focus_displayof():
+            self.shrink()
+
+    def expand(self, event=None):
+        if not self.overlay_active:
+            self.inner_frame.place(relx=0.05, rely=0.05, relwidth=0.9, relheight=0.9, anchor="nw")
+            self.inner_frame.lift()
+            # Maybe in some special cases needed, noted for later:
+            # aboveThis=self.top_level_master.winfo_children()[0]
+
+            self.overlay_active = True
+            self.top_level_master.bind_all("<Escape>", self.shrink)
+            self.top_level_master.bind_all("<Button-1>", self._on_click_outside)
+            self.top_level_master.bind("<FocusOut>", self._on_focus_out)
+
+
+    def shrink(self, event=None):
+        if self.overlay_active:
+            self.inner_frame.place_forget()
+            self.overlay_active = False
+            self.top_level_master.unbind_all("<Escape>")
+            self.top_level_master.unbind_all("<Button-1>")
+            self.top_level_master.unbind("<FocusOut>")
+
+    def pack(self, *args, **kwargs):
+        raise RuntimeError("Use .expand() to make visible.")
+
+    def grid(self, *args, **kwargs):
+        raise RuntimeError("Use .expand() to make visible.")
+
+    def place(self, *args, **kwargs):
+        raise RuntimeError("Use .expand() to make visible.")
+
+    def pack_forget(self, *args, **kwargs):
+        raise RuntimeError("Use .shrink() to make invisible.")
+
+    def grid_forget(self, *args, **kwargs):
+        raise RuntimeError("Use .shrink() to make invisible.")
+
+    def place_forget(self, *args, **kwargs):
+        raise RuntimeError("Use .shrink() to make invisible.")
+
+
+class MainPlotFrame(Frame):
+    def __init__(self, parent, viper_df: ViperDF = None, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.vdf = viper_df
+
+        self.main_figure = None
+
+        self.columnconfigure(index=0, weight=1)
+        self.columnconfigure(index=1, weight=3)
+
+        self.info_frame = Frame(self)
+        self.info_frame.grid(column=0, row=0, sticky="nsew")
+        self.main_plot_image_frame = Frame(self, name="placeholder")
+        self.main_plot_image_frame.grid_propagate(False)
+        self.main_plot_image_frame.grid(column=1, row=0, sticky="nsew")
+
+        self.overlay_frame = OverlayFrame(self)
+        self.overlay_pack_frame = self.overlay_frame.inner_frame
+
+        # TODO: pack on the left lower side in frame
+        self.plot_label_frame = Frame(self.overlay_pack_frame)
+        self.label_frame_title = tb.Label(self.plot_label_frame, text="Choose Labels (max 5)")
+        # todo: foreach label create a checkbox, max 3 rows,
+        #  on the right top fixed a refresh button (like overlay)
+        # TODO: function for btn
+        self.refresh_label_btn = tb.Button(self.plot_label_frame, text="Refresh")
+
+        self.plot_canvas = None
+        self.plot_widget = None
+
+    def add_vdf(self, vdf: ViperDF):
+        if not isinstance(vdf, ViperDF):
+            raise TypeError("Unsupported type. Not a ViperDF")
+
+        self.vdf = vdf
+        self.update_main_plot()
+
+
+    def update_main_plot(self):
+        if self.plot_widget:
+            self.plot_widget.destroy()
+            self.plot_widget = None
+        if self.plot_canvas:
+            self.plot_canvas = None
+
+        self.main_figure = self.vdf.get_main_plot()
+        self.plot_canvas = FigureCanvasTkAgg(self.main_figure, master=self.overlay_pack_frame)
+        self.plot_widget = self.plot_canvas.get_tk_widget()
+        self.plot_widget.place(relx=0.5, rely=0.5, anchor="center")
+
+        if self.main_plot_image_frame:
+            self.main_plot_image_frame.destroy()
+            self.main_plot_image_frame = None
+        self.main_plot_image_frame = ImageFrame(self, tk_photoimage=self.vdf.image_main_plot)
+        self.main_plot_image_frame.grid_propagate(False)
+        self.main_plot_image_frame.grid(column=1, row=0, sticky="nsew")
+        self.main_plot_image_frame.set_on_click(self.overlay_frame.expand)
+
+        self.update_info_area()
+
+    def update_info_area(self):
+        for child in self.info_frame.winfo_children():
+            child.destroy()
+
+        for i, item in enumerate(self.vdf.main_infos()):
+            self.info_frame.rowconfigure(i, weight=0)
+            row_frame = Frame(self.info_frame)
+            row_frame.grid(row=i, column=0, sticky="nsew")
+            tb.Label(row_frame, text=item[0], font=("TkDefaultFont", 10))\
+                .grid(row=0, column=0, pady=1, sticky="w")
+
+            left_text = tb.Label(row_frame, text=item[1], font=("TkDefaultFont", 10, "bold"))
+            if len(item[1]) <= 20:
+                left_text.grid(row=0, column=1, pady=1, sticky="w")
+            else:
+
+                left_text.grid(row=1, column=0, pady=1, sticky="w")
+
+class AppPlotFrame(Frame):
+    def __init__(self, parent, viper_df: ViperDF = None, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.vdf = viper_df
+        self.app_figure = None
+        self.columnconfigure(index=0, weight=1)
+        self.rowconfigure(index=0, weight=1)
+        self.image_frame = Frame(self, name="placeholder")
+        self.image_frame.grid_propagate(False)
+        self.image_frame.grid(column=0, row=0, sticky="nesw")
+
+        self.overlay_frame = OverlayFrame(self, name="app_plot")
+        self.overlay_pack_frame = self.overlay_frame.inner_frame
+        self.overlay_switch_plot_type_btn = None
+
+        self.plot_widget = None
+        self.plot_canvas = None
+
+        self.plot_type = "Pie"
+        self.switch_plot_type_btn = None
+        self.switch_plot_type_overlay_btn = None
+
+        if isinstance(self.vdf, ViperDF):
+            self.update_app_plot()
+
+
+    def add_vdf(self, vdf: ViperDF):
+        if not isinstance(vdf, ViperDF):
+            raise TypeError("Unsupported type. Not a ViperDF")
+
+        self.vdf = vdf
+        self.update_app_plot()
+
+    def update_app_plot(self):
+        if self.plot_widget:
+            self.plot_widget.destroy()
+            self.plot_widget = None
+        if self.plot_canvas:
+            self.plot_canvas = None
+
+        self.app_figure = self.vdf.get_pie_apps() if self.plot_type == "Pie" else self.vdf.get_vbar_apps()
+        self.plot_canvas = FigureCanvasTkAgg(self.app_figure, master=self.overlay_pack_frame)
+        self.plot_widget = self.plot_canvas.get_tk_widget()
+        self.plot_widget.place(relx=0.5, rely=0.5, anchor="center")
+        if self.overlay_switch_plot_type_btn:
+            self.overlay_switch_plot_type_btn.destroy()
+            self.overlay_switch_plot_type_btn = None
+        self.overlay_switch_plot_type_btn = tb.Button(self.overlay_pack_frame, text=self.plot_type, command=self.switch_plot_type)
+        self.overlay_switch_plot_type_btn.place(relx=0, rely=0, anchor="nw")
+
+        if self.image_frame:
+            self.image_frame.destroy()
+            self.image_frame = None
+        self.app_image = self.vdf.image_app_pie_plot if self.plot_type == "Pie" else self.vdf.image_app_vbar_plot
+        self.image_frame = ImageFrame(self, tk_photoimage=self.app_image)
+        self.image_frame.grid_propagate(False)
+        self.image_frame.grid(column=0, row=0, sticky="nsew")
+        self.image_frame.set_on_click(self.overlay_frame.expand)
+
+        if self.switch_plot_type_btn:
+            self.switch_plot_type_btn.destroy()
+            self.switch_plot_type_btn = None
+        self.switch_plot_type_btn = tb.Button(self, text=self.plot_type, command=self.switch_plot_type)
+        self.switch_plot_type_btn.place(relx=0, rely=0, anchor="nw")
+
+
+    def switch_plot_type(self):
+        if self.plot_type == "Pie":
+            self.plot_type = "Vbar"
+        else:
+            self.plot_type = "Pie"
+        self.update_app_plot()
+
+    
+class LabelPlotFrame(Frame):
+    def __init__(self, parent, viper_df: ViperDF=None, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        self.vdf = viper_df
+        self.label_figure = None
+        self.columnconfigure(index=0, weight=1)
+        self.rowconfigure(index=0, weight=1)
+        self.image_frame = Frame(self, name="placeholder")
+        self.image_frame.grid_propagate(False)
+        self.image_frame.grid(column=0, row=0, sticky="nesw")
+
+        self.overlay_frame = OverlayFrame(self, name="label_plot")
+        self.overlay_pack_frame = self.overlay_frame.inner_frame
+        self.overlay_switch_plot_type_btn = None
+
+        self.plot_widget = None
+        self.plot_canvas = None
+
+        self.plot_type = "Pie"
+        self.switch_plot_type_btn = None
+        self.switch_plot_type_overlay_btn = None
+
+
+        if isinstance(self.vdf, ViperDF):
+            self.update_label_plot()
+
+    def add_vdf(self, vdf: ViperDF):
+        if not isinstance(vdf, ViperDF):
+            raise TypeError("Unsupported type. Not a ViperDF")
+
+        self.vdf = vdf
+        self.update_label_plot()
+
+    def update_label_plot(self):
+        if self.plot_widget:
+            self.plot_widget.destroy()
+            self.plot_widget = None
+        if self.plot_canvas:
+            self.plot_canvas = None
+
+        self.label_figure = self.vdf.get_pie_labels() if self.plot_type == "Pie" else self.vdf.get_vbar_labels()
+        self.plot_canvas = FigureCanvasTkAgg(self.label_figure, master=self.overlay_pack_frame)
+        self.plot_widget = self.plot_canvas.get_tk_widget()
+        self.plot_widget.place(relx=0.5, rely=0.5, anchor="center")
+        if self.overlay_switch_plot_type_btn:
+            self.overlay_switch_plot_type_btn.destroy()
+            self.overlay_switch_plot_type_btn = None
+
+        self.update_idletasks()
+        self.overlay_switch_plot_type_btn = tb.Button(self.overlay_pack_frame, text=self.plot_type, command=self.switch_plot_type)
+        self.overlay_switch_plot_type_btn.place(relx=0, rely=0, anchor="nw")
+
+
+        if self.image_frame:
+            self.image_frame.destroy()
+            self.image_frame = None
+        self.label_image = self.vdf.image_label_pie_plot if self.plot_type == "Pie" else self.vdf.image_label_vbar_plot
+        self.image_frame = ImageFrame(self, tk_photoimage=self.label_image)
+        self.image_frame.grid_propagate(False)
+        self.image_frame.grid(column=0, row=0, sticky="nsew")
+        self.image_frame.set_on_click(self.overlay_frame.expand)
+
+        if self.switch_plot_type_btn:
+            self.switch_plot_type_btn.destroy()
+            self.switch_plot_type_btn = None
+        self.switch_plot_type_btn = tb.Button(self, text=self.plot_type, command=self.switch_plot_type)
+        self.switch_plot_type_btn.place(relx=0, rely=0, anchor="nw")
+
+
+    def switch_plot_type(self):
+        if self.plot_type == "Pie":
+            self.plot_type = "Vbar"
+        else:
+            self.plot_type = "Pie"
+        self.update_label_plot()
+
+
 class LabelFrame(Frame):
     """
     Frame for creating, editing, and managing labels.
@@ -1392,7 +2198,7 @@ class LabelFrame(Frame):
         :return: None
         """
 
-        super().__init__(parent, borderwidth=2, relief="solid")
+        super().__init__(parent)
         if label is None:
             self._label = None
             self.label_name = StringVar(value="")
@@ -1446,11 +2252,9 @@ class LabelFrame(Frame):
         datetime_label.grid(row=0, column=4, padx=(5, 0), pady=(5, 0))
 
         # Delete Button
-        delete_btn = tb.Button(self.flex.inner_frame, text="Delete", width=8, bootstyle="danger")
-        delete_btn.place(relx=1.0, rely=0)
-        self.flex.inner_frame.update_idletasks()
-        button_width = delete_btn.winfo_width()
-        delete_btn.place_configure(x=-button_width)
+        delete_btn = tb.Button(self.flex.inner_frame, text="Del", bootstyle="danger")
+        delete_btn.place(relx=1.0, rely=0, x=-55)
+
         delete_btn.bind("<Button-1>", self.delete_label)
 
         conds_list = None
@@ -1526,6 +2330,77 @@ class LabelFrame(Frame):
         self.destroy()
 
 
+class MainViewFrame(Frame):
+
+    def __init__(self, parent,  *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+
+        test_df = DBHandler().search_window_log(start_time=datetime(2025, 1, 16, 0, 0),
+                                                end_time=datetime(2025, 3, 17, 0, 0))
+        vdf = ViperDF("testing", test_df)
+        vdf.analyze()
+        self.vdf = vdf
+        # DayAnalyzer().get_data()
+        self.vdf.plot()
+
+        # till here VDF needs to be analyzed & plotted!!!!
+
+        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=0, minsize=130)
+        self.columnconfigure(0, weight=1)
+        self.columnconfigure(1, weight=0, minsize=210)
+
+        self.mainplot_frame = Frame(self, name="mainplot_frame")
+        self.subplot_frame = Frame(self, name="subplot_frame")
+        self.info_frame = Frame(self, name="info_frame")
+
+        self.mainplot_frame.grid(row=0, column=0, sticky="nesw")
+        self.mainplot_frame.grid_propagate(True)
+        self.mainplot_frame.grid_rowconfigure(0, weight=1)
+        self.mainplot_frame.grid_columnconfigure(0, weight=1)
+
+        self.subplot_frame.grid(row=1, column=0, sticky="nesw")
+        self.subplot_frame.grid_propagate(False)
+        self.subplot_frame.grid_rowconfigure(0, weight=1)
+        self.subplot_frame.grid_columnconfigure(0, weight=1)
+        self.subplot_frame.grid_columnconfigure(1, weight=1)
+
+        self.info_frame.grid(row=0, column=1, rowspan=2, sticky="nesw")
+        self.info_frame.grid_propagate(False)
+
+        self.main_figure = self.vdf.get_main_plot()
+        self.plot_canvas = FigureCanvasTkAgg(self.main_figure, master=self.mainplot_frame)
+        self.plot_widget = self.plot_canvas.get_tk_widget()
+        self.plot_widget.grid(row=0, column=0, sticky="nw")
+        self.plot_widget.grid_propagate(False)
+
+        self.app_plot = AppPlotFrame(self.subplot_frame, self.vdf)
+        self.app_plot.grid(row=0, column=0, sticky="nesw")
+
+        self.label_plot = LabelPlotFrame(self.subplot_frame, self.vdf)
+        self.label_plot.grid(row=0, column=1, sticky="nesw")
+
+
+        last_entry_id = len(self.vdf.main_infos()) - 1
+        for i, item in enumerate(self.vdf.main_infos()):
+            row_base = i * 3
+            self.info_frame.rowconfigure(row_base, weight=0)
+            self.info_frame.rowconfigure(row_base + 1, weight=0)
+
+            row_frame = Frame(self.info_frame)
+            row_frame.grid(row=row_base, column=0, rowspan=2, sticky="nsew")
+
+            tb.Label(row_frame, text=item[0], font=("TkDefaultFont", 10)) \
+                .grid(row=0, column=0, pady=1, sticky="w")
+
+            left_text = tb.Label(row_frame, text=item[1], font=("TkDefaultFont", 10, "bold"))
+            left_text.grid(row=1, column=0, pady=1, sticky="w")
+
+            if i < last_entry_id:
+                tb.Separator(self.info_frame, orient="horizontal") \
+                    .grid(row=row_base + 2, column=0, sticky="ew", pady=(2, 4))
+
+
 
 class ViewController:
     """
@@ -1580,6 +2455,7 @@ class ViewController:
 
         # Create the Toplevel window
         self._main_window = Toplevel(GuiController().root)
+        # TODO: window icon & taskbar icon need to be set properly (probably seen after windows installation)
         #self._main_window.iconphoto(True, GuiController().icon_image)
         self._main_window.title("Viper Tracking")
         win_width, win_height = UserSettingsManager().gui_resolution
@@ -1600,7 +2476,8 @@ class ViewController:
         notebook.add(filter_tab, text="Filter")
         notebook.add(settings_tab, text="Settings")
         notebook.pack(expand=True, fill="both", padx=0, pady=0)
-        self.update_main_tab(main_tab)
+
+
 
     def update_tab(self, event) -> None:
         """
@@ -1611,7 +2488,6 @@ class ViewController:
         :param event: Event (The event triggered when the selected tab changes.)
         :return: None
         """
-
         nb = event.widget
         tab_index = event.widget.index("current")  # Get the index of the selected tab
         child_tabs = event.widget.winfo_children()
@@ -1649,38 +2525,8 @@ class ViewController:
         #  Average activity time (weekday based), ...
         #  Some more advanced features later, like creating own query per field that should be shown.
 
-        tab.grid_rowconfigure(0, weight=1)  # Upper half
-        tab.grid_rowconfigure(1, weight=1)  # Lower half
-        tab.grid_columnconfigure(0, weight=1)
+        MainViewFrame(tab).pack(fill="both", expand=True)
 
-        # Create upper and lower half frames
-        upper_frame = Frame(tab, borderwidth=2, relief="solid")
-        lower_frame = Frame(tab, borderwidth=2, relief="solid")
-
-        upper_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=5)
-        lower_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
-
-        lower_frame.grid_columnconfigure(0, weight=1)  # Left half
-        lower_frame.grid_columnconfigure(1, weight=1)  # Right half
-        lower_frame.grid_rowconfigure(0, weight=1)
-
-        # Create left and right frames in the lower half
-        low_left_frame = Frame(lower_frame, borderwidth=2, relief="solid")
-        low_right_frame = Frame(lower_frame, borderwidth=2, relief="solid")
-        low_left_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        low_right_frame.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-
-        left_frames_list = []
-        for r in range(2):
-            for c in range(2):
-                inner_frame = Frame(low_left_frame, borderwidth=2, relief="solid")
-                inner_frame.grid(row=r, column=c, padx=5, pady=5, sticky="nsew")
-                left_frames_list.append(inner_frame)
-
-        low_left_frame.grid_rowconfigure(0, weight=1)
-        low_left_frame.grid_rowconfigure(1, weight=1)
-        low_left_frame.grid_columnconfigure(0, weight=1)
-        low_left_frame.grid_columnconfigure(1, weight=1)
 
     def update_analysis_tab(self, tab) -> None:
         """
@@ -1704,15 +2550,19 @@ class ViewController:
         #  maybe later advanced conditions for analyzes and labeling.
         #  Like background windows or system time (night/day etc)
 
-        label_list = Label.get_all_labels()
-        if label_list:
-            dropdown_values = list({lab.name for lab in label_list})
-        else:
-            dropdown_values = ["No labels existing"]
-        label_dropdown = tb.Combobox(tab, values=dropdown_values, state="readonly")
-        label_dropdown.current(0)
-        label_dropdown.bind("<MouseWheel>", disable_scroll)
-        label_dropdown.pack(padx=10, pady=10)
+        all_frame = Frame(tab, name="all_frame")
+        all_frame.pack(fill="both", expand=True)
+        all_frame.pack_propagate(False)
+
+        fcf = FilterChoiceFrame(all_frame, height=300)
+        fcf.pack(fill="x")
+        fcf.pack_propagate(False)
+
+        af = AnalysisFrame(all_frame)
+        af.pack_propagate(False)
+        af.pack(fill="both", expand=True)
+
+        fcf.set_analyzing_return_function(af.add_vdf_to_show)
 
     def update_label_tab(self, tab) -> None:
         """
@@ -1725,26 +2575,32 @@ class ViewController:
         :return: None
         """
 
-        # FIXME: seems like there can happen to be multiple of the same label,
-        #  if saved over under specific(unknown) conditions
-        scrollable_frame = ScrollableFrame(tab)
-        scrollable_frame.pack(fill="both", expand=True)
 
+        scroll_frame = ScrollFrame(tab, scrollbar_position="right")
+        scroll_frame.pack(fill="both", expand=True)
+        label_frame_list = []
         for lab in Label.get_all_labels():
-            lab_frame = LabelFrame(parent=scrollable_frame.scrollable_frame, label=lab)
+            lab_frame = LabelFrame(parent=scroll_frame.inner_frame, label=lab)
             lab_frame.pack(fill="x", padx=5, pady=5)
+            label_frame_list.append(lab_frame)
 
-        btn_frame = Frame(scrollable_frame.scrollable_frame)
-        btn_frame.pack(fill="x", padx=5, pady=5)
+        btn_frame = Frame(scroll_frame.inner_frame)
+        btn_frame.pack(side="left", fill="x", padx=5, pady=5)
 
         new_label_button = tb.Button(btn_frame, text="Add new Label")
         new_label_button.pack(padx=5, pady=5, side="left", expand=True)  # Center with expand=True
 
         save_labels_button = tb.Button(btn_frame, text="Save")
-        save_labels_button.pack(padx=5, pady=5, side="right")  # Move to the right side and block space for lbl btn
+        save_labels_button.pack(padx=5, pady=5, side="left")  # Move to the right side and block space for lbl btn
 
         new_label_button.bind("<Button-1>", self.add_new_label)
         save_labels_button.bind("<Button-1>", self.save_labels)
+
+        tab.after_idle(lambda: self._shrink_flex_child(label_frame_list) )
+
+    def _shrink_flex_child(self, frame_list):
+        for parent_frame in frame_list:
+            parent_frame.flex.toggle_expanded()
 
     def save_labels(self, event=None) -> None:
         """
@@ -1801,8 +2657,7 @@ class ViewController:
             btn_frame.pack_forget()
             n_lab = LabelFrame(parent=canvas_frame)
             n_lab.pack(fill="x", padx=5, pady=5)
-            n_lab.flex.toggle_expanded()
-            btn_frame.pack(fill="x", padx=5, pady=5)
+            btn_frame.pack(side="left", fill="x", padx=5, pady=5)
 
 
 
@@ -1811,24 +2666,27 @@ class ViewController:
         updates the filter tab
         """
 
-        scrollable_frame = ScrollableFrame(tab)
-        scrollable_frame.pack(fill="both", expand=True)
-
+        scroll_frame = ScrollFrame(tab, scrollbar_position="right")
+        scroll_frame.pack(fill="both", expand=True)
+        filter_frame_list = []
         for fil in DatabaseFilter.get_all_filter():
-            filter_frame = FilterFrame(parent=scrollable_frame.scrollable_frame, database_filter=fil)
+            filter_frame = FilterFrame(parent=scroll_frame.inner_frame, database_filter=fil)
             filter_frame.pack(fill="x", padx=5, pady=5)
+            filter_frame_list.append(filter_frame)
 
-        btn_frame = Frame(scrollable_frame.scrollable_frame)
-        btn_frame.pack(fill="x", padx=5, pady=5)
+        btn_frame = Frame(scroll_frame.inner_frame)
+        btn_frame.pack(side="left", fill="x", padx=5, pady=5)
 
         new_filter_button = tb.Button(btn_frame, text="Add new Filter")
         new_filter_button.pack(padx=5, pady=5, side="left", expand=True)  # Center with expand=True
 
         save_filter_button = tb.Button(btn_frame, text="Save")
-        save_filter_button.pack(padx=5, pady=5, side="right")  # Move to the right side and block space for lbl btn
+        save_filter_button.pack(padx=5, pady=5, side="left")  # Move to the right side and block space for lbl btn
 
         new_filter_button.bind("<Button-1>", self.add_new_filter)
         save_filter_button.bind("<Button-1>", self.save_all_filter)
+
+        tab.after_idle(lambda: self._shrink_flex_child(filter_frame_list))
 
 
     def save_all_filter(self, event=None) -> None:
@@ -1869,8 +2727,7 @@ class ViewController:
             btn_frame.pack_forget()
             n_filter = FilterFrame(parent=canvas_frame)
             n_filter.pack(fill="x", padx=5, pady=5)
-            n_filter.flex.toggle_expanded()
-            btn_frame.pack(fill="x", padx=5, pady=5)
+            btn_frame.pack(side="left", fill="x", padx=5, pady=5)
 
 
     def update_settings_tab(self, tab) -> None:

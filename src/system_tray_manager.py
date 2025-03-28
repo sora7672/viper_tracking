@@ -114,6 +114,68 @@ class SystemTrayManager:
         self.icon.run_detached()
         get_logger().debug("started systray icon detached")
 
+
+    # FIXME: Error when closing and clicking again on icon before close done
+    #     An
+    #     error
+    #     occurred
+    #     when
+    #     calling
+    #     message
+    #     handler
+    #     Traceback(most
+    #     recent
+    #     call
+    #     last):
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_win32.py", line
+    #     412, in _dispatcher
+    #     return int(icon._message_handlers.get(
+    #                ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+    #                File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_win32.py", line
+    #     224, in _on_notify
+    #     descriptors[index - 1](self)
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_base.py", line
+    #     328, in inner
+    #     callback(self)
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_base.py", line
+    #     453, in __call__
+    #     return self._action(icon, self)
+    #     ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_base.py", line
+    #     548, in wrapper0
+    #     return action()
+    #     ^ ^ ^ ^ ^ ^ ^ ^
+    #     File
+    #     "C:\git\python\viper_tracking\src\system_tray_manager.py", line
+    #     137, in stop_program
+    #     stop_gui()
+    #     File
+    #     "C:\git\python\viper_tracking\src\gui_controller.py", line
+    #     150, in stop_gui
+    #     GuiController().stop_helper()
+    #     File
+    #     "C:\git\python\viper_tracking\src\gui_controller.py", line
+    #     109, in stop_helper
+    #     self.root.after(100, self.stop)
+    #     File
+    #     "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line
+    #     873, in after
+    #     name = self._register(callit)
+    #     ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+    #     File
+    #     "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line
+    #     1604, in _register
+    #     self.tk.createcommand(name, f)
+    #     RuntimeError: main
+    #     thread is not in main
+    #     loop
+
+
     def stop_program(self) -> None:
         """
         Performs all necessary cleanup operations when the program is stopped.
@@ -142,6 +204,8 @@ class SystemTrayManager:
         sleep(0.3)
         get_logger().debug("close_db_connection() done")
 
+
+        # FIXME: icon stop earlyer?
         self.icon.stop()
         sleep(0.3)
         get_logger().debug("self.icon.stop() done)")

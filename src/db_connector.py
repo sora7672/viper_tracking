@@ -973,8 +973,9 @@ class DBHandler:
 
         else:
             columns = [desc[0] for desc in self.cursor.description]
+            all_db_data = self.cursor.fetchall()
             data_out = (
-                DataFrame(self.cursor.fetchall(), columns=columns)
+                DataFrame(all_db_data, columns=columns)
                 .rename(columns={"name": "label_list"})
                 .groupby("window_id", as_index=False)
                 .agg({"label_list": lambda x: list(x.dropna().unique())})
@@ -1170,7 +1171,7 @@ class DBHandler:
             get_logger().info(f"Filter {filter_id} deleted successfully.")
             return True
 
-    def get_all_filters(self) -> list[dict] | False:
+    def get_all_filters(self) -> list[dict] | bool:
         """
         Retrieves all filters from the `filter_catalog` table.
 
@@ -1211,7 +1212,7 @@ class DBHandler:
             filters = []
             for row in rows:
                 filters.append({
-                    "id": row[0],
+                    "filter_id": row[0],
                     "name": row[1],
                     "dynamic_time_frame": row[2],
                     "window_type": row[3],

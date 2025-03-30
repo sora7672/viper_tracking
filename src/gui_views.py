@@ -1331,7 +1331,7 @@ class FilterFrame(tb.Frame):
 
         self._filter_id = self._filter.id if self._filter else None
 
-        self._name = tk.StringVar()
+        self._name_var = tk.StringVar()
         self._window_type = tk.StringVar()
         self._window_title = tk.StringVar()
         self._word_list = tk.StringVar()
@@ -1340,7 +1340,7 @@ class FilterFrame(tb.Frame):
         self._chosen_label_dict = {}
         self._all_labels_dict: dict = {lab.id: lab.name for lab in Label.get_all_labels()}
 
-        self.flex = FlexFrame(self, title_var=self._name)
+        self.flex = FlexFrame(self, title_var=self._name_var)
         self.flex.pack(fill=tk.BOTH, expand=True)
         [self.flex.inner_frame.rowconfigure(i, weight=0) for i in range(7)]
         self.flex.inner_frame.columnconfigure(0, weight=0)
@@ -1405,7 +1405,7 @@ class FilterFrame(tb.Frame):
 
         filter_dict = self._filter.as_dict()
 
-        self._name.set(filter_dict["name"] or "")
+        self._name_var.set(filter_dict["name"] or "")
 
         self._time_frame.start_date_entry.set(filter_dict["start_date"] or "")
         self._time_frame._start_time.set(filter_dict["start_time"] or "")
@@ -3377,7 +3377,8 @@ class ViewController:
         for tabs in child_tabs:
             frame_childs = tabs.winfo_children()
             for child in frame_childs:
-                child.destroy()
+                if isinstance(child, Frame):
+                    child.destroy()
         match tab_index:
             case 0:  # MainTab
                 self.update_main_tab(event.widget.nametowidget(nb.tabs()[tab_index]))

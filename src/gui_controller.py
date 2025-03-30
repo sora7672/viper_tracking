@@ -19,6 +19,7 @@ from os import path
 from settings_manager import UserSettingsManager
 # TODO: Grab the user settings and set the proper style for the windows
 
+
 class GuiController:
     """
     The primary GUI controller for the application.
@@ -31,16 +32,16 @@ class GuiController:
         root: The main GUI window (invisible by default).
         icon_image: The icon image for the window.
         icon_path: Absolute path to the icon image file.
-        lock: A threading lock to ensure safe operations.
+        _lock: A threading lock to ensure safe operations.
     """
 
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kwargs) -> 'GuiController':
         """
         Implements the singleton pattern by ensuring only one instance of the class exists.
 
-        :return: InputManager (The singleton instance.)
+        :return: GuiController (The singleton instance.)
         """
 
         if cls._instance is None:
@@ -79,7 +80,7 @@ class GuiController:
             except Exception as e:
                 get_logger().error(f"Failed to set icon. Error: {e}")
 
-            self.lock = Lock()
+            self._lock = Lock()
             get_logger().debug("__init__ from GuiHandler")
 
     def run(self) -> None:
@@ -106,9 +107,9 @@ class GuiController:
         :return: None
         """
 
-        self.root.after(100, self.stop)
+        self.root.after(100, self._stop)
 
-    def stop(self) -> None:
+    def _stop(self) -> None:
         """
         Stops the GUI's main event loop and destroys all child windows.
 
@@ -131,9 +132,6 @@ class GuiController:
         self.root.quit()
         get_logger().debug("after root.quit")
         get_logger().debug("methode stop from GuiHandler end")
-
-
-# # # # Helper functions for the widgets # # # #
 
 
 # # # # External call functions for less import in other files # # # #

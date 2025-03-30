@@ -1,13 +1,19 @@
 """
-This module provides helper classes used across various parts of the application.
+Module providing utility classes and functions shared across the application.
+
+This module includes tools for class-level properties, color generation,
+time representation, and dynamic timeframe resolution. It is intended
+to reduce duplication and promote reusability of logic throughout the application.
 
 Features:
-- `Classproperty`: Implements a decorator for class-level properties.
-- `ColorPicker`: A singleton-based utility for managing color selection.
-- `Seconds`: A subclass of `int` that converts seconds into human-readable time formats.
+- `Classproperty`: Enables class-level @property behavior.
+- `ColorPicker`: Thread-safe singleton for sequential color selection.
+- `Seconds`: Subclass of `int` for converting raw seconds into human-readable time formats.
+- `DynamicTimeframe`: Calculates date ranges for predefined relative and absolute timeframes.
 
 Author: sora7672
 """
+
 __author__ = "sora7672"
 
 from threading import Lock
@@ -158,7 +164,8 @@ class Seconds(int):
     and supports string-based representations for easy use.
 
     Attributes:
-        time_frame (str): The detected time unit ('w' for weeks, 'd' for days, 'h' for hours, 'm' for minutes, 's' for seconds).
+        time_frame (str): The detected time unit ('w' for weeks, 'd' for days, 'h' for hours,
+        'm' for minutes, 's' for seconds).
     """
 
     def __new__(cls, value):
@@ -296,6 +303,7 @@ class Seconds(int):
         weeks, days = divmod(days, 7)
         return f"{weeks} weeks, {days} days, {hours} hours"
 
+
 class DynamicTimeframe:
     """
     A class for handling dynamic timeframes with predefined relative and absolute date ranges.
@@ -304,7 +312,8 @@ class DynamicTimeframe:
     It calculates the start and end datetime based on the selected timeframe.
 
     Attributes:
-        _predefined_dynamic_timeframes (dict): A dictionary defining available timeframes and their corresponding calculations.
+        _predefined_dynamic_timeframes (dict): A dictionary defining available timeframes
+        and their corresponding calculations.
         value (str): The selected timeframe identifier.
 
     Raises:
@@ -359,8 +368,8 @@ class DynamicTimeframe:
         """
         Computes the start and end datetime based on the selected timeframe.
 
-        The method determines whether the timeframe is relative (e.g., "last_7_days") or absolute (e.g., "current_month")
-        and calculates the appropriate datetime range accordingly.
+        The method determines whether the timeframe is relative (e.g., "last_7_days")
+        or absolute (e.g., "current_month") and calculates the appropriate datetime range accordingly.
 
         Relative timeframes subtract a fixed duration from the current time.
         Absolute timeframes are adjusted to align with full calendar units (e.g., start of the week, month, or year).
@@ -445,11 +454,18 @@ class DynamicTimeframe:
         return self.__get_start_and_end_datetime()
 
     @classmethod
-    def get_entries(cls):#
+    def get_entries(cls):
+        """
+        Class method that retrieves all predefined timeframe keys.
+
+        :return: list[str] (A list of names of all predefined dynamic timeframes available.)
+        """
+
         out = []
         for k in cls._predefined_dynamic_timeframes.keys():
             out.append(k)
         return out
+
 
 if __name__ == "__main__":
     print("Please start with the main.py")

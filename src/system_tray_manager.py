@@ -84,10 +84,10 @@ class SystemTrayManager:
 
     def __init__(self):
         """
-        Initializes the SystemTrayManager instance.
+        Initializes the `SystemTrayManager` singleton instance.
 
-        - Sets up the system tray icon with a default menu.
-        - Ensures debug logging for initialization.
+        Sets up the system tray icon and prepares the default menu structure.
+        Ensures only one instance is created and logs the initialization.
 
         :return: None
         """

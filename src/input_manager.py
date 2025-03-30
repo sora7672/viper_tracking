@@ -51,7 +51,7 @@ class InputManager:
         _count_middle_mouse_pressed (int): Number of middle mouse button clicks.
         _count_mouse_scrolls (int): Number of mouse scroll actions.
         _last_mouse_scroll_datetime (datetime | None): Time of the last mouse scroll action.
-        lock (Lock): Ensures that input tracking is safe and error-free.
+        _lock (Lock): Ensures that input tracking is safe and error-free.
     """
 
     _instance = None
@@ -68,27 +68,18 @@ class InputManager:
 
     def __init__(self):
         """
-        Initializes the `InputManager` as a thread-safe singleton.
+        Initializes the InputManager singleton and sets up input counters.
 
-        This method sets up counters for various input events (e.g., key presses, mouse clicks)
-        and timestamps for tracking user activity. It also ensures thread-safe operations by
-        initializing a lock.
+        Sets up internal state for tracking different input types (keyboard and mouse), including:
+        - Character keys
+        - Direction keys
+        - Special keys (e.g., Shift, Ctrl)
+        - Mouse button clicks (left, right, middle)
+        - Mouse scrolls
 
-        Attributes Initialized:
-        - `_initialized` (bool): Prevents reinitialization of the instance.
-        - `_count_char_key_pressed` (int): Tracks the number of character key presses.
-        - `_count_direction_key_pressed` (int): Tracks the number of direction key presses.
-        - `_count_special_key_pressed` (int): Tracks the number of special key presses.
-        - `_count_left_mouse_pressed` (int): Tracks the number of left mouse button presses.
-        - `_count_right_mouse_pressed` (int): Tracks the number of right mouse button presses.
-        - `_count_middle_mouse_pressed` (int): Tracks the number of middle mouse button presses.
-        - `_count_mouse_scrolls` (int): Tracks the number of mouse scroll events.
-        - `_last_mouse_scroll_datetime` (datetime | None): Stores the timestamp of the last mouse scroll event.
-        - `lock` (Lock): Ensures thread-safe access to the input data.
+        Also initializes a thread-safe lock to ensure safe concurrent access.
 
-        Additionally, this method sets the singleton instance (`InputManager._instance`) and
-        logs the initialization process for debugging purposes.
-
+        :return: None
         """
 
         if not hasattr(self, '_initialized'):
@@ -107,7 +98,7 @@ class InputManager:
 
             self._activity = False
 
-            self.lock = Lock()
+            self._lock = Lock()
             InputManager._instance = self
             get_logger().debug("__init__ InputManager")
 
@@ -127,7 +118,7 @@ class InputManager:
         """
 
         get_logger().debug("InputManager lock use")
-        with self.lock:
+        with self._lock:
             tmp_dict: dict = {"count_key_pressed": (
                          self._count_char_key_pressed + self._count_direction_key_pressed +
                          self._count_special_key_pressed),
@@ -158,7 +149,7 @@ class InputManager:
 
         :return: None
         """
-        with self.lock:
+        with self._lock:
             self._count_char_key_pressed = 0
             self._count_direction_key_pressed = 0
             self._count_special_key_pressed = 0
@@ -213,7 +204,7 @@ class InputManager:
         """
 
         get_logger().debug("InputManager lock use")
-        with self.lock:
+        with self._lock:
             self._activity = True
             match user_input_type:
                 case 'char_key':
@@ -247,7 +238,13 @@ class InputManager:
 
     @property
     def activity(self):
-        with self.lock:
+        """
+        Indicates whether any input activity has been detected in the current interval.
+
+        This property is thread-safe. It returns True if user input (keyboard or mouse) has occurred since the last reset or check, otherwise False.
+        """
+
+        with self._lock:
             tmp = self._activity
         return tmp
 
@@ -413,11 +410,32 @@ def start_input_tracker() -> None:
     get_logger().debug("keyboard_thread.start()")
 
 
-def input_to_db(window_id: int | None):
+def input_to_db(window_id: int | None) -> None:
+    """
+    Commits input counts to the database for the current window.
+
+    This function fetches the singleton InputManager instance and calls its `add_to_db` method using the provided window ID. It records the aggregated input data (key presses, clicks, etc.) for that window into the database, then resets the counters for the next interval.
+
+    :param window_id: int | None (The database ID of the window log to associate input counts with. If None, the input counts are still reset but not linked to a window entry.)
+    """
+
     InputManager().add_to_db(window_id)
 
 
-def had_input():
+def had_input() -> bool:
+    """
+    Checks if any keyboard or mouse activity was detected recently.
+
+    What it does:
+    - Returns True if any key or mouse input happened since the last reset.
+    - Used to determine if the user was active during a time window.
+
+    Privacy Note:
+    Only the fact that something happened is checked—no actual details or content are tracked.
+
+    :return: bool (True if activity occurred, False otherwise.)
+    """
+
     return InputManager().activity
 
 

@@ -20,10 +20,6 @@ Project Note:
 This file needs to never load other project modules!
 """
 
-# TODO: Probably when smth here is updated, the other threads need to
-#  read in infos new (like interval for input/window tracker)
-#  Make sure intervals are allways a multiple of 5! cuz checking regularly on
-
 
 # TODO: refactor this to a property setup instead of weird method names.
 #  make booleans smarter to read
@@ -255,7 +251,7 @@ def is_debug() -> bool:
     return ConfigManager().get_debug()
 
 
-def initialize_config_manager():
+def initialize_config_manager() -> None:
     """
     Initializes the configuration manager by reading the settings file.
 
@@ -267,8 +263,8 @@ def initialize_config_manager():
     ConfigManager().read_settings()
 
 
-# TODO: Used when settings are updated, dont need to save in the end of program then
-def save_settings():
+
+def save_settings() -> None:
     """
     Saves the current configuration settings to the JSON file.
 

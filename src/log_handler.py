@@ -43,11 +43,14 @@ class LogHandler:
 
     def __init__(self):
         """
-        Initializes the LogHandler singleton.
+        Initializes the `LogHandler` singleton instance.
 
-        This method ensures that the singleton instance is created only once and
-        sets up default configurations for logging, such as file paths and backup limits.
+        Sets up the default logger, log file names, paths, and the debug state. This method runs only once due to internal
+        initialization guarding, ensuring singleton behavior.
+
+        :return: None
         """
+
 
         if not hasattr(self, '_initialized'):
             self._initialized = True

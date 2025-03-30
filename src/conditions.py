@@ -93,16 +93,34 @@ class ObjectCondition:
 
     @property
     def attribute_name(self) -> str:
+        """
+        Returns the name of the attribute that this condition evaluates.
+
+        :return: str (The attribute name being checked by this condition.)
+        """
+
         with self.lock:
             return self._attribute_name
 
     @property
     def comp_operator(self) -> str:
+        """
+        Returns the comparison operator used in this condition.
+
+        :return: str (The comparison operator for this condition.)
+        """
+
         with self.lock:
             return self._comp_operator
 
     @property
     def attribute_value(self) -> str:
+        """
+        Returns the comparison value for this condition as a string.
+
+        :return: str (The value against which the attribute is compared, in string form.)
+        """
+
         with self.lock:
             return str(self._attribute_value)
 
@@ -114,7 +132,7 @@ class ObjectCondition:
         :return: bool (True if the condition is satisfied, False otherwise.)
         :raises AttributeError: If the attribute does not exist on the object.
         :raises TypeError: If the attribute type does not match the expected value type.
-        :raises Exception: If the comparison operator is unknown.
+        :raises ValueError: If the comparison operator is unknown.
         """
 
         if not hasattr(obj, self._attribute_name):
@@ -171,7 +189,7 @@ class ObjectCondition:
                     return test_value != self._attribute_value
 
             case _:
-                raise Exception(f"Unknown comparison operator {self._comp_operator}")
+                raise ValueError(f"Unknown comparison operator {self._comp_operator}")
 
     def to_dict(self) -> dict:
         """
@@ -265,10 +283,22 @@ class ObjectCondition:
 
     @classmethod
     def get_operators_for_string(cls):
+        """
+        Retrieves the accepted comparison operators for string values.
+
+        :return: tuple[str, ...] (All valid comparison operator strings for string attributes.)
+        """
+
         return cls._accepted_comp_operators_strings
 
     @classmethod
     def get_operators_for_number(cls):
+        """
+        Retrieves the accepted comparison operators for numeric values.
+
+        :return: tuple[str, ...] (All valid comparison operator strings for numeric attributes.)
+        """
+
         return cls._accepted_comp_operators_numbers
 
     @staticmethod
@@ -290,6 +320,12 @@ class ObjectCondition:
             raise ValueError("Input is not a recognized Unix timestamp or ISO datetime format.")
 
     def __str__(self) -> str:
+        """
+        Returns a human-readable string representation of the condition.
+
+        :return: str (Description of the condition in the format "<attribute> <operator> <value> (<type>)".)
+        """
+
         return f"Condition on {self._attribute_name} {self._comp_operator} {self._attribute_value} ({self._value_type})"
 
 
@@ -407,6 +443,12 @@ class ConditionList:
         return cls(*conditions, operator=operator)
 
     def __str__(self) -> str:
+        """
+        Returns a human-readable string representation of the condition list.
+
+        :return: str (Description of the ConditionList including its operator and contained conditions.)
+        """
+
         conditions_str = f" {self.operator.upper()} ".join(str(cond) for cond in self.conditions)
         return f"ConditionList({conditions_str})"
 

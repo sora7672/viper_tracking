@@ -121,7 +121,7 @@ class DBHandler:
         db_name (str): Name of the database file.
         conn (sqlite3.Connection): SQLite connection object.
         cursor (sqlite3.Cursor): SQLite cursor for executing queries.
-        lock (Lock): Ensures thread-safe operations.
+        _lock (Lock): Ensures thread-safe operations.
     """
 
     _instance = None
@@ -151,9 +151,9 @@ class DBHandler:
             self.db_name = "viper_tracking.db"
             self.conn = None
             self.cursor = None
-            self.lock = Lock()
+            self._lock = Lock()
 
-    def check_db_path(self):
+    def check_db_path(self) -> None:
         """
         Checks if the database directory exists and creates it if necessary.
 
@@ -163,7 +163,7 @@ class DBHandler:
         if not path.exists(self.db_path):
             makedirs(self.db_path)
 
-    def first_open_db(self):
+    def first_open_db(self) -> None:
         """
         Creates database tables on the first run and enables WAL mode for multithreading.
 
@@ -261,7 +261,7 @@ class DBHandler:
             self.conn.rollback()
             return None
 
-    def check_dbs(self):
+    def check_dbs(self) -> None:
         """
         Ensures that all required tables exist in the database.
 
@@ -294,7 +294,7 @@ class DBHandler:
         if not self.cursor.fetchone():
             self.first_open_db()
 
-    def connect(self):
+    def connect(self) -> None:
         """
         Establishes a connection to the SQLite database.
 
@@ -323,14 +323,14 @@ class DBHandler:
 
         self.check_dbs()
 
-    def close(self):
+    def close(self) -> None:
         """
         Closes the connection to the SQLite database safely.
 
         :return: None
         """
 
-        with self.lock:
+        with self._lock:
             if self.conn:
                 self.conn.close()
         get_logger().info(f"database connection closed.")
@@ -369,7 +369,7 @@ class DBHandler:
         else:
             raise ValueError("window_dict['creation_datetime'] not a (datetime)")
 
-        with self.lock:
+        with self._lock:
             self.cursor.execute('''
                 INSERT INTO window_log (window_type, window_title, word_list, creation_datetime)
                 VALUES (?, ?, ?, ?)
@@ -411,7 +411,7 @@ class DBHandler:
                               f"input_dict: {input_dict}")
             return None
 
-        with self.lock:
+        with self._lock:
             self.cursor.execute('''
                 INSERT INTO input_log (window_id, count_key_pressed, count_mouse_pressed, 
                 count_direction_key_pressed, count_char_key_pressed, count_special_key_pressed, count_mouse_scrolls,
@@ -424,7 +424,8 @@ class DBHandler:
                   input_dict["count_right_mouse_pressed"], input_dict["count_middle_mouse_pressed"]))
             self.conn.commit()
 
-    def add_label(self, name:str, manually:bool, active:bool, creation_datetime:datetime,conditions= None) -> None | int:
+    def add_label(self, name: str, manually: bool, active: bool, creation_datetime: datetime,
+                  conditions: dict = None) -> None | int:
         """
         Inserts a label entry into the `label_catalog` table.
 
@@ -449,7 +450,7 @@ class DBHandler:
 
         # TODO: need to add some better error handeling, more visual for the user + the normal log writing
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute('''
                     INSERT INTO label_catalog (name, manually, active, conditions, creation_datetime)
                     VALUES (?, ?, ?, ?, ?)
@@ -482,14 +483,15 @@ class DBHandler:
             get_logger().info(f"{"Manually" if manually else "Auto"} Label added successfully. ID: {new_id}")
             return new_id
 
-    def update_label(self, id:int, name:str, manually:bool, active:bool, creation_datetime:datetime, conditions=None) -> None:
+    def update_label(self, label_id: int, name: str, manually: bool, active: bool, creation_datetime: datetime,
+                     conditions: dict = None) -> None:
         """
         Updates an existing label in the `label_catalog` table.
 
         The method modifies an existing label entry based on the provided ID. If conditions are
         provided, they will be serialized into a JSON string.
 
-        :param id: int (The ID of the label to update.)
+        :param label_id: int (The ID of the label to update.)
         :param name: str (The updated name of the label.)
         :param manually: bool (Specifies if the label is manually assigned.)
         :param active: bool (Indicates whether the label is active.)
@@ -498,12 +500,6 @@ class DBHandler:
         :return: None
         :raises ValueError: If `creation_datetime` is not a valid datetime object.
         """
-
-        # keys_needed = ["id", "name", "manually", "active", "conditions", "creation_datetime"]
-        # if not all(key in label_dict for key in keys_needed):
-        #     get_logger().warn(f"At least one missing key: {keys_needed}\n"
-        #                       f"label_dict: {label_dict}")
-        #     return None
 
         json_conditions = _to_json(conditions) if conditions else "{}"
         if not json_conditions:
@@ -518,24 +514,24 @@ class DBHandler:
 
         # TODO: need to add some better error handling, more visual for the user + the normal log writing
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute('''
                     UPDATE label_catalog 
                     SET name = ?, manually = ?, active = ?, conditions = ?, creation_datetime = ?
                     WHERE id = ?
                 ''', (name, manually, active,
-                      json_conditions, iso_creation_datetime, id))
+                      json_conditions, iso_creation_datetime, label_id))
 
                 self.conn.commit()
         except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while updating label ID {id}: {e}")
+            get_logger().error(f"Integrity error while updating label ID {label_id}: {e}")
             self.conn.rollback()
 
         except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error during update of label ID ID {id}: {e}")
+            get_logger().error(f"Operational error during update of label ID ID {label_id}: {e}")
 
         except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while updating label ID ID {id}: {e}")
+            get_logger().error(f"Database error while updating label ID ID {label_id}: {e}")
             self.conn.rollback()
 
         except Exception as e:
@@ -552,7 +548,7 @@ class DBHandler:
         """
 
         # TODO: Check when label id exist in con_window_label then set the labelname to "<Name>_deleted<id>" cuz unique
-        with self.lock:
+        with self._lock:
             try:
 
                 self.cursor.execute('''
@@ -601,7 +597,7 @@ class DBHandler:
         """
 
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute('''
                     SELECT id, name, manually, active, conditions, creation_datetime
                     FROM label_catalog
@@ -644,7 +640,8 @@ class DBHandler:
                          count_mouse_pressed: int = None, count_direction_key_pressed: int = None,
                          count_char_key_pressed: int = None, count_special_key_pressed: int = None,
                          count_mouse_scrolls: int = None, count_left_mouse_pressed: int = None,
-                         count_right_mouse_pressed: int = None, count_middle_mouse_pressed: int = None) -> list[dict] | None:
+                         count_right_mouse_pressed: int = None, count_middle_mouse_pressed: int = None) \
+            -> list[dict] | None:
         """
         Searches the `input_log` table based on the provided filters.
 
@@ -659,8 +656,6 @@ class DBHandler:
         If an OR condition is needed, this method must be called multiple times with different parameters,
         and the results combined programmatically.
 
-        :param start_time: datetime (Start of the search range. Defaults to 24 hours ago.)
-        :param end_time: datetime (End of the search range. Defaults to the current time.)
         :param count_key_pressed: int (Minimum number of total key presses to match.)
         :param count_mouse_pressed: int (Minimum number of total mouse button presses to match.)
         :param count_direction_key_pressed: int (Minimum number of directional key presses to match.)
@@ -672,7 +667,6 @@ class DBHandler:
         :param count_middle_mouse_pressed: int (Minimum number of middle mouse button presses to match.)
         :return: list[dict] | None (A list of matching input logs, or None if an error occurs.)
         """
-
 
         query = '''
             SELECT window_id, count_key_pressed, count_mouse_pressed, count_direction_key_pressed,    
@@ -701,7 +695,7 @@ class DBHandler:
         add_gt_condition("count_middle_mouse_pressed", count_middle_mouse_pressed)
 
         try:
-            with self.lock:
+            with self._lock:
                 out = []
                 self.cursor.execute(query, params)
                 rows = self.cursor.fetchall()
@@ -758,9 +752,12 @@ class DBHandler:
         :param start_time: datetime (Start of the search range. Defaults to 24 hours ago.)
         :param end_time: datetime (End of the search range. Defaults to the current time.)
         :param window_type: str (Filter for the type of the window. Matches substrings case-insensitively.)
-        :param window_title: str | list[str] (Filter for the title of the window. Matches substrings or multiple titles.)
-        :param word_list: str | list[str] (Filter for specific words associated with the window. Matches substrings or multiple words.)
-        :param label_list: int | list[int] (Filter for specific labels associated with the window. Checking for label_ids)
+        :param window_title: str | list[str] (Filter for the title of the window. Matches substrings
+        or multiple titles.)
+        :param word_list: str | list[str] (Filter for specific words associated with the window.
+        Matches substrings or multiple words.)
+        :param label_list: int | list[int] (Filter for specific labels associated with the window.
+        Checking for label_ids)
         :return: list[dict] | None (A list of matching window logs, or None if an error occurs.)
         """
 
@@ -769,7 +766,8 @@ class DBHandler:
         if end_time is None:
             end_time = datetime.now()
         query = '''
-            SELECT window_log.id, window_log.window_type, window_log.window_title, window_log.word_list, window_log.creation_datetime
+            SELECT window_log.id, window_log.window_type, window_log.window_title, window_log.word_list, 
+            window_log.creation_datetime
             FROM window_log'''
         if label_list:
             query += '''
@@ -819,7 +817,7 @@ class DBHandler:
         query += " ORDER BY window_log.creation_datetime ASC"
 
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute(query, params)
                 results = self.cursor.fetchall()
 
@@ -880,13 +878,13 @@ class DBHandler:
             else:
                 return DataFrame()
 
-    def get_inputs_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
+    def get_inputs_by_window_id(self, window_ids: int | tuple[int] | list[int]) -> DataFrame | None:
         """
         Retrieves input logs for a given window ID or multiple window IDs.
 
         This method fetches input logs from the `input_log` table based on the specified window IDs.
 
-        :param window_ids: int | tuple[int] (A single window ID or a tuple of window IDs.)
+        :param window_ids: int | tuple[int] | list[int] (A single window ID or a tuple of window IDs.)
         :return: DataFrame | None (A pandas DataFrame containing input logs, or None if an error occurs.)
         """
 
@@ -903,7 +901,7 @@ class DBHandler:
         )
 
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute(query, params)
 
         except sqlite3.IntegrityError as e:
@@ -925,7 +923,6 @@ class DBHandler:
             columns = [desc[0] for desc in self.cursor.description]
             data_out = DataFrame(self.cursor.fetchall(), columns=columns)
             return data_out
-
 
     def get_labels_by_window_id(self, window_ids: int | tuple[int]) -> DataFrame | None:
         """
@@ -955,7 +952,7 @@ class DBHandler:
         """.format(",".join(["?"] * len(params)))
 
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute(query, params)
 
         except sqlite3.IntegrityError as e:
@@ -986,9 +983,9 @@ class DBHandler:
             return data_out
 
     def add_filter(self, name:str, window_type: str = None, window_title: str = None,
-                  word_list: str | list[str] = None, label_list: int | list[int] = None,
-                  start_datetime: datetime = None, end_datetime: datetime = None,
-                  dynamic_time_frame: str = None):
+                   word_list: str | list[str] = None, label_list: int | list[int] = None,
+                   start_datetime: datetime = None, end_datetime: datetime = None,
+                   dynamic_time_frame: str = None) -> int:
         """
         Inserts a new filter entry into the `filter_catalog` table.
 
@@ -1020,13 +1017,13 @@ class DBHandler:
 
         # TODO: need to add some better error handeling, more visual for the user + the normal log writing
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute('''
-                            INSERT INTO filter_catalog (name, dynamic_time_frame, window_type, window_title, word_list, label_list,
-                            start_datetime, end_datetime, creation_datetime)
+                            INSERT INTO filter_catalog (name, dynamic_time_frame, window_type, window_title, 
+                            word_list, label_list, start_datetime, end_datetime, creation_datetime)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (name, dynamic_time_frame, window_type, window_title, json_word_list, json_label_list, iso_start_datetime,
-                              iso_end_datetime, datetime.now().isoformat()))
+                        ''', (name, dynamic_time_frame, window_type, window_title, json_word_list,
+                              json_label_list, iso_start_datetime, iso_end_datetime, datetime.now().isoformat()))
 
                 new_id = self.cursor.lastrowid
                 self.conn.commit()
@@ -1055,16 +1052,16 @@ class DBHandler:
             get_logger().info(f"Filter added successfully. ID: {new_id}")
             return new_id
 
-    def update_filter(self, id: int, name: str = None, window_type: str = None, window_title: str = None,
+    def update_filter(self, filter_id: int, name: str = None, window_type: str = None, window_title: str = None,
                       word_list: str | list[str] = None, label_list: int | list[int] = None,
                       start_datetime: datetime = None, end_datetime: datetime = None,
-                      dynamic_time_frame: str = None):
+                      dynamic_time_frame: str = None) -> None:
         """
         Updates an existing filter in the `filter_catalog` table.
 
         If any attributes are provided, they will replace the existing values for the given filter ID.
 
-        :param id: int (The ID of the filter to update.)
+        :param filter_id: int (The ID of the filter to update.)
         :param name: str | None (The updated name of the filter.)
         :param window_type: str | None (Updated window type filter.)
         :param window_title: str | None (Updated window title filter.)
@@ -1091,89 +1088,89 @@ class DBHandler:
 
         # TODO: Need to add better error handling, more visual for the user + the normal log writing
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute('''
                     UPDATE filter_catalog 
                     SET name = ?, dynamic_time_frame = ?, window_type = ?, window_title = ?, word_list = ?, label_list = ?,
                         start_datetime = ?, end_datetime = ?
                     WHERE id = ?
                 ''', (name, dynamic_time_frame, window_type, window_title, json_word_list, json_label_list,
-                      iso_start_datetime, iso_end_datetime, id))
+                      iso_start_datetime, iso_end_datetime, filter_id))
 
                 if self.cursor.rowcount == 0:
-                    get_logger().warning(f"Filter {id} not found. No update performed.")
+                    get_logger().warning(f"Filter {filter_id} not found. No update performed.")
                     return False
 
                 self.conn.commit()
 
         except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while updating filter {id}: {e}")
+            get_logger().error(f"Integrity error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error while updating filter {id}: {e}")
+            get_logger().error(f"Operational error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while updating filter {id}: {e}")
+            get_logger().error(f"Database error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         except Exception as e:
-            get_logger().error(f"Unexpected error while updating filter {id}: {e}")
+            get_logger().error(f"Unexpected error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         else:
-            get_logger().info(f"Filter {id} updated successfully.")
+            get_logger().info(f"Filter {filter_id} updated successfully.")
             return True
 
-    def delete_filter(self, id: int):
+    def delete_filter(self, filter_id: int) -> None:
         """
         Deletes a filter from the `filter_catalog` table.
 
         If the filter does not exist, a warning is logged.
 
-        :param id: int (The ID of the filter to delete.)
+        :param filter_id: int (The ID of the filter to delete.)
         :return: bool (True if the deletion was successful, False otherwise.)
         """
 
         try:
-            with self.lock:
-                self.cursor.execute("DELETE FROM filter_catalog WHERE id = ?", (id,))
+            with self._lock:
+                self.cursor.execute("DELETE FROM filter_catalog WHERE id = ?", (filter_id,))
                 if self.cursor.rowcount == 0:
-                    get_logger().warning(f"Filter {id} not found.")
+                    get_logger().warning(f"Filter {filter_id} not found.")
                     return False
 
                 self.conn.commit()
 
         except sqlite3.IntegrityError as e:
-            get_logger().error(f"Integrity error while updating filter {id}: {e}")
+            get_logger().error(f"Integrity error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         except sqlite3.OperationalError as e:
-            get_logger().error(f"Operational error while updating filter {id}: {e}")
+            get_logger().error(f"Operational error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         except sqlite3.DatabaseError as e:
-            get_logger().error(f"Database error while updating filter {id}: {e}")
+            get_logger().error(f"Database error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         except Exception as e:
-            get_logger().error(f"Unexpected error while updating filter {id}: {e}")
+            get_logger().error(f"Unexpected error while updating filter {filter_id}: {e}")
             self.conn.rollback()
             return False
 
         else:
-            get_logger().info(f"Filter {id} deleted successfully.")
+            get_logger().info(f"Filter {filter_id} deleted successfully.")
             return True
 
-    def get_all_filters(self):
+    def get_all_filters(self) -> list[dict] | False:
         """
         Retrieves all filters from the `filter_catalog` table.
 
@@ -1183,7 +1180,7 @@ class DBHandler:
         """
 
         try:
-            with self.lock:
+            with self._lock:
                 self.cursor.execute(
                     "SELECT id, name, dynamic_time_frame, window_type, window_title, word_list, "
                     "label_list, start_datetime, end_datetime "
@@ -1242,7 +1239,7 @@ def start_db() -> None:
 
 def stop_db() -> None:
     """
-    Stops the database connection.
+    Closes the database connection.
 
     :return: None
     """

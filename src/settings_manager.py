@@ -78,11 +78,11 @@ class UserSettingsManager:
 
     def __init__(self):
         """
-        Initializes the `UserSettingsManager` singleton.
+        Initializes the `UserSettingsManager` singleton instance.
 
-        This method sets up the base attributes for managing user-specific settings,
-        including paths for saving/loading settings, thread safety mechanisms, and
-        default project-specific attributes.
+        Sets up paths for saving/loading settings, a thread lock for safety, and default values
+        for project-specific attributes such as GUI theme and resolution. Ensures that the class
+        is only initialized once.
 
         :return: None
         """
@@ -100,7 +100,7 @@ class UserSettingsManager:
             self._gui_theme = "darkly"
             self._gui_resolution: list[int] = [800, 600]
 
-    def init_all_properties(self):
+    def init_all_properties(self) -> None:
         """
         Initializes all attributes of the class as properties for dynamic access.
 
@@ -110,7 +110,7 @@ class UserSettingsManager:
         for ky, vl in self.get_attributes_as_dict().items():
             self.init_property(ky, vl)
 
-    def init_property(self, property_name, property_default_value):
+    def init_property(self, property_name, property_default_value) -> None:
         """
         Initializes an individual attribute as a property with a getter and setter.
 

@@ -21,8 +21,16 @@ from helper_classes import DynamicTimeframe
 from log_handler import get_logger
 from db_connector import DBHandler, start_db, stop_db
 
-def _return_datetime(str_or_datetime):
+
+def _return_datetime(str_or_datetime) -> datetime:
+    """
+    Converts an input value to a datetime object.
+
+    :param str_or_datetime: datetime or str (A datetime object or an ISO-format date/time string.)
+    :return: datetime (A datetime object corresponding to the input.)
+    """
     return str_or_datetime if isinstance(str_or_datetime, datetime) else datetime.fromisoformat(str_or_datetime)
+
 
 class DatabaseFilter:
     """
@@ -55,7 +63,7 @@ class DatabaseFilter:
     def __init__(self, name: str, window_type: str = None, window_title: str = None,
                  word_list: str | list[str] = None, label_list: int | list[int] = None,
                  start_datetime: datetime = None, end_datetime: datetime = None,
-                 dynamic_time_frame: DynamicTimeframe | str = None, id: int = None):
+                 dynamic_time_frame: DynamicTimeframe | str = None, filter_id: int = None):
         """
         Initializes a `DatabaseFilter` instance.
 
@@ -70,7 +78,7 @@ class DatabaseFilter:
         :param start_datetime: datetime | None (Start time for filtering.)
         :param end_datetime: datetime | None (End time for filtering.)
         :param dynamic_time_frame: DynamicTimeframe | str | None (A dynamic time frame or its string representation.)
-        :param id: int | None (Filter ID if loaded from the database.)
+        :param filter_id: int | None (Filter ID if loaded from the database.)
         :raises ValueError: If neither a dynamic time frame nor valid start/end times are provided.
         :return: None
         """
@@ -80,13 +88,12 @@ class DatabaseFilter:
 
         self._lock = Lock()
         self._name = name
-        self._id = id
+        self._id = filter_id
 
         self._window_type: str = window_type
         self._window_title: str = window_title
         self._word_list: str | list[str] = word_list
         self._label_list: int | list[int] = label_list
-
 
         self._start_datetime: datetime = _return_datetime(start_datetime) if start_datetime else None
         self._end_datetime: datetime = _return_datetime(end_datetime) if end_datetime else None
@@ -101,7 +108,7 @@ class DatabaseFilter:
             self.save_to_db()
         DatabaseFilter._all_filter.append(self)
 
-    def get_dataframe(self):
+    def get_dataframe(self) -> DataFrame:
         """
         Retrieves a pandas DataFrame containing data filtered by the current filter settings.
 
@@ -121,7 +128,7 @@ class DatabaseFilter:
                                             start_time=start_datetime, end_time=end_datetime)
         return out
 
-    def save_to_db(self):
+    def save_to_db(self) -> None:
         """
         Saves the current filter to the database if it has not been stored yet.
 
@@ -132,13 +139,19 @@ class DatabaseFilter:
         """
 
         with self._lock:
-            filter_id = DBHandler().add_filter(name=self._name, word_list=self._word_list, window_type=self._window_type,
+            _id = DBHandler().add_filter(name=self._name, word_list=self._word_list, window_type=self._window_type,
                                    window_title=self._window_title, label_list=self._label_list,
                                    start_datetime=self._start_datetime, end_datetime=self._end_datetime,
                                    dynamic_time_frame=self._dynamic_time_frame.value)
-            self._id = filter_id
+            self._id = _id
 
-    def as_dict(self):
+    def as_dict(self) -> dict:
+        """
+        Serializes the filter's parameters into a dictionary.
+
+        :return: dict (Dictionary containing the filter's name, criteria, and time frame settings.)
+        """
+
         with self._lock:
             filter_dict = {
                 "name": self._name,
@@ -156,7 +169,7 @@ class DatabaseFilter:
 
         return filter_dict
 
-    def _update_in_db(self):
+    def _update_in_db(self) -> None:
         """
         Updates the filter entry in the database with the current values.
 
@@ -168,7 +181,7 @@ class DatabaseFilter:
         with (self._lock):
             time_frame_value = self._dynamic_time_frame.value if isinstance(self._dynamic_time_frame,
                                                                             DynamicTimeframe) else None
-            DBHandler().update_filter(id=self._id, name=self._name, word_list=self._word_list,
+            DBHandler().update_filter(filter_id=self._id, name=self._name, word_list=self._word_list,
                                       window_type=self._window_type, window_title=self._window_title,
                                       label_list=self._label_list, dynamic_time_frame=time_frame_value,
                                       end_datetime=self._end_datetime, start_datetime=self._start_datetime)
@@ -195,7 +208,6 @@ class DatabaseFilter:
         :param start_datetime: datetime | str | None (Updated start time or empty string to reset.)
         :param end_datetime: datetime | str | None (Updated end time or empty string to reset.)
         :raises ValueError: If both `start_datetime`/`end_datetime` and `dynamic_time_frame` are provided.
-        :raises ValueError: If no changes were made.
         :return: None
         """
 
@@ -270,7 +282,7 @@ class DatabaseFilter:
         if changed:
             self._update_in_db()
 
-    def delete_in_db(self):
+    def delete_in_db(self) -> None:
         """
         Deletes the filter from the database and removes it from the internal list.
 
@@ -279,22 +291,34 @@ class DatabaseFilter:
         :return: None
         """
         with self.lock():
-            DBHandler().delete_filter(id=self._id)
+            DBHandler().delete_filter(filter_id=self._id)
             DatabaseFilter._all_filter.remove(self)
             del self
 
     @property
-    def id(self):
+    def id(self) -> int:
+        """
+        Returns the unique database ID of this filter, if it has been saved.
+
+        :return: int | None (The filter’s ID in the database, or None if not saved.)
+        """
+
         with self._lock:
             return self._id
 
     @property
-    def name(self):
+    def name(self) -> str:
+        """
+        Returns the name of the filter.
+
+        :return: str (The filter’s name.)
+        """
+
         with self._lock:
             return self._name
 
     @classmethod
-    def load_from_db(cls):
+    def load_from_db(cls) -> None:
         """
         Loads all filters stored in the database and initializes them as `DatabaseFilter` instances.
 
@@ -307,7 +331,13 @@ class DatabaseFilter:
             cls(**fil)
 
     @classmethod
-    def get_all_filter(cls):
+    def get_all_filter(cls) -> list['DatabaseFilter']:
+        """
+        Returns the list of all initialized `DatabaseFilter` instances.
+
+        :return: list[DatabaseFilter] (All filter instances currently in memory.)
+        """
+
         return cls._all_filter
 
     @classmethod
@@ -336,19 +366,15 @@ class DatabaseFilter:
             if fil.name == name:
                 return fil
 
-    # TODO: think about a deeper way to connect filters. this is just one layer, but we need multilayer
     @classmethod
     def combine_filters(cls, main_filter, sub_filter_list) -> DataFrame:
         """
-        Combines two filters into a single DataFrame, either merging or subtracting their data.
+        Combines a main filter with a list of sub-filters to produce a merged dataset.
 
-        The parameter sub_filter_list includes a 2D list, each of the lists inside are
-        created by a filter and a bool value, the bool value is for checking if added or not.
-        If the value is false, the sub filter will be subtracted from the main filter.
-        Otherwise, it will be added adn drops duplicates.
+        The sub-filters are provided as a 2D list, where each inner list contains a `DatabaseFilter` (or sub-filter) and a boolean flag. If the flag is False, that sub-filter’s data will be subtracted from the main filter’s data; if True, it will be added (with duplicates dropped).
 
-        :param main_filter: DatabaseFilter (The main filter to use.)
-        :param sub_filter_list: list[list[DatabaseFilter, bool]]
+        :param main_filter: DatabaseFilter (The primary filter to apply.)
+        :param sub_filter_list: list[list[DatabaseFilter, bool]] (List of [filter, add_flag] pairs to combine with the main filter.)
         :return: DataFrame (The resulting pandas DataFrame after applying the combination logic.)
         """
 

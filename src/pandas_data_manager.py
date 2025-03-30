@@ -16,6 +16,7 @@ from threading import Lock, Thread
 from time import sleep
 from pandas import DataFrame, Series
 from matplotlib.collections import PolyCollection
+from matplotlib.figure import Figure
 
 # TODO: Minimize this imports to only import methods needed.
 import matplotlib.pyplot as plt
@@ -31,14 +32,22 @@ from helper_classes import Classproperty, ColorPicker, Seconds
 from io import BytesIO
 from PIL import Image, ImageTk
 
+
 def fig_to_tk_image(fig, dpi=100) -> ImageTk.PhotoImage:
     """
-    Converts a Matplotlib figure to a Tkinter-compatible PhotoImage.
+    Converts a Matplotlib figure into a Tkinter-compatible PhotoImage.
 
-    :param fig: Matplotlib figure object.
-    :param dpi: Resolution for rendering (default: 100).
-    :return: Tkinter-compatible PhotoImage.
+    This function saves a Matplotlib figure to an in-memory PNG buffer and loads it as a PIL image,
+    then converts it into a format suitable for display in Tkinter GUIs.
+
+    :param fig: matplotlib.figure.Figure
+        The Matplotlib figure to convert.
+    :param dpi: int
+        The resolution (dots per inch) for the rendered image. Default is 100.
+    :return: ImageTk.PhotoImage
+        A Tkinter-compatible image that can be used in GUI widgets like `Label` or `Canvas`.
     """
+
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
     buf.seek(0)
@@ -68,11 +77,14 @@ class ViperDF:
         """
         Initializes the ViperDF instance with a name and a pandas DataFrame.
 
-        :param name: str (The identifier name for this dataset. If prefixed with "app:" or "label:", it indicates the context.)
-        :param main_df: DataFrame (The pandas DataFrame containing the data to be analyzed.)
-        :return: None
-        """
+        This constructor sets up the analysis structure, label/app detection flags, and plotting attributes.
+        It also validates the DataFrame schema and prepares the object for future analysis and plotting.
 
+        :param name: str
+            The name identifier for the dataset, typically prefixed with 'app:' or 'label:'.
+        :param main_df: pandas.DataFrame
+            The primary DataFrame containing window tracking data.
+        """
 
         # NOT USED: do we really need prefix here?
         # Naming should be "name" or "label:blahh" or "app:blahh" if name includes ":" check for app/label
@@ -100,7 +112,6 @@ class ViperDF:
         self.image_app_vbar_plot = None
         self.image_label_vbar_plot = None
 
-
         self.analysis_results["major_formatter_x"] = mdates.DateFormatter("%H:%M:%S")
         self._activity_ax = None
         self._app_ax = None
@@ -110,11 +121,12 @@ class ViperDF:
 
         self.__init_label_plot_helper()
 
-    def __init_label_plot_helper(self):
+    def __init_label_plot_helper(self) -> None:
         """
-        Initializes internal helper attributes for label plotting, used for resets.
+        Initializes internal helper attributes for label plotting.
 
-        This sets up default values (e.g., start_y, bar_height, y_spacing) in a helper dictionary for label bar plots.
+        Sets default plotting offsets such as y-position, bar height, and spacing,
+        used for drawing horizontal label bars in the visualization.
 
         :return: None
         """
@@ -129,7 +141,10 @@ class ViperDF:
         """
         Returns a human-readable string with the VDF name and its DataFrame content.
 
-        :return: str (A string representation of the ViperDF, including name and DataFrame info.)
+        This representation is useful for debugging and logs, showing the dataset name
+        and the underlying DataFrame.
+
+        :return: str
         """
 
         return f"VDF '{self.name}':\n{str(self._main_df)}"
@@ -138,7 +153,9 @@ class ViperDF:
         """
         Returns a human-readable string with the VDF name and its DataFrame content.
 
-        :return: str (A string representation of the ViperDF, including name and DataFrame info.)
+        This method mirrors `__repr__` and provides a friendly summary for display.
+
+        :return: str
         """
 
         return f"VDF '{self.name}':\n{str(self._main_df)}"
@@ -147,7 +164,11 @@ class ViperDF:
         """
         Checks whether the main DataFrame contains all required columns for analysis.
 
-        :return: bool (True if all required columns are present in the DataFrame, False otherwise.)
+        This method ensures the DataFrame has all necessary columns used in later computations
+        and visualizations (e.g., input counts, timestamps, labels).
+
+        :return: bool
+            True if all required columns are present, False otherwise.
         """
 
         needed_columns = ["window_id", "window_type", "window_title", "word_list", "creation_datetime", "activity",
@@ -161,11 +182,29 @@ class ViperDF:
 
     @property
     def time_range_str(self) -> str:
+        """
+        Provides a human-readable representation of the overall time range in the data.
+
+        Returns the formatted start and end timestamps as a single string.
+        If either timestamp is missing, an empty string is returned.
+
+        :return: str
+        """
+
         start = self.analysis_results.get("first_datetime", "")
         end = self.analysis_results.get("last_datetime", "")
         return f"{start} - {end}" if start and end else ""
 
     def main_infos(self) -> list[tuple[str, str]]:
+        """
+        Collects key summary metrics from the analysis results.
+
+        Returns high-level statistics such as the number of apps and labels, active time,
+        tracked time, and entry counts. Returns an empty list if the dataset is not yet analyzed.
+
+        :return: list[tuple[str, str]]
+        """
+
         if not self._is_analyzed:
             return []
 
@@ -187,15 +226,15 @@ class ViperDF:
             ("Unlabeled entries: ", str(ar.get("entry_count_unlabeled", ""))),
         ]
 
-    def split_data_on_label(self) -> list:
+    def split_data_on_label(self) -> list['ViperDF']:
         """
-        Splits the data into multiple ViperDF instances based on each unique label in the data.
+        Splits the data into multiple ViperDF instances based on each unique label.
 
-        This method creates a new ViperDF for each label found (excluding cases where the filtered data equals the entire dataset).
-        Each new ViperDF is analyzed automatically.
+        Each new instance represents a filtered subset of the main DataFrame containing entries
+        for a specific label. The method requires prior analysis.
 
-        :raises ValueError: If the main DataFrame has not been analyzed yet (`analyze()` not called).
-        :return: list[ViperDF] (A list of new ViperDF objects, one for each unique label.)
+        :raises ValueError: If `analyze()` has not been called.
+        :return: list[ViperDF]
         """
 
         # NOT USED: This whole methode. split data on label
@@ -217,15 +256,15 @@ class ViperDF:
 
             return n_vdf
 
-    def split_data_on_app(self) -> list:
+    def split_data_on_app(self) -> list['ViperDF']:
         """
-        Splits the data into multiple ViperDF instances based on each unique application (window type).
+        Splits the data into multiple ViperDF instances based on each unique application.
 
-        This method creates a new ViperDF for each distinct window_type found (excluding cases where the filtered data equals the entire dataset).
-        Each new ViperDF is analyzed automatically.
+        Each new instance is based on the `window_type` field and contains entries for that application only.
+        The method requires prior analysis.
 
-        :raises ValueError: If the main DataFrame has not been analyzed yet (`analyze()` not called).
-        :return: list[ViperDF] (A list of new ViperDF objects, one for each unique application type.)
+        :raises ValueError: If `analyze()` has not been called.
+        :return: list[ViperDF]
         """
 
         # NOT USED: Split data on app needed?
@@ -247,13 +286,13 @@ class ViperDF:
 
     def plot(self):
         """
-        Generates all necessary plots for this dataset and combines them into a main figure.
+        Generates all necessary plots and assembles them into a single figure.
 
-        This method creates the activity line plot, application usage bar chart, and label usage bar chart,
-        then combines these axes into a single Matplotlib figure. It must be called before retrieving any figure or axes.
+        This includes the activity line plot, application usage bar chart, and label usage bar chart.
+        Must be called after `analyze()`.
 
-        :raises ValueError: If the main DataFrame has not been analyzed yet (`analyze()` not called).
-        :return: None
+        :raises ValueError: If the DataFrame has not been analyzed.
+        :return: ViperDF (self)
         """
 
         if not self._is_analyzed:
@@ -269,15 +308,14 @@ class ViperDF:
         self._is_plotted = True
         return self
 
-    def change_chosen_labels(self, label_list: str | list[str]):
+    def change_chosen_labels(self, label_list: str | list[str]) -> None:
         """
-        Updates which labels are displayed on the combined label plot (main figure), limiting the number shown.
+        Updates the label plot to display only the selected labels.
 
-        This method recalculates and redraws the label horizontal bar chart using the specified label or list of labels.
-        It ensures that no more than 5 labels are displayed to maintain readability.
+        Accepts a string or list of up to 5 label names and redraws the label plot accordingly.
 
-        :param label_list: str | list[str] (The label(s) to display on the label plot. Can be a single label or a list of labels (max 5).)
-        :raises ValueError: If `label_list` is empty or contains more than 5 labels.
+        :param label_list: str | list[str]
+        :raises ValueError: If list is empty or exceeds 5 entries.
         :return: None
         """
 
@@ -290,14 +328,14 @@ class ViperDF:
         self._update_ax_hbar_labels(label_list)
         self._combine_axes()
 
-    def analyze(self):
+    def analyze(self) -> 'ViperDF':
         """
-        Performs all analysis steps on the main DataFrame in the proper sequence.
+        Performs full analysis of the dataset including time, input, app, and label metrics.
 
-        This method calls the internal analysis functions in order (time analysis, input analysis, then app and label analysis as applicable).
-        As a result, the `analysis_results` dictionary is populated with metrics (time frame, activity counts, etc.), and the data is prepared for plotting.
+        This method updates the `analysis_results` dictionary with computed values and prepares
+        data for plotting.
 
-        :return: None
+        :return: ViperDF (self)
         """
 
         if not self.empty:
@@ -312,12 +350,12 @@ class ViperDF:
 
     def _time_analysis(self):
         """
-        Analyzes time-related data and populates corresponding entries in `analysis_results`.
+        Performs time-based analysis on the dataset and populates time-related metrics.
 
-        Determines the first and last timestamps, total tracked duration, active vs. inactive time,
-        and chooses an appropriate time-axis formatter based on the overall time frame.
+        Calculates first and last timestamps, total tracked time, active/inactive time,
+        and chooses the appropriate x-axis formatter based on the range.
 
-        :raises ValueError: If the computed time frame interval is not recognized.
+        :raises ValueError: If the time range does not match expected categories.
         :return: None
         """
 
@@ -356,12 +394,12 @@ class ViperDF:
         self.analysis_results["percent_active"] = round((self.analysis_results["active_secs"]/(
                                                     self.analysis_results["tracked_seconds"]/100)), 2)
 
-    def _input_analysis(self):
+    def _input_analysis(self) -> None:
         """
-        Analyzes input-related metrics and populates corresponding entries in `analysis_results`.
+        Aggregates input data over time and stores activity metrics in bins.
 
-        Aggregates key press and mouse activity counts into time bins (using a default of 5-second intervals or adjusted interval based on data size).
-        Creates an internal DataFrame `_activity_df` with aggregated activity counts and computes a relative activity percentage for each time bin.
+        Groups data into intervals, sums input counts, calculates relative activity levels,
+        and stores result in `_activity_df`.
 
         :return: None
         """
@@ -420,12 +458,11 @@ class ViperDF:
         self.analysis_results["highest_activity_value"] = highest_activity_value
         self._activity_df = bins_df
 
-    def _app_analysis(self):
+    def _app_analysis(self) -> None:
         """
-        Analyzes application (window type) usage data and populates corresponding entries in `analysis_results`.
+        Analyzes application usage by counting occurrences of each window type.
 
-        Computes the number of unique applications and their occurrence counts from the DataFrame,
-        storing them under `analysis_results["apps"]`. This prepares the data for further grouping and plotting of app usage.
+        Stores total counts and prepares data for grouped display and percentage charts.
 
         :return: None
         """
@@ -434,12 +471,11 @@ class ViperDF:
         self.analysis_results["apps"] = {"count_unique": len(app_win_count), "entries": app_win_count}
         self._create_grouped_app_df()
 
-    def _label_analysis(self):
+    def _label_analysis(self) -> None:
         """
-        Analyzes label usage data and populates corresponding entries in `analysis_results`.
+        Analyzes label usage across entries and computes label-related statistics.
 
-        Computes the total number of labeled and unlabeled entries, and counts occurrences of each unique label in the DataFrame.
-        Results are stored under `analysis_results["labels"]`. This prepares the data for further grouping and plotting of label usage.
+        Counts labeled/unlabeled entries, label frequencies, and prepares grouped data for plots.
 
         :return: None
         """
@@ -453,13 +489,12 @@ class ViperDF:
         self.analysis_results["labels"] = {"count_unique": len(label_counts), "entries": label_counts}
         self._create_grouped_label_df()
 
-    def _create_grouped_app_df(self):
+    def _create_grouped_app_df(self) -> None:
         """
-        Groups consecutive log entries of the same application into combined time intervals.
+        Groups consecutive identical application entries into usage segments.
 
-        This method condenses the raw 5-second interval data by merging adjacent entries with the same window_type and window_title,
-        if they occur in succession (with no more than a 8-second gap). It produces `_grouped_app_df` containing start time, end time,
-        mid time, and duration for each continuous application usage segment, and then calculates summary statistics per application.
+        Segments are determined based on app name, title, and time continuity.
+        Also assigns color and computes overall usage percentages for each app.
 
         :return: None
         """
@@ -523,12 +558,12 @@ class ViperDF:
         self._grouped_app_summary_df = app_summary_df.sort_values("overall_percent", ascending=False)
         self._combine_small_app_entries()
 
-    def _combine_small_app_entries(self):
+    def _combine_small_app_entries(self) -> None:
         """
-        Combines small application entries into an "Others" category for cleaner visualization.
+        Combines minor application entries into a single 'Others' category for clarity.
 
-        Application entries with an overall percentage below a certain threshold (currently 2%) are merged into a single "Others" entry.
-        The combined entry accumulates the duration and percentage of these small entries, and stores details of the merged items for tooltip display.
+        Merges apps with less than 2% usage into one row, aggregates their data,
+        and saves details for tooltip display in plots.
 
         :return: None
         """
@@ -566,25 +601,21 @@ class ViperDF:
         df = pd.concat([df, new_row], ignore_index=True)
         self._grouped_app_summary_df = df
 
-
-    def _create_grouped_label_df(self):
+    def _create_grouped_label_df(self) -> None:
         """
-        Groups consecutive time segments for each label into combined intervals.
+        Groups continuous labeled entries into segments and assigns colors.
 
-        This method filters out unlabeled entries and explodes the list of labels per entry.
-        Consecutive entries of the same label (with no more than an 8-second gap between segments) are merged into one segment with a start and end time.
-        The result `_grouped_label_df` contains label_name, start_time, end_time, and duration for each continuous label usage segment, and assigns a color to each label.
+        Explodes the label list, merges entries by label and time proximity,
+        calculates durations, and creates summary statistics with color mappings.
 
         :return: None
         """
 
         if self._main_df is None or self._main_df.empty:
             print("No data available.")
-            return pd.DataFrame(columns=["label_name", "start_time", "end_time"])
 
         # Filter only rows with labels
         label_data = self._main_df.dropna(subset=["label_list"]).copy()
-
 
         label_data = label_data.explode("label_list")
         label_data["start_time"] = label_data["creation_datetime"] - pd.to_timedelta(5, unit='s')
@@ -637,12 +668,12 @@ class ViperDF:
         self._grouped_label_summary_df = label_summary_df.sort_values("overall_percent", ascending=False)
         self._combine_small_label_entries()
 
-    def _combine_small_label_entries(self):
+    def _combine_small_label_entries(self) -> None:
         """
-        Combines labels with very small usage percentages into an "Others" category for plotting clarity.
+        Combines low-percentage labels into an 'Others' entry for better plot readability.
 
-        Label entries contributing less than 2% of the total labeled time are merged into a single "Others" entry.
-        This combined entry accumulates the duration and percentage of these minor labels, and stores details of which labels were merged.
+        Merges labels under 2% usage, aggregates durations and details,
+        and appends the result to the summary DataFrame.
 
         :return: None
         """
@@ -673,17 +704,25 @@ class ViperDF:
         self._grouped_label_summary_df = df
 
     def _px_to_inch(self, px):
+        """
+        Converts a pixel value to inches based on current plot DPI.
+
+        Used for scaling Matplotlib plots to match pixel-based dimensions.
+
+        :param px: float (Pixel value to convert.)
+        :return: float (Equivalent value in inches.)
+        """
+
         return px / self.plot_dpi
 
-    def _get_ax_line_activity(self):
+    def _get_ax_line_activity(self) -> None:
         """
-        Creates the activity line plot Axes and prepares it for interactivity.
+        Creates the activity line chart Axes with smoothing and interactive features.
 
-        Generates a Matplotlib Axes (with a line plot of activity percentage over time) at the specified DPI granularity.
-        Ensures the first and last data points are zero for closure, adjusts line thickness based on data density, and stores the Axes internally.
-        Dynamic hover elements (marker and annotation) are set up via a helper method.
+        Builds a time-vs-activity line plot using offset points for better transitions.
+        Stores Axes and data for dynamic hover effects.
 
-        :return: Axes (The Matplotlib Axes object for the activity line plot. Returns an Axes even if no data is available.)
+        :return: None
         """
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
@@ -734,19 +773,18 @@ class ViperDF:
         self._set_x_lim(ax)
 
         # Adding Dynamic functions and saving data for it
-        self.__activity_plot_helper = {}
-        self.__activity_plot_helper["data"] = activity_plot_data
+        self.__activity_plot_helper = {"data": activity_plot_data}
         self.__init_plot_data_activity(ax)
         self._activity_ax = ax
 
-    def __init_plot_data_activity(self, ax):
+    def __init_plot_data_activity(self, ax) -> None:
         """
-        Initializes interactive elements for the activity plot Axes.
+        Initializes interactive hover elements for the activity plot.
 
-        Adds a red marker and annotation text box to the activity Axes for displaying values on hover.
-        Also connects the motion_notify_event of the figure canvas to the internal hover callback.
+        Adds a red marker and annotation text to display activity percentage at cursor position.
+        Binds the motion event to an internal hover callback.
 
-        :param ax: Axes (The Matplotlib Axes on which to initialize hover annotation elements.)
+        :param ax: Axes (Target Matplotlib Axes for hover elements.)
         :return: None
         """
 
@@ -762,15 +800,14 @@ class ViperDF:
 
     def __activity_on_hover(self, event):
         """
-        Internal callback to handle mouse hover events on the activity line plot.
+        Handles mouse hover events for the activity line chart.
 
-        Updates the visibility and position of the hover marker and annotation to show the nearest activity percentage value when the cursor moves over the plot.
-        Only activates when the cursor is within the y-range of 0-100% on the designated activity Axes.
+        Displays a marker and annotation near the closest activity point if within bounds,
+        and hides them when outside the activity area.
 
-        :param event: Event (Matplotlib mouse motion event.)
+        :param event: Event (Matplotlib motion event.)
         :return: None
         """
-
 
         # This part ensures, that it only runs in the correct axis
         if event.inaxes != self.__activity_plot_helper["ax"]:
@@ -801,20 +838,20 @@ class ViperDF:
         self.__activity_plot_helper["marker"].set_data([closest_time], [closest_value])
         self.__activity_plot_helper["marker"].set_visible(True)
         self.__activity_plot_helper["annotation"].xy = (closest_time, closest_value)
-        self.__activity_plot_helper["annotation"].set_text(f"{closest_time.strftime('%H:%M:%S')}\n{closest_value:.2f} % Activity")
+        self.__activity_plot_helper["annotation"].set_text(f"{closest_time.strftime('%H:%M:%S')}\n"
+                                                           f"{closest_value:.2f} % Activity")
         self.__activity_plot_helper["annotation"].set_visible(True)
 
         self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
 
-    def _get_ax_hbar_apps(self):
+    def _get_ax_hbar_apps(self) -> None:
         """
-        Creates the horizontal bar chart Axes for application usage over time.
+        Creates the horizontal bar chart for application usage.
 
-        Generates a Matplotlib Axes showing colored horizontal bars for each continuous application usage segment (from `_grouped_app_df`).
-        Also initializes an internal helper structure for dynamic hover and selection (including a vertical hover line, triangles, and annotation).
-        The Axes is stored internally for later combination.
+        Generates bars from grouped app intervals and initializes hover/selection interactivity.
+        Saves the Axes for further combination in the main plot.
 
-        :return: Axes (The Matplotlib Axes object for the application horizontal bar chart.)
+        :return: None
         """
 
         if self.main_plot_size is not None:
@@ -854,14 +891,14 @@ class ViperDF:
 
         self._app_ax = ax
 
-    def __init_plot_data_apps(self, ax):
+    def __init_plot_data_apps(self, ax) -> None:
         """
-        Initializes interactive elements for the application usage bar chart Axes.
+        Initializes interactive elements for application usage bars.
 
-        Sets up a red dotted hover line spanning the full bar height, red triangle markers at the bar ends, and an annotation text box.
-        Connects motion, click, and key press events on the figure canvas to internal callbacks for hover and selection.
+        Sets up hover line, selection triangles, and annotation text box.
+        Binds events for hover, click, and keyboard control.
 
-        :param ax: Axes (The Matplotlib Axes for the application bar chart.)
+        :param ax: Axes (Target Axes for interactivity setup.)
         :return: None
         """
 
@@ -876,8 +913,8 @@ class ViperDF:
 
         self.__app_plot_helper["annotation"] = ax.annotate("", xy=(0, self.__app_plot_helper["start_y"]),
                                                            xytext=(10, 10), textcoords="offset points",
-                                                             bbox=dict(boxstyle="round", fc="white",
-                                                             ec="purple", alpha=0.9), visible=False)
+                                                           bbox=dict(boxstyle="round", fc="white",
+                                                           ec="purple", alpha=0.9), visible=False)
 
         self.__app_plot_helper["static_mode"] = False
         self.__app_plot_helper["selected_index"] = None
@@ -886,16 +923,14 @@ class ViperDF:
         ax.figure.canvas.mpl_connect("button_press_event", self.__app_on_click)
         ax.figure.canvas.mpl_connect("key_press_event", self.__app_on_key)
 
-    def __app_reset_annotation(self):
+    def __app_reset_annotation(self) -> None:
         """
-        Resets all hover and selection indicators on the application bar chart.
+        Clears current selection and hides all interactive elements in the app bar plot.
 
-        Turns off static mode and clears any selected index.
-        Hides the hover line, annotation, and triangle markers, and refreshes the canvas.
+        Resets static mode and triggers a canvas redraw to update plot display.
 
         :return: None
         """
-
 
         self.__app_plot_helper["static_mode"] = False
         self.__app_plot_helper["selected_index"] = None
@@ -905,16 +940,14 @@ class ViperDF:
         self.__app_plot_helper["triangle_down"].set_visible(False)
         self.__app_plot_helper["ax"].figure.canvas.draw_idle()
 
-    def __app_update_selection(self, index):
+    def __app_update_selection(self, index) -> None:
         """
-        Updates the application bar chart to highlight a specific entry by index.
+        Highlights a specific application usage entry in the bar chart.
 
-        Given an index in the `_grouped_app_df`, this sets that entry as selected:
-        it draws the vertical hover line at the entry's midpoint, displays red triangle markers at the bar's top and bottom,
-        and shows an annotation with the entry’s start time, end time, window type, and window title.
-        The annotation position and alignment are adjusted based on the entry’s position in the list.
+        Draws a vertical line and annotation at the selected entry's midpoint,
+        showing start/end time, app name, and title. Adjusts label alignment dynamically.
 
-        :param index: int (The index of the application entry to select and highlight.)
+        :param index: int (Index of the entry in `_grouped_app_df`.)
         :return: None
         """
 
@@ -956,20 +989,20 @@ class ViperDF:
 
     def __app_on_hover(self, event):
         """
-        Internal callback to handle mouse hover events on the application bar chart.
+        Handles mouse hover over the application bar chart.
 
-        If the cursor is over the horizontal bar chart (and not in static selection mode),
-        this finds the bar segment nearest to the cursor's X position and highlights it by updating the selection (via __app_update_selection).
-        If the cursor moves outside the bar region, it clears the highlight.
+        Selects and highlights the closest application usage segment under the cursor,
+        unless static mode is active.
 
-        :param event: Event (Matplotlib mouse motion event.)
+        :param event: Event (Matplotlib motion event.)
         :return: None
         """
 
         if event.inaxes != self.__app_plot_helper["ax"] or self.__app_plot_helper["static_mode"]:
             return
 
-        if event.ydata is None or not (self.__app_plot_helper["end_y"] <= event.ydata <= self.__app_plot_helper["start_y"]):
+        if event.ydata is None or not (self.__app_plot_helper["end_y"] <= event.ydata
+                                       <= self.__app_plot_helper["start_y"]):
             self.__app_reset_annotation()
             return
 
@@ -988,14 +1021,14 @@ class ViperDF:
 
         self.__app_update_selection(closest_index)
 
-    def __app_on_click(self, event):
+    def __app_on_click(self, event) -> None:
         """
-        Internal callback to handle mouse click events on the application bar chart.
+        Handles mouse click events on the application bar chart.
 
-        If the left mouse button is clicked within the bar chart area, static mode is enabled and the bar at the clicked position is selected (locking the highlight on that segment).
-        If clicked outside any bar, it resets the annotation/highlight.
+        Activates static mode and locks selection if clicked within a valid segment.
+        Resets selection if clicked outside.
 
-        :param event: Event (Matplotlib mouse button press event.)
+        :param event: Event (Matplotlib mouse click event.)
         :return: None
         """
 
@@ -1016,14 +1049,11 @@ class ViperDF:
             else:
                 self.__app_reset_annotation()
 
-    def __app_on_key(self, event):
+    def __app_on_key(self, event) -> None:
         """
-        Internal callback to handle keyboard events for the application bar chart in static mode.
+        Handles keyboard navigation for the application bar chart in static mode.
 
-        Only processes events if a bar is currently selected in static mode.
-        Left and right arrow keys cycle the selection to the previous or next entry (wrapping around cyclically),
-        and the Escape key exits static mode and clears the selection.
-        (The keys 'A' and 'D' could be added for alternative left/right control.)
+        Arrow keys move selection left/right, Escape exits static mode.
 
         :param event: Event (Matplotlib key press event.)
         :return: None
@@ -1048,17 +1078,16 @@ class ViperDF:
             print(new_index)
             self.__app_update_selection(new_index)
 
-    def _update_ax_hbar_labels(self, label_list: list[str] | str = None):
+    def _update_ax_hbar_labels(self, label_list: list[str] | str = None) -> None:
         """
-        Creates or updates the horizontal bar chart Axes for label usage segments.
+        Creates or updates the horizontal bar chart for label usage.
 
-        If `label_list` is provided, the plot will include only those labels (in the given order, up to 5 labels).
-        Otherwise, it will default to the first 4 labels in the data.
-        Each label's continuous usage segments (from `_grouped_label_df`) are drawn as horizontal bars at a distinct y-level.
+        Filters and plots up to 5 selected labels, drawing continuous usage segments as horizontal bars.
+        Raises error if requested labels are not present.
 
-        :param label_list: list[str] | str | None (Optional. A label or list of labels to display. If None, the top 5 labels by occurrence are shown.)
-        :raises ValueError: If no label data is available or if any requested labels are not found in the data.
-        :return: Axes (The Matplotlib Axes object for the label horizontal bar chart.)
+        :param label_list: list[str] | str | None (Optional labels to include.)
+        :raises ValueError: If no valid labels found in grouped data.
+        :return: Axes (Matplotlib Axes with label bars.)
         """
 
         if self.main_plot_size is not None:
@@ -1162,23 +1191,26 @@ class ViperDF:
 
         self._label_ax = ax
 
-    def __init_plot_data_label(self, ax):
+    def __init_plot_data_label(self, ax) -> None:
         """
-        Initializes interactive elements for the label usage bar chart Axes.
+        Initializes interactive elements for the label bar chart.
 
-        Sets up a red dotted hover line, red triangle markers at the bar boundaries, and an annotation text box for label segments.
-        Connects motion, click, and key press events to internal callbacks for hover and selection on the label chart.
+        Adds red hover line, triangle markers, and annotation.
+        Connects motion, click, and key events for label interactivity.
 
-        :param ax: Axes (The Matplotlib Axes for the label bar chart.)
+        :param ax: Axes (Matplotlib Axes for the label bar chart.)
         :return: None
         """
 
         self.__label_plot_helper["ax"] = ax
-        self.__label_plot_helper["hover_line"], = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted', alpha=0.7, visible=False)
+        self.__label_plot_helper["hover_line"], = ax.plot([0, 0], [0, 0], color='red', linestyle='dotted',
+                                                          alpha=0.7, visible=False)
 
         # Zwei Dreiecke für die Markierung
-        self.__label_plot_helper["triangle_up"], = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)  # Unten
-        self.__label_plot_helper["triangle_down"], = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)  # Oben
+        self.__label_plot_helper["triangle_up"], = ax.plot([], [], marker="v", color="red", markersize=8,
+                                                           visible=False)  # Unten
+        self.__label_plot_helper["triangle_down"], = ax.plot([], [], marker="^", color="red", markersize=8,
+                                                             visible=False)  # Oben
 
         self.__label_plot_helper["annotation"] = ax.annotate("", xy=(0, 0), xytext=(10, 10), textcoords="offset points",
                                  bbox=dict(boxstyle="round", fc="white", ec="blue", alpha=0.9),
@@ -1191,12 +1223,11 @@ class ViperDF:
         ax.figure.canvas.mpl_connect("button_press_event", self.__label_on_click)
         ax.figure.canvas.mpl_connect("key_press_event", self.__label_on_key)
 
-    def __label_reset_annotation(self):
+    def __label_reset_annotation(self) -> None:
         """
-        Resets all hover and selection indicators on the label bar chart.
+        Clears selection and hover visuals on the label bar chart.
 
-        Turns off static mode and clears any selected segment index.
-        Hides the hover line, annotation, and triangle markers, then refreshes the canvas.
+        Hides annotation, markers, and resets internal selection state.
 
         :return: None
         """
@@ -1209,15 +1240,14 @@ class ViperDF:
         self.__label_plot_helper["triangle_down"].set_visible(False)
         self.__label_plot_helper["ax"].figure.canvas.draw_idle()
 
-    def __label_update_selection(self, index):
+    def __label_update_selection(self, index) -> None:
         """
-        Updates the label bar chart to highlight a specific time segment by index.
+        Highlights a selected label segment on the label bar chart.
 
-        Given an index in the label data (self.__label_plot_helper["label_data"]), this method selects that segment:
-        it draws a red hover line at the segment's midpoint, shows red triangle markers at the segment's top and bottom boundaries,
-        and displays an annotation with the label name, start-end time, and total duration (HH:MM:SS format) for that segment.
+        Draws hover line, triangle markers, and annotation showing label name,
+        start/end time, and duration.
 
-        :param index: int (The index of the label segment to select and highlight.)
+        :param index: int (Index of the label segment to highlight.)
         :return: None
         """
 
@@ -1261,13 +1291,12 @@ class ViperDF:
 
         self.__label_plot_helper["ax"].figure.canvas.draw_idle()
 
-    def __label_on_hover(self, event):
+    def __label_on_hover(self, event) -> None:
         """
-        Internal callback to handle mouse hover events on the label bar chart.
+        Handles mouse hover over the label bar chart.
 
-        If the cursor is over the region of a label's horizontal bars (and not in static mode),
-        this determines which label's bar the cursor is near and highlights the corresponding segment by updating the selection.
-        If the cursor moves away from any label bars, it clears the highlight.
+        Identifies the closest label segment under the cursor and highlights it.
+        If no segment is under the cursor, resets the annotation.
 
         :param event: Event (Matplotlib mouse motion event.)
         :return: None
@@ -1279,7 +1308,8 @@ class ViperDF:
         closest_label = None
         # Gets closest label, if none found, resets the annotations
         for label, y_pos in self.__label_plot_helper["label_y_mapping"].items():
-            if (y_pos - self.__label_plot_helper["bar_height"] - int(self.__label_plot_helper["y_spacing"])) <= event.ydata <= (y_pos + int(self.__label_plot_helper["y_spacing"])):
+            if ((y_pos - self.__label_plot_helper["bar_height"] - int(self.__label_plot_helper["y_spacing"]))
+                    <= event.ydata <= (y_pos + int(self.__label_plot_helper["y_spacing"]))):
                 closest_label = label
                 break
 
@@ -1304,14 +1334,14 @@ class ViperDF:
 
         self.__label_update_selection(closest_index)
 
-    def __label_on_click(self, event):
+    def __label_on_click(self, event) -> None:
         """
-        Internal callback to handle mouse click events on the label bar chart.
+        Handles mouse click on the label bar chart.
 
-        If a click occurs within the area of a label's bars, static mode is enabled and the nearest label segment is selected (locking the highlight on that segment).
-        Clicking outside any label bars will reset the current selection (turn off static mode and clear highlights).
+        Enters static mode and locks annotation to the clicked segment.
+        Resets annotation if click is outside of label bars.
 
-        :param event: Event (Matplotlib mouse button press event.)
+        :param event: Event (Matplotlib mouse button event.)
         :return: None
         """
 
@@ -1349,11 +1379,10 @@ class ViperDF:
 
     def __label_on_key(self, event):
         """
-        Internal callback to handle keyboard events for the label bar chart in static mode.
+        Handles key events in static mode for the label bar chart.
 
-        Only active when a label segment is selected in static mode.
-        The left and right arrow keys cycle through segments of the currently selected label (with wrap-around),
-        and the Escape key exits static mode and clears the selection.
+        Supports cycling between label segments using left/right arrows,
+        and exiting static mode with Escape.
 
         :param event: Event (Matplotlib key press event.)
         :return: None
@@ -1382,12 +1411,11 @@ class ViperDF:
 
     def _set_x_lim(self, ax):
         """
-        Sets the X-axis limits and formatter for a given Axes based on the analysis time frame.
+        Sets X-axis limits and time formatter for a plot.
 
-        The lower limit is the first timestamp and the upper limit is the last timestamp from `analysis_results`.
-        Also applies the pre-determined major formatter for the X-axis (stored in `analysis_results["major_formatter_x"]`) for proper time scale labeling.
+        Uses time range and formatter from `analysis_results`.
 
-        :param ax: Axes (The Matplotlib Axes on which to set the X-axis limits and formatter.)
+        :param ax: Axes (Target Matplotlib Axes.)
         :return: None
         """
 
@@ -1398,15 +1426,14 @@ class ViperDF:
         # TODO: probably fixed allready
         ax.xaxis.set_major_formatter(self.analysis_results["major_formatter_x"])
 
-
-    def _combine_axes(self):
+    def _combine_axes(self) -> None:
         """
-        Combines the individual plots (activity, app, label) into a single Matplotlib figure.
+        Combines activity, app, and label Axes into a single figure.
 
-        This method takes the Axes created for activity, application, and label plots and copies all their lines, patches, and collections into a new Axes on a fresh figure.
-        Interactive elements (hover and click callbacks) are reinitialized on the new combined Axes. The resulting figure is stored in `self.mainplot`.
+        Copies visual elements from all axes, recreates interactivity,
+        and stores the combined figure in `mainplot`.
 
-        :raises ValueError: If any of the required Axes (activity, app, label) is missing.
+        :raises ValueError: If any required Axes is missing.
         :return: None
         """
 
@@ -1495,10 +1522,8 @@ class ViperDF:
                     # Add to the new axis
                     new_ax.add_collection(new_poly)
 
-
         new_ax.set_yticks([])
         new_ax.set_yticklabels([])
-        
         new_ax.set_ylim(lowest_y, highest_y)
         new_ax.set_xlim(lowest_x, highest_x)
         new_ax.xaxis.set_major_formatter(mirrored_formatter)
@@ -1509,33 +1534,27 @@ class ViperDF:
         self.__init_plot_data_label(new_ax)
 
         new_fig.tight_layout()
-
         self.image_main_plot = fig_to_tk_image(new_fig, self.plot_dpi)
-
         self.mainplot = new_fig
 
-    def get_main_plot(self):
+    def get_main_plot(self) -> Figure:
         """
-        Returns the combined Matplotlib Figure containing all plots (activity, app, label).
+        Returns the combined main plot figure, creating it if missing.
 
-        If the combined figure (`mainplot`) has not been created yet, this method will call `_combine_axes()` to generate it.
-        This figure can be used for displaying in a GUI or saving to file.
-
-        :return: Figure (The Matplotlib figure with the combined plots.)
+        :return: Figure (Matplotlib figure with all combined plots.)
         """
 
         if self.mainplot is None:
             self._combine_axes()
         return self.mainplot
 
-    def get_vbar_apps(self):
+    def get_vbar_apps(self) -> Figure:
         """
-        Creates and returns a Matplotlib Figure with a vertical bar chart of overall app usage percentages.
+        Generates vertical bar chart for app usage with interactivity.
 
-        Each bar represents an application's total usage percentage (with bars colored accordingly).
-        Hover interactivity is enabled on the bars to show precise percentages and durations, with minor entries aggregated under "Others".
+        Hovering reveals percent usage, duration, and grouped app details.
 
-        :return: Figure | None (The Matplotlib figure for app usage bar chart, or None if there is no app data.)
+        :return: Figure | None (App bar chart or None if no data.)
         """
 
         if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
@@ -1548,12 +1567,6 @@ class ViperDF:
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
         bars = ax.bar(df["window_type"], df["overall_percent"], color=df["rgba_color"])
-
-
-        # TODO: Maybe not needed infos, check after implementing into GUI
-        # ax.set_xlabel("Apps")
-        # ax.set_ylabel("Percent usage")
-        # ax.set_title("App usage")
 
         ax.set_ylim(0, df["overall_percent"].max() + 5)
 
@@ -1570,7 +1583,18 @@ class ViperDF:
         annotation.set_visible(False)
 
         # Inline functions because not needed outsourced
-        def on_hover(event):
+        def on_hover(event) -> None:
+            """
+            Handles mouse hover events for the applications vertical bar chart.
+
+            When the cursor moves over the app usage bar chart, this function shows or hides interactive elements
+            (such as an annotation, a marker triangle, and a hover line) depending on whether the cursor is over a bar.
+            If the cursor is not over the chart, it hides all hover indicators and redraws the canvas.
+
+            :param event: MouseEvent (Matplotlib mouse motion event triggered on hover.)
+            :return: None
+            """
+
             if event.inaxes != ax:
                 annotation.set_visible(False)
                 triangle_up.set_visible(False)
@@ -1628,14 +1652,13 @@ class ViperDF:
 
         return fig
 
-    def get_vbar_labels(self):
+    def get_vbar_labels(self) -> Figure:
         """
-        Creates and returns a Matplotlib Figure with a vertical bar chart of overall label usage percentages.
+        Generates vertical bar chart for label usage with interactivity.
 
-        Each bar represents a label's total usage percentage (colored accordingly).
-        Hover interactivity on the bars shows precise percentages and durations, with minor labels aggregated under "Others".
+        Hovering reveals usage percent, duration, and grouped label details.
 
-        :return: Figure | None (The Matplotlib figure for label usage bar chart, or None if there is no label data.)
+        :return: Figure | None (Label bar chart or None if no data.)
         """
 
         if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
@@ -1672,7 +1695,16 @@ class ViperDF:
                                  bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white"))
         annotation.set_visible(False)
 
-        def on_hover(event):
+        def on_hover(event) -> None:
+            """
+            Handles mouse hover events for the labels vertical bar chart.
+
+            Shows percentage and duration on hover, including grouped entries under "Others".
+            Hides annotation and markers when mouse leaves the chart or doesn't hit a bar.
+
+            :param event: MouseEvent (Matplotlib mouse motion event.)
+            :return: None
+            """
 
             if event.inaxes != ax:
                 annotation.set_visible(False)
@@ -1733,14 +1765,13 @@ class ViperDF:
 
         return fig
 
-    def get_pie_apps(self):
+    def get_pie_apps(self) -> Figure:
         """
-        Creates and returns a Matplotlib Figure with a pie chart of overall application usage.
+        Creates pie chart for overall app usage with label annotations.
 
-        Each wedge represents an application's percentage of total usage (colored accordingly).
-        Annotations for each wedge (application name) are placed around the pie, and hovering over a label displays the percentage and duration (with details for "Others" if present).
+        Hovering over labels shows percent, duration, and grouped app details.
 
-        :return: Figure | None (The Matplotlib figure for app usage pie chart, or None if there is no app data.)
+        :return: Figure | None (Pie chart for app usage or None if no data.)
         """
 
         if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
@@ -1796,7 +1827,17 @@ class ViperDF:
                                  bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white", alpha=0.95))
         annotation.set_visible(False)
 
-        def on_hover(event):
+        def on_hover(event) -> None:
+            """
+            Handles mouse hover events for the applications pie chart.
+
+            When hovering over a label near a wedge, shows percentage and duration in an annotation.
+            Handles "Others" labels by showing merged app entries as well.
+
+            :param event: MouseEvent (Matplotlib mouse motion event.)
+            :return: None
+            """
+
             if event.inaxes != ax:
                 annotation.set_visible(False)
                 fig.canvas.draw_idle()
@@ -1850,14 +1891,13 @@ class ViperDF:
 
         return fig
 
-    def get_pie_labels(self):
+    def get_pie_labels(self) -> Figure:
         """
-        Creates and returns a Matplotlib Figure with a pie chart of overall label usage.
+        Creates pie chart for overall label usage with annotations.
 
-        Each wedge represents a label's percentage of total usage (colored accordingly).
-        Label annotations are placed around the pie, and hovering over a label displays the percentage and duration (with details for "Others" if present).
+        Hovering reveals usage details and grouped "Others" info.
 
-        :return: Figure | None (The Matplotlib figure for label usage pie chart, or None if there is no label data.)
+        :return: Figure | None (Pie chart for label usage or None if no data.)
         """
 
         if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
@@ -1910,7 +1950,17 @@ class ViperDF:
                                  bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white", alpha=0.95))
         annotation.set_visible(False)
 
-        def on_hover(event):
+        def on_hover(event) -> None:
+            """
+            Handles mouse hover events for the labels pie chart.
+
+            When hovering over label annotations, shows usage details including grouped entries under "Others".
+            Hides annotation when not hovering over a label.
+
+            :param event: MouseEvent (Matplotlib mouse motion event.)
+            :return: None
+            """
+
             if event.inaxes != ax:
                 annotation.set_visible(False)
                 fig.canvas.draw_idle()
@@ -1957,8 +2007,6 @@ class ViperDF:
         ax.set_ylim(-1.4, 1.4)
 
         fig.tight_layout()
-
-
         self.image_label_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
         return fig
 
@@ -1985,11 +2033,11 @@ class DayAnalyzer:
 
     def __new__(cls, *args, **kwargs):
         """
-        Ensures that DayAnalyzer follows the singleton pattern.
+        Ensures singleton behavior by returning the existing instance if one exists.
 
-        If an instance of DayAnalyzer already exists, __new__ returns it; otherwise, it creates a new instance.
+        If no instance exists, it creates one using the superclass constructor.
 
-        :return: DayAnalyzer (The singleton instance of DayAnalyzer.)
+        :return: DayAnalyzer (The singleton instance.)
         """
 
         if cls._instance is None:
@@ -1998,11 +2046,9 @@ class DayAnalyzer:
 
     def __init__(self):
         """
-        Initializes the DayAnalyzer singleton (only on the first instantiation).
+        Initializes the singleton instance with database access, a ViperDF, and background analysis.
 
-        On first initialization, this sets up a lock, retrieves the current window log data via the database handler,
-        creates a ViperDF for "day_analysis" with that data, and immediately calls its analyze() method.
-        It also schedules the first check time and starts a background thread for periodic refresh.
+        Sets up threading and periodic reanalysis for day-based data, only on first initialization.
 
         :return: None
         """
@@ -2021,30 +2067,27 @@ class DayAnalyzer:
             self._thread = Thread(target=self._thread_loop)
             self._thread.start()
 
-    def _check_for_action(self):
+    def _check_for_action(self) -> None:
         """
-        Checks if it is time to refresh the analysis data and triggers a refresh if needed.
+        Checks if a data refresh is due and triggers it if the interval has passed.
 
-        This method should be called periodically (e.g., by the background thread).
-        If the current time has passed the scheduled `_next_check_timestamp`, it updates `_next_check_timestamp` to the next interval and calls `DayAnalyzer.this.refresh_data()`.
+        Updates the next scheduled check timestamp and invokes the data refresh method.
 
         :return: None
         """
 
         with self._lock:
-
             if not self._next_check_timestamp >= datetime.now():
                 return
 
             self._next_check_timestamp = datetime.now() + timedelta(minutes=self._check_interval)
         DayAnalyzer.this.refresh_data()
 
-    def _thread_loop(self):
+    def _thread_loop(self) -> None:
         """
-        Checks if it is time to refresh the analysis data and triggers a refresh if needed.
+        Background loop that runs continuously, sleeping in intervals, to check for data updates.
 
-        This method should be called periodically (e.g., by the background thread).
-        If the current time has passed the scheduled `_next_check_timestamp`, it updates `_next_check_timestamp` to the next interval and calls `DayAnalyzer.this.refresh_data()`.
+        Terminates cleanly if the global thread stop flag is set.
 
         :return: None
         """
@@ -2062,12 +2105,11 @@ class DayAnalyzer:
                 break
             self._check_for_action()
 
-    def refresh_data(self):
+    def refresh_data(self) -> None:
         """
-        Refreshes the internal data by reloading from the database and re-running the analysis.
+        Refreshes analysis data by reloading from the database and reinitializing the ViperDF.
 
-        Deletes the old ViperDF, fetches fresh data via the database call, creates a new ViperDF for "day_analysis",
-        and invokes analyze() on it. This method is thread-safe (guarded by `_lock`).
+        This deletes the existing ViperDF, creates a new one with fresh data, and runs analysis again.
 
         :return: None
         """
@@ -2080,41 +2122,40 @@ class DayAnalyzer:
 
     def get_data(self) -> ViperDF:
         """
-        Retrieves the current ViperDF containing the analyzed data in a thread-safe manner.
+        Returns the current analyzed ViperDF in a thread-safe way.
 
-        Acquires the internal lock and returns the ViperDF instance holding the latest analysis results.
+        Acquires the internal lock before accessing the ViperDF.
 
-        :return: ViperDF (The current ViperDF instance with up-to-date analysis data.)
+        :return: ViperDF (Analyzed dataset for the current day.)
         """
 
         with self._lock:
             return self._vdf
 
     @Classproperty
-    def this(cls):
+    def this(cls) -> 'DayAnalyzer':
         """
-        Provides convenient access to the DayAnalyzer singleton instance.
+        Returns the singleton instance of DayAnalyzer (class-level accessor).
 
-        Calling `DayAnalyzer.this` returns the single DayAnalyzer instance, creating it if it doesn't exist yet.
-        This allows easy access to the analyzer via `DayAnalyzer.this` instead of constructing a new object.
+        Creates the instance if it doesn't exist yet.
 
-        :return: DayAnalyzer (The singleton instance of DayAnalyzer.)
+        :return: DayAnalyzer (The singleton instance.)
         """
 
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
-# # # # Helper functions # # # #
 
+# # # # Helper functions # # # #
 def split_leading_special_chars(word: str):
     """
-    Splits a string into leading special characters and the remaining word.
+    Splits a string into two parts: leading special characters and the remaining alphanumeric portion.
 
-    This function iterates from the start of the string and separates any leading non-alphanumeric characters from the rest of the word.
+    Iterates from the start of the string and collects non-alphanumeric characters until the first alphanumeric character is found.
 
     :param word: str (The input string to split.)
-    :return: tuple[str, str] (A tuple where the first element is the string of leading special characters, and the second is the remaining word.)
+    :return: tuple[str, str] (First element is leading special characters, second is the rest of the word.)
     """
 
     special_chars = ""
@@ -2126,15 +2167,13 @@ def split_leading_special_chars(word: str):
 
 def split_text_by_max_length(text: str, max_length: int) -> str:
     """
-    Splits a text into multiple lines without exceeding a given maximum length per line.
+    Breaks a long string into lines without exceeding a maximum line length, preserving word boundaries.
 
-    The split is done at word boundaries (spaces). If a word starts with punctuation or special characters (e.g., "!", "...", ","),
-    those characters are kept attached to the previous line to avoid starting a new line with a special character.
-    This is useful for formatting annotation text in interactive plots.
+    Special characters at the beginning of words are attached to the previous word to avoid leading punctuation on new lines.
 
-    :param text: str (The input text to be split into lines.)
-    :param max_length: int (The maximum allowed length of each line.)
-    :return: str (The input text split into lines, separated by newline characters.)
+    :param text: str (The input string to format.)
+    :param max_length: int (The maximum number of characters allowed per line.)
+    :return: str (The formatted string with newline-separated lines.)
     """
 
     words = text.split()
@@ -2169,10 +2208,9 @@ def split_text_by_max_length(text: str, max_length: int) -> str:
 # # # # External Call functions # # # #
 def init_day_analyzer():
     """
-    Initializes the standard daily analysis by instantiating the DayAnalyzer.
+    Starts the DayAnalyzer singleton for daily analysis and begins background monitoring.
 
-    Calling this function will create the DayAnalyzer singleton (if not already created), which immediately performs an initial analysis
-    and starts a background thread for ongoing analysis updates.
+    Instantiates the analyzer if not already created, triggering immediate data analysis and periodic updates.
 
     :return: None
     """

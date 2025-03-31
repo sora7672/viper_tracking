@@ -11,11 +11,10 @@ Author: sora7672
 __author__ = 'sora7672'
 
 from datetime import datetime, date
-from ttkbootstrap import Frame, Window, Style, DateEntry, Querybox, Scrollbar
+from ttkbootstrap import Frame, Window, Style, DateEntry, Querybox, Scrollbar, Combobox
 from ttkbootstrap.dialogs import Messagebox, DatePickerDialog
 from ttkbootstrap.constants import *
 from tkinter import Toplevel, PhotoImage, Widget, ttk, IntVar, BooleanVar, StringVar, Canvas, TclError
-from tkinter.ttk import Combobox  # Fixme: This should use tb not tk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pandas import DataFrame
 from PIL import ImageTk, Image
@@ -1347,7 +1346,7 @@ class FilterFrame(tb.Frame):
         self.flex.inner_frame.columnconfigure(1, weight=1)
 
         tb.Label(self.flex.inner_frame, text="Filter Name:").grid(column=0, row=0, padx=(0, 5), pady=3, sticky="W")
-        tb.Entry(self.flex.inner_frame, textvariable=self._name).grid(column=1, row=0, pady=1, sticky="W")
+        tb.Entry(self.flex.inner_frame, textvariable=self._name_var).grid(column=1, row=0, pady=1, sticky="W")
 
         self._time_frame = TimeRangeFrame(self.flex.inner_frame)
         self._time_frame.grid(column=0, columnspan=2, row=1, padx=(0, 5), pady=3, sticky="W")

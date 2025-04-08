@@ -24,7 +24,7 @@ import ttkbootstrap as tb
 if not globals().get("__PATCHED", False):
     __PATCHED = False
     __ORIGINAL = {}
-    __ROOT = None
+    __ROOT_OBJECT = None
 
 
 def __handle_key_error(error):
@@ -41,7 +41,7 @@ def __handle_key_error(error):
                        str(error))
 
 
-def __theme_use(*args, **kwargs):
+def __theme_use(*args, **kwargs) -> str | None:
     """
     Wrapped version of ttkbootstrap `theme_use` to emit global events before and after the call.
 
@@ -49,20 +49,32 @@ def __theme_use(*args, **kwargs):
         <<PreThemeUse>> before calling the original method
         <<PostThemeUse>> after the method returns
 
-    :return: Any (The result of the original `theme_use` call)
+    :return: str | None (The result of the original `theme_use` call)
     """
 
-    global __ORIGINAL, __ROOT
-    __ROOT.event_generate("<<PreThemeUse>>", when="tail")
-    try:
-        out = __ORIGINAL["root.style.theme_use"](*args, **kwargs)
-    except KeyError as e:
-        __handle_key_error(e)
-    __ROOT.event_generate("<<PostThemeUse>>", when="tail")
-    return out
+    global __ORIGINAL, __ROOT_OBJECT
+    if args or kwargs:
+        __ROOT_OBJECT.event_generate("<<PreThemeUse>>", when="tail")
+        try:
+            out = __ORIGINAL["root.style.theme_use"](*args, **kwargs)
+        except KeyError as e:
+            __handle_key_error(e)
+        __ROOT_OBJECT.after(5, __post_theme_use)
+        return out
+    else:
+        return __ORIGINAL["root.style.theme_use"]()
+
+def __post_theme_use() -> None:
+    """
+    Placeholder function, to be able to call it after with a delay.
+    To ensure the root is done initializing.
+
+    :return: None
+    """
+    __ROOT_OBJECT.event_generate("<<PostThemeUse>>", when="tail")
 
 
-def __theme_create(*args, **kwargs):
+def __theme_create(*args, **kwargs) -> None:
     """
     Wrapped version of ttkbootstrap `theme_create` to emit events around theme creation.
 
@@ -70,31 +82,31 @@ def __theme_create(*args, **kwargs):
         <<PreThemeCreation>> before calling the original method
         <<PostThemeCreation>> after the method returns
 
-    :return: Any (The result of the original `theme_create` call)
+    :return: None (The result of the original `theme_create` call)
     """
 
-    global __ORIGINAL, __ROOT
-    __ROOT.event_generate("<<PreThemeCreation>>", when="tail")
+    global __ORIGINAL, __ROOT_OBJECT
+    __ROOT_OBJECT.event_generate("<<PreThemeCreation>>", when="tail")
     try:
         out = __ORIGINAL["root.style.theme_create"](*args, **kwargs)
     except KeyError as e:
         __handle_key_error(e)
-    __ROOT.event_generate("<<PostThemeCreation>>", when="tail")
+    __ROOT_OBJECT.event_generate("<<PostThemeCreation>>", when="tail")
     return out
 
 
-def __mainloop(*args, **kwargs):
+def __mainloop(*args, **kwargs) -> None:
     """
     Wrapped version of ttkbootstrap `mainloop` to emit a global event before entering the loop.
 
     Generates:
         <<PreMainloop>> before entering the main event loop.
 
-    :return: Any (The result of the original `mainloop` call)
+    :return: None (The result of the original `mainloop` call)
     """
 
-    global __ORIGINAL, __ROOT
-    __ROOT.event_generate("<<PreMainloop>>", when="tail")
+    global __ORIGINAL, __ROOT_OBJECT
+    __ROOT_OBJECT.event_generate("<<PreMainloop>>", when="tail")
     try:
         out = __ORIGINAL["mainloop"](*args, **kwargs)
     except KeyError as e:
@@ -102,7 +114,7 @@ def __mainloop(*args, **kwargs):
     return out
 
 
-def __after_root():
+def __after_root() -> None:
     """
     Performs late-stage patching of theme-related methods and mainloop on the root window.
 
@@ -112,18 +124,24 @@ def __after_root():
     :return: None
     """
 
-    global __ROOT, __ORIGINAL
-    __ORIGINAL["root.style.theme_use"] = __ROOT.style.theme_use
-    __ROOT.style.theme_use = __theme_use
+    global __ROOT_OBJECT, __ORIGINAL
+    __ORIGINAL["root.style.theme_use"] = __ROOT_OBJECT.style.theme_use
+    __theme_use.__doc__ = ("Updated docstring by ttkb_eventinjector:\n" + str(__theme_use.__doc__ or "") +
+                        "\n\nOriginal docstring:\n" + (__ORIGINAL["root.style.theme_use"].__doc__ or ""))
+    __ROOT_OBJECT.style.theme_use = __theme_use
 
-    __ORIGINAL["root.style.theme_create"] = __ROOT.style.theme_create
-    __ROOT.style.theme_create = __theme_create
+    __ORIGINAL["root.style.theme_create"] = __ROOT_OBJECT.style.theme_create
+    __theme_create.__doc__ = ("Updated docstring by ttkb_eventinjector:\n" + str(__theme_create.__doc__ or "") +
+                        "\n\nOriginal docstring:\n" + (__ORIGINAL["root.style.theme_create"].__doc__ or ""))
+    __ROOT_OBJECT.style.theme_create = __theme_create
 
     __ORIGINAL["mainloop"] = __ORIGINAL["Window"].mainloop
+    __mainloop.__doc__ = ("Updated docstring by ttkb_eventinjector:\n" + str(__mainloop.__doc__ or "") +
+                        "\n\nOriginal docstring:\n" + (__ORIGINAL["mainloop"].__doc__ or ""))
     __ORIGINAL["Window"].mainloop = __mainloop
 
 
-def __window(*args, **kwargs):
+def __window(*args, **kwargs) -> tb.Window:
     """
     Patched replacement for `ttkbootstrap.Window`.
 
@@ -133,18 +151,18 @@ def __window(*args, **kwargs):
     :return: Window (The created ttkbootstrap `Window` instance)
     """
 
-    global __ORIGINAL, __ROOT
+    global __ORIGINAL, __ROOT_OBJECT
     try:
         out = __ORIGINAL["Window"](*args, **kwargs)
-        __ROOT = out
+        __ROOT_OBJECT = out
     except KeyError as e:
         __handle_key_error(e)
     __after_root()
-    __ROOT.event_generate("<<PostRootInit>>", when="tail")
+    __ROOT_OBJECT.event_generate("<<PostRootInit>>", when="tail")
     return out
 
 
-def __patch():
+def __patch() -> None:
     """
     Applies one-time patching to ttkbootstrap's `Window` constructor.
 
@@ -158,6 +176,8 @@ def __patch():
         return
 
     __ORIGINAL["Window"] = tb.Window
+    __window.__doc__ = ("Updated docstring by ttkb_eventinjector:\n" + str(__window.__doc__ or "") +
+                        "\n\nOriginal docstring:\n" + (__ORIGINAL["Window"].__doc__ or ""))
 
     tb.Window = __window
     __PATCHED = True

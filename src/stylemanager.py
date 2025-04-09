@@ -14,22 +14,20 @@ Important:
 
 Author: sora_7672
 """
-
-
 __author__ = "sora_7672"
 
-import copy
 
 import ttkb_eventinjector
 import font_manager
 import ttkbootstrap as tb
 import tkinter as tk
-from tkinter.font import Font
+from tkinter import font as tkfont
 
-from warnings import warn
-from tkinter import font as tkfont, ttk
-
+import copy
 import inspect
+from warnings import warn
+from datetime import datetime, timedelta
+
 
 # # # # Helper Functions # # # #
 def is_hex(ins: str) -> bool:
@@ -58,6 +56,7 @@ if not globals().get("__PATCHED", False):
     __ORIGINAL = {}
     __STYLE_OBJECT = None
 
+
 def __configure(*args, **kwargs):
     """
     Intercepts `Style.configure` to warn if used directly from outside `ttkbootstrap`.
@@ -80,6 +79,7 @@ def __configure(*args, **kwargs):
     else:
         out = __ORIGINAL["Style.configure"](*args, **kwargs)
         return out
+
 
 def __map(*args, **kwargs):
     """
@@ -1138,10 +1138,18 @@ class StyleManager:
             mapconfig = {}
 
         # add config to the list (append)
-        new_style = {"style_name": style_name, "config": config, "mapconfig": mapconfig, "has_pattern": has_pattern}
-        is_same = False
+        new_style = {"style_name": style_name, "config": config, "mapconfig": mapconfig,
+                     "has_pattern": has_pattern, "last_update": datetime.now()}
         existing_style = self.get_registered_custom_style(style_name)
+        is_same = False
+
+
         if existing_style:
+            # lazy check only all 4 seconds for overlapping style
+            difference = new_style["last_update"] - existing_style["last_update"]
+            if difference < timedelta(seconds=4):
+                return
+
             is_same = self.__compare_styles(existing_style, new_style)
 
         if is_same:

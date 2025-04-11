@@ -957,7 +957,7 @@ class StyleManager:
         style = self.__get_style_object()
         original = globals().get("__ORIGINAL")
         original["Style.configure"](custom_style["style_name"], **custom_style["config"])
-        original["Style.map"](custom_style["style_name"], custom_style["mapconfig"])
+        original["Style.map"](custom_style["style_name"], **custom_style["mapconfig"])
 
         current_theme = style.theme_use()  # get theme string
         if custom_style["style_name"] in self.__dict_style_theme_created:
@@ -1540,6 +1540,14 @@ class StyleManager:
                                 raise ValueError(
                                     f"This config key '{config_key}' has to be an int with positive value: "
                                     f"{type(check_value)} {check_value}")
+                        case "relief":
+                            if not isinstance(check_value, str):
+                                raise TypeError(f"This config key '{config_key}' has to be a string: "
+                                                f"{type(check_value)} {check_value}")
+                            allowed_reliefs = ["flat", "raised", "sunken", "groove", "ridge", "solid"]
+                            if check_value.lower() not in allowed_reliefs:
+                                raise ValueError(f"This config key '{config_key}' has to be one of this values "
+                                                 f"({check_value}):\n{allowed_reliefs}")
                         case _:
                             # TODO: implement other font geometry checks
                             raise NotImplementedError("Sorry the maybe the geometry key exists, "

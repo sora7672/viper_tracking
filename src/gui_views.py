@@ -10,6 +10,8 @@ Author: sora7672
 """
 __author__ = 'sora7672'
 
+from stylemanager import StyleManager
+
 from datetime import datetime, date
 from ttkbootstrap import Frame, Window, Style, DateEntry, Querybox, Scrollbar, Combobox
 from ttkbootstrap.dialogs import Messagebox, DatePickerDialog
@@ -54,10 +56,6 @@ dict_resolution: dict[str, tuple[int, int]] = {
                                                "5K(16:9)": (5120, 2880),
                                                "8K(16:9)": (7680, 4320)
                                                 }
-# TODO: Styles and such infos need to be initialized properly with a function or on the gui_controller
-# FIXME: styl needs to be created inside the mainloop anyhow
-# Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
-# Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
 
 
 def debug_widget_infos(widget, flag="") -> None:
@@ -1025,6 +1023,108 @@ class FlexFrame(Frame):
         self._placeholder = Frame(self, width=width, height=0)
         self._placeholder.grid(row=1, column=0, sticky="ew")
 
+class ItemSelectFrame(tb.Frame):
+    # TODO: Docstrings
+    def __init__(self, parent, text_value: str, internal_value=None, on_selected_color: str = None,
+                 on_not_selected_color: str = None, *args, **kwargs):
+        super().__init__(parent, relief="solid", borderwidth=1.5, *args, **kwargs)
+
+
+        self._text_value = text_value
+        self._internal_value = internal_value or text_value
+        self._on_selected_color = on_selected_color or "#00BCD4"
+        self._on_not_selected_color = on_not_selected_color or "#B07C84"
+        self._is_selected = False
+        self.text_is_internal_value = self._internal_value == self._text_value
+
+        # Custom styles to make it look like it should
+        StyleManager().register_style(
+            style_name="ItemSelection.TButton",
+            config={
+                "background": "$color.bg", "foreground": "$color.fg", "borderwidth": 0,
+                "padding": 5, "font": ("TkDefaultFont", 10), "relief": "flat"
+            },
+            mapconfig={
+                "bordercolor": [
+                    ("selected hover", self._on_selected_color),
+                    ("!selected hover", self._on_not_selected_color)
+                ],
+                "borderwidth": [
+                    ("selected hover", 1),
+                    ("!selected hover", 1),
+                    ("selected", 1),
+                    ("!selected", 1)
+                ],
+                "relief": [("hover", "solid"), ("!hover", "flat")],
+                "foreground": [("!disabled", "$color.fg")],
+                "background": [("!disabled", "$color.bg")],
+                "focuscolor": [("focus", "$color.bg")]
+            }
+        )
+
+        StyleManager().register_style(
+            style_name="ItemSelection.TFrame",
+            config={
+                "borderwidth": 0, "relief": "solid", "padding": 0
+            },
+            mapconfig={
+                "bordercolor": [
+                    ("selected", self._on_selected_color),
+                    ("!selected", self._on_not_selected_color)
+                ],
+                "background": [("!disabled", "$color.bg")]
+            }
+        )
+
+        self._fake_button = tb.Button(self, text=self._text_value, command=self.widget_clicked)
+        self._fake_button.pack(expand=True, fill=BOTH)
+        self._fake_button.configure(style="ItemSelection.TButton")
+        self.configure(style="ItemSelection.TFrame")
+        self.state(["!selected"])
+        self._fake_button.state(["!selected"])
+
+
+    def get_value(self):
+        if self._is_selected:
+            return self._internal_value
+        else:
+            return None
+    @property
+    def internal_value(self):
+        return self._internal_value
+
+    @property
+    def text_value(self):
+        return self._text_value
+
+    def widget_clicked(self):
+        self.event_generate("<<ItemClicked>>", when="tail")
+        self.toggle_state()
+
+    def toggle_state(self):
+        if self._is_selected:
+            self._is_selected = False
+            self.state(["!selected"])
+            self._fake_button.state(["!selected"])
+            self.event_generate("<<ItemDisabled>>", when="tail")
+        else:
+            self._is_selected = True
+            self.state(["selected"])
+            self._fake_button.state(["selected"])
+            self.event_generate("<<ItemEnabled>>", when="tail")
+
+    def set_selected(self, selected: bool = True):
+        if not isinstance(selected, bool):
+            raise TypeError(f"Expected bool but got {type(selected)}")
+
+        if selected:
+            self._is_selected = True
+            self.state(["selected"])
+            self._fake_button.state(["selected"])
+        else:
+            self._is_selected = False
+            self.state(["!selected"])
+            self._fake_button.state(["!selected"])
 
 class InfoBoxFrame(Frame):
     """
@@ -2624,6 +2724,239 @@ class OverlayFrame(Frame):
 
         raise RuntimeError("Use .shrink() to make invisible.")
 
+# class SelectableItem(Frame):
+#     """
+#     This item can be selected and changes how it looks on selected.
+#     it has property that return states and infos.
+#     You can grab show_text, internal_value and if selected
+#
+#     Later will have a way to change its values also ater init.
+#     """
+#     def __init__(self, parent, text: str = None, internal_value = None
+#                  *args, **kwargs):
+#
+#         super().__init__(parent, *args, **kwargs)
+#
+#         self.__display_text = text
+#         self.__internal_value = internal_value
+#         self.__state = False
+#         self.__is_clicked = False
+#
+#         # Override current style so button is not showing
+#         style = tb.Style()
+#         default_background = style.lookup("TButton", "background")
+#         style.map("TButton", background=[
+#                 ("active", default_background),
+#                 ("pressed", default_background),
+#                 ("selected", default_background),
+#                 ("focus", default_background),
+#             ])
+#
+#         self.__clickable = tb.Button(self,style=default_background, command=self.__clicked)
+#         self.__clickable.pack(fill="both", expand=True)
+#
+#     def __clicked(self):
+#         if self.__is_clicked:
+#             return
+#         self.__is_clicked = True
+#         self.after(300, self.__reset_click_state)
+#         self.__toggle_state()
+#
+#     def __reset_click_state(self):
+#         self.__is_clicked = False
+#
+#
+#     def __toggle_state(self):
+#         self.event_generate("<<ItemChanged>>", when="tail")
+#         if self.__state:
+#             self.__state_switch_off()
+#         else:
+#             self.__state_switch_on()
+#
+#     def __state_switch_on(self):
+#         self.event_generate("<<ItemToggledOn>>", when="tail")
+#         self.__state = True
+#         # change visuals
+#         ...
+#
+#     def __state_switch_off(self):
+#         self.event_generate("<<ItemToggledOff>>", when="tail")
+#         self.__state = True
+#         # change visuals
+#         ...
+#
+#     @property
+#     def display_text(self):
+#         return self.__display_text
+#
+#     @display_text.setter
+#     def display_text(self, value: str):
+#         if not isinstance(value, str):
+#             raise TypeError("Value must be a string.")
+#         self.__display_text = value
+#
+#     @property
+#     def value(self):
+#         if self.__state:
+#             return self.__internal_value if self.__internal_value is not None else self.__display_text
+#         else:
+#             return None
+#
+#     @property
+#     def state(self):
+#         return self.__state
+#
+#
+# class KeySelectorFrame(Frame):
+#     """
+#     This frame will be initialized with a dict to show the values of each key as label
+#     or later other visual widget and the enduser can choose multiple of the values.
+#     The button can be bound to a function the programmer gives it.
+#     The called function will allways be called with a parameter chosen_keys(tuple).
+#
+#     """
+#     def __init__(self, parent, dict_with_keys:dict, max_choices: int = None, linked_function=None,
+#                  button_text: str = None, max_width: int=None, max_height: int = None,
+#                  *args, **kwargs):
+#
+#         super().__init__(parent, *args, **kwargs)
+#
+#         self.__fields_are_existing = False
+#         self.__choice_list = []
+#
+#         # Call properties for error handeling & logics
+#         self.dict_with_keys = dict_with_keys
+#         self.max_choices = max_choices
+#         # End of property setting
+#
+#
+#
+#
+#         self._linked_function = linked_function
+#         self._button_text = button_text or "Execute"
+#         self.execute_button = tb.Button(self, text=self._button_text, command=self.__call_linked_function)
+#
+#         self.__create_choice_frames()
+#
+#     def __create_choice_frames(self):
+#         self.__fields_are_existing = True
+#         # Every choiceframe/button needs to get a showtext value and a internal value (int/str/float)
+#         # and should emit a change event & a on/off event
+#         ...
+#
+#     def __update_choice_frames(self) -> list:
+#
+#         # get  old values
+#         old_values = self.choices
+#
+#         # remove fields
+#         for chil in self.winfo_children():
+#             if isinstance(chil, Frame):
+#                 chil.destroy()
+#
+#         # set new values
+#         self.__key_list = list(self.dict_with_keys.keys())
+#         self.__text_list = [str(val) for val in self.dict_with_keys.values()]
+#
+#         #create new fields
+#         self.__create_choice_frames()
+#
+#         return old_values or None # Case of old_values = []
+#
+#     def reset_choices(self):
+#         self.__choice_list = []
+#
+#         for chil in self.winfo_children():
+#             if isinstance(chil, Frame):
+#                 # todo: for every element taht can be choosen reset it to not choosen
+#                 ...
+#
+#     def select_choices_per_key(self, key_list: list|tuple):
+#         if not isinstance(key_list, (list, tuple))
+#             raise TypeError("'key_list' must be a list or tuple.")
+#         if len(key_list) == 0:
+#             return
+#         if not all(isinstance(val, (str, int, float)) for val in key_list):
+#             raise TypeError("All values in 'key_list' have to be str, int or float")
+#
+#         for choice_key in key_list:
+#             # todo: check for keys in the labels/frames and set them to choosen
+#             ...
+#
+#     def __call_linked_function(self):
+#         if self._linked_function is not None:
+#             # TODO: remove temp to test
+#             self.__choice_list = (1, 2, 3)  # ("zoom", "boom", "truth)
+#
+#             all_keys = self.choices
+#             self._linked_function(all_keys)
+#
+#     @property
+#     def choices(self):
+#         return self.__choice_list
+#
+#     @property.setter
+#     def linked_function(self, linked_function):
+#         if not callable(linked_function):
+#             raise TypeError("linked_function must be callable.")
+#         self._linked_function = linked_function
+#
+#     @property
+#     def key_list(self) -> list:
+#         return self.__key_list
+#
+#     @property
+#     def text_list(self) -> list:
+#         return self.__text_list
+#
+#     @property
+#     def dict_with_keys(self) -> list:
+#         return self._dict_with_keys
+#
+#     @property.setter
+#     def dict_with_keys(self, dict_with_keys:dict):
+#         if not isinstance(dict_with_keys, dict):
+#             raise TypeError("dict_with_keys must be an instance of dict")
+#
+#         for val in dict_with_keys.values():
+#             if not isinstance(val, (int, float, str)):
+#                 raise TypeError("All values of 'dict_with_keys' must be int, float or str")
+#
+#         self._dict_with_keys = dict_with_keys
+#
+#         if self.__fields_are_existing:
+#             self.__update_choice_frames()
+#         else:
+#             # first init of text & keys
+#             self.__key_list = list(self.dict_with_keys.keys())
+#             self.__text_list = [str(val) for val in self.dict_with_keys.values()]
+#
+#     @property
+#     def button_text(self) -> str:
+#         return self._button_text
+#
+#     @property.setter
+#     def button_text(self, text:str):
+#         if not isinstance(text, str):
+#             raise TypeError("Button text must be a string.")
+#         self._button_text = text
+#
+#         if hasattr(self, "execute_button"):
+#             self.execute_button.config(text=text)
+#
+#     @property
+#     def max_choices(self) -> int:
+#         return self.__max_choices
+#
+#     @property.setter
+#     def max_choices(self, max_choices: int):
+#         if not isinstance(max_choices, int):
+#             raise TypeError("'max_choices' has to be a int")
+#         self.__max_choices = max_choices
+#
+#         if len(self.choices) > max_choices:
+#             self.reset_choices()
+
 
 class MainPlotFrame(Frame):
     """
@@ -3060,6 +3393,11 @@ class LabelFrame(Frame):
         :param label: Label | None (Optional label object to populate the frame.)
         :return: None
         """
+        # TODO: init stlyes via style manager
+        # TODO: Styles and such infos need to be initialized properly with a function or on the gui_controller
+        # FIXME: styl needs to be created inside the mainloop anyhow
+        # Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
+        # Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
 
         super().__init__(parent, *args, **kwargs)
         if label is None:
@@ -3814,7 +4152,7 @@ def set_focus_visual(transform_widget: Widget) -> None:
                               lambda event: event.widget.configure(style=f"info.{event.widget.winfo_class()}"))
 
 
-def set_standard_focus_on_window(wind: Window | Toplevel) -> None:
+def set_standard_focus_on_window(wind: Window) -> None:
     """
     Applies standard focus visuals to all widgets in a given window.
 

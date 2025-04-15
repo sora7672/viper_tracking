@@ -24,8 +24,8 @@ how things were built, what challenges came up, and what it all meant, you want 
 
 
 ## Pre Open Beta
-This is a list of features that I absolutely want to finish before releasing the first open beta.
-(But because of IRL and time reasons they are not done yet)  
+> This is a list of features that I absolutely want to finish before releasing the first open beta.  
+> (But because of IRL and time reasons they are not done yet)  
 
 - Add Mainplot label logic & UI & UX
 - Fix subfilter remove and then error on analyse
@@ -46,9 +46,9 @@ This is a list of features that I absolutely want to finish before releasing the
 
 
 ## Post Open Beta
-Here you will see my planed features or mechanics I will start implementing after the program is available to install  
-on the pc. Most of them are not needed for the core functionality, but in my opinion either helping the use of the tool  
-or visual optimizations or just refactors, to make the code better (but basically won't change how it works).  
+> Here you will see my planed features or mechanics I will start implementing after the program is available to install  
+> on the pc. Most of them are not needed for the core functionality, but in my opinion either helping the use of the tool  
+> or visual optimizations or just refactors, to make the code better (but basically won't change how it works).  
 
 - Bug/Issue report area near settings view, linked to GitHub & filtering duplication entrys
 - Window labeling conditions with dynamic timeframes, like weekday(monday, tuesday etc.), or daytime(morning, evening, etc.)
@@ -68,8 +68,8 @@ or visual optimizations or just refactors, to make the code better (but basicall
 
 
 ## Potential Feature Ideas
-What you see here, is a thought collection of stuff, that I would flag as "nice to have" but not "needed to have",  
-including some future optimizations, mechanics and more.
+> What you see here, is a thought collection of stuff, that I would flag as "nice to have" but not "needed to have",  
+> including some future optimizations, mechanics and more.
 
 - Instead of saving database querrys with dicts/direct values, maybe add some smarter Databaseobject to
 forward between modules?
@@ -79,14 +79,82 @@ forward between modules?
 Should include a pin to close app, same pin for changing settings (But still we will add here enforced privacy!)
 - Export of analysis, in form of csv or sql, not as 5 seconds frame, but as combined output from pandas.
 - Backup creation & backup import, maybe even adding here the option to upload anyhwere?
+- Maybe some way to enable the user to create "custom" manual label creation in pystray?  
+like i want to have many labels for like "meetings" or "tickets" that all should start `ticket#<new label name>`  
+or `meeting#daily_scrum`, `meeting#customerABC+insurance_car`
 
 
 ## Milestones Completed
 
-A list of major features, systems, and breakthroughs already implemented.  
-This isn’t just "done", these are key stepping stones that shaped the core of Viper Tracking.  
+> A list of major features, systems, and breakthroughs already implemented.  
+> This isn’t just "done", these are key stepping stones that shaped the core of Viper Tracking.  
 
-- a
-- b
-- c
+
+- Add duplicate registration cooldown logic to prevent redundant style injection
+- Add final GUI polish and UX handling across all tabs  
+- Create new helper widgets like `FlexFrame`, `OverlayFrame`, `ItemSelectFrame`  
+- Create singleton `FontManager` and logic for global font application  
+- Add internal re-registration system for style persistence on theme switch  
+- Wrap `Style.configure()` and `.map()` with warnings and protection logic  
+- Fix style override bugs on theme changes  
+- Begin creation of `StyleManager` to preserve styles across themes  
+- Patch `theme_use`, `theme_create`, and `mainloop` to fire those events  
+- Inject custom ttkbootstrap events: `<<PostThemeUse>>`, `<<PreMainloop>>` etc.  
+- Apply full code cleanup: PEP8, docstrings (reStructuredText), typing everywhere  
+- Add fallback image generation for small UI containers  
+- Modularize plot containers: `MainPlotFrame`, `LabelPlotFrame`, etc.  
+- Add GUI and backend logic for combining and reducing filters (OR/AND logic)  
+- Create dynamic timeframe system (`DynamicTimeframe`) for filters  
+- Build GUI for filter creation, nesting, deletion, and reuse  
+- Add full filter management: `DatabaseFilter`, `filter_catalogue` table  
+- Optimize pandas usage for time-based analysis (from 7s → 0.02s on test frame)  
+- Enable plot interaction: click, hover, keyboard scroll  
+- Add matplotlib-based figure generation for plots (label, app, activity)  
+- Create color picker helper for plotting  
+- Create label, app, and activity analyzers based on usage data  
+- Add first daily analysis feature using pandas  
+- Add helper methods and structure for pandas-based analysis (`ViperDF`)  
+- Sync input and window logging with shared timestamps and window IDs  
+- Implement label logic with many-to-many DB relation (label ↔ window)  
+- Add tkinter variable binding fixes in dynamic inputs  
+- Refactor view code to reduce hardcoded logic, unify access paths  
+- Refactor `conditions.py` and integrate into window tracking  
+- Recreated the one dimensional Condition system: Created base classes: `ConditionList`, `ObjectCondition`, and runtime evaluator  
+- Improve system tray robustness (safe exit, detach bugs fixed)  
+- Add `MultiFunction` helper to bind multiple functions to one tray menu entry  
+- Add per-attribute type checking and auto-init in user settings  
+- Create `UserSettingsManager` with dynamic JSON persistence  
+- Refactor GUI into modular files: `gui_views.py`, `gui_controller.py`  
+- Improve window title sanitization (e.g. remove emojis)  
+- Fix bugs with GUI element duplicates on startup  
+- Add system tray updates when label changes  
+- Build label tab: creation, deletion, manual toggle, DB persistence  
+- Add settings tab to allow theme and resolution configuration  
+- Add SQLite support and switch from previous database system(MongoDB)  
+- Create first GUI for manual label control from tray menu  
+- Start layout of main GUI: notebook/tabs system  
+- Add input logger and link input entries to windows  
+- Add condition system for automatic label assignment using logic chains  
+- Add label catalog table and label-to-window linking table  
+- Implement invisible root window in `gui_controller` to act as global GUI anchor for headless execution  
+(used for event loop, style patching, tray context, and later GUI startup)  
+- Add basic system tray integration with pystray  
+- Add graceful shutdown handling for multi-threaded program termination  
+- Add logger class and debug logging infrastructure  
+- Prototyping functionality to test base behaviour  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

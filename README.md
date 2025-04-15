@@ -11,6 +11,7 @@ and how it's analyzed - without compromising your data privacy.
 ## Table of Contents
 
 - [Why should I use ViperTracking instead of XYZ?](#why-should-i-use-viper-tracking-instead-of-xyz?)
+- [Simple Explanation](#simple-explanation)
 - [Roadmap](#roadmap)
 - [Key Features](#key-features)
 - [Design Philosophy](#design-philosophy)
@@ -29,10 +30,25 @@ and how it's analyzed - without compromising your data privacy.
 
 Simple. You are in full control of everything that happens here.  
 I built this with intention and love. "Working" is never good enough for me.  
-I keep improving it, so we can better understand how we spend our time and learn from it.
+I keep improving it, so we can better understand how we spend our time and learn from it.  
 
 Whether it's projects, tickets, or just your daily screen routine,  
-Viper Tracking helps you track it all in a way that works for you.
+Viper Tracking helps you track it all in a way that works for you.  
+
+---
+
+## Simple Explanation
+
+This README, the devlog, and the roadmap aren’t built for everyone to fully understand.  
+And that’s okay, even I can’t always grasp everything I’ve done here. I just kept going, step by step.  
+
+If you feel lost while reading, that’s completely fine.  
+I’m not the best explainer, but I’ve tried to be honest, open, and structured throughout these docs.  
+
+Please don’t think you’re worse or “not technical enough” if something seems confusing.  
+We just walked different paths. This was mine — one line of code after another,  
+often without knowing what the next step would be.  
+(And yes, sometimes I re-read my own docs to remember what I actually built 😄)  
 
 ---
 
@@ -54,7 +70,7 @@ and what's coming next.
 - Dynamic labeling system (manual or conditional by AND/OR logic)
 - Modular GUI built with ttkbootstrap and custom widgets
 - Interactive GUI to create filters for timeframes with unlimited add/subtract logic
-- Dynamic visualizations showing activity levels, app usage over time, extra app-based and label-based timelines. 
+- Dynamic visualizations showing activity levels, app usage over time, extra app-based and label-based timelines.  
 All fully interactive and filterable
 - Auto-aggregation of low-percentage data in charts
 - Multi-threaded architecture: input tracking, system tray, DB access and GUI
@@ -80,7 +96,10 @@ All fully interactive and filterable
 - **Concurrency:** Native `threading` (input tracking, GUI, DB thread)
 - **Logging:** Extended `logging` module
 - **Config system:** Fully custom-made with distinction between static configs and editable settings
-- **Custom UI Toolkit:** Features in-development components from Ouroboros UIX, an upcoming open-source UI framework. The need for a better UIX architecture became clear through ViperTracking itself — this project marks the starting point of its development, and selected elements will be extended and extracted into the framework later on.
+- **Custom UI Toolkit:** Features in-development components from Ouroboros UIX, an upcoming open-source UI framework.  
+The need for a better UIX architecture became clear through ViperTracking itself,  
+this project marks the starting point of its development, and selected elements will be extended  
+and extracted into the framework later on.
 > **Platform:** Windows-only (tested on Windows 11, likely compatible with Windows 10)
 
 ---
@@ -142,20 +161,29 @@ Alternatively, feel free to open an issue directly in this repository.
 
 ## Why I Built This
 
-Originally, ViperTracking began as a small exercise to learn MongoDB, but it quickly evolved into a deeply personal project. As someone with ADHD, I often struggled to measure time realistically and wanted a tool that helped me see clearly how I use my computer — no assumptions, just data.
+Originally, ViperTracking began as a small exercise to learn MongoDB,  
+but it quickly evolved into a deeply personal project. As someone with ADHD,  
+I often struggled to measure time realistically and wanted a tool that helped me see clearly how I use my computer,  
+no assumptions, just data.  
 
-Over time, it became my **portfolio foundation**, my **first real architecture**, and something I hope can **motivate others** to pursue their own ideas. I’ve spent over 1300 coding hours on this, overcoming thread deadlocks, architectural rewrites, and even phases of depression and self-doubt.
+Over time, it became my **portfolio foundation**, my **first real architecture**,  
+and something I hope can **motivate others** to pursue their own ideas.  
+I’ve spent over 1300 coding hours(Timestamp 12.04.2025) on this,  
+overcoming thread deadlocks, architectural rewrites, and even phases of depression and self-doubt.  
 
-This project isn’t just about code — it’s about perseverance, learning through doing, and building something that actually helps people understand themselves better.
+This project isn’t just about code — it’s about perseverance, learning through doing,  
+and building something that actually helps people understand themselves better.  
 
 ---
 
 ## Devlog
 
 Want to follow the development journey in more detail?  
-Read the [Devlog](./docs/devlog.md) for insights, obstacles, architecture decisions, and the thought process behind key features.
+Read the [Devlog](./docs/devlog.md) for insights, obstacles, architecture decisions,  
+and the thought process behind key features.
 
-This is not just a project, it's a learning path, a reflection and a way to share how I build real tools that grow together with me.
+This is not just a project, it's a learning path, a reflection and a way to  
+share how I build real tools that grow together with me.
 
 ---
 

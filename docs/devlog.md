@@ -7,23 +7,23 @@
 - [Cracks and Breakthroughs](#cracks-and-breakthroughs)
   - October to November 2024
 - [Isolation and Reflection](#isolation-and-reflection)
-  - Late November to Early January
+  - Late November to Early January 2025
 - [From Applications to Algorithms](#from-applications-to-algorithms)
-  - Early January to End of January
+  - Early January to Late of January 2025
 - [Analysis in Chaos](#analysis-in-chaos)
-  - Late January to Late February
+  - Late January to Late February 2025
 - [Combining Figures, Flexible Filters and Building Widgets](#combining-figures-flexible-filters-and-building-widgets)
-  - Late February to Early March
+  - Late February to Early March 2025
 - [Modular GUI & Filter Logic](#modular-gui--filter-logic)
   - Early till mid of March 2025
 - [Final Cleanup and Refactoring](#final-cleanup-and-refactoring)
   - Mid to Late March 2025
 - [Becoming the Architect: Identity, Systems, and the Birth of Ouroboros UIX](#becoming-the-architect-identity-systems-and-the-birth-of-ouroboros-uix)
-  - March 31 to April 1
+  - March 31 to April 1 2025
 - [Fixing Tkinter and TTKBootstrap: Mastering the GUI’s Deepest Layers](#fixing-tkinter-and-ttkbootstrap-mastering-the-guis-deepest-layers)
-  - April 1 to April 8
+  - April 1 to April 8 2025
 - [Final Integration and Closure for presentation purpose](#final-integration-and-closure-for-presentation-purpose)
-  - April 9 to April 12
+  - April 9 to April 12 2025
 - [TL;DR – What This Was All About](#tldr--what-this-was-all-about)
 - [Final Words](#Final-Words)
 
@@ -69,7 +69,7 @@ With SQLite now running smoothly, I turned to solving technical issues and expan
 One of the biggest challenges emerged when the GUI refused to close cleanly because Tkinter’s mainloop wouldn’t exit properly.  
 I spent nearly two weeks debugging threads, tracing state changes, and testing different shutdown scenarios.  
 In the end, the solution was to inject an "after" method call into the root window to trigger a graceful shutdown.  
-That single fix took me way to many hours, but I learned more about event loops and GUI lifecycles than any tutorial could ever teach me.  
+That single fix took me way too many hours, but I learned more about event loops and GUI lifecycles than any tutorial could ever teach me.  
 
 Soon after that, I began reworking the label system. At that point, labels were still saved per window as a simple string list.  
 It felt like a smart choice back then, since the tool was supposed to stay small.  
@@ -121,7 +121,7 @@ I had learned that rest is a part of development too. As long as it’s not avoi
 Growth doesn't only happen while writing code, but also while stepping back to breathe and reset.  
 
 ## From Applications to Algorithms
-### Early January to End of January
+### Early January to Late January 2025
 
 The first weeks of January were dominated by something entirely different.  
 I was rewriting my job application materials and focused completely on optimizing them for ATS systems.  
@@ -139,7 +139,7 @@ From there, I began laying the groundwork for my data analysis module,
 a new milestone was about to begin.  
 
 ## Analysis in Chaos
-### Late January to Late February
+### Late January to Late February 2025
 
 After nearly a month focused solely on job applications and CV polishing for ATS systems,  
 I finally returned to coding in late January. But getting back into it wasn’t smooth.  
@@ -153,7 +153,7 @@ Still, I pushed forward.
 This was the point where I began implementing the data analysis backbone of Viper Tracking using Pandas and Matplotlib.  
 I created a dedicated `ViperDataFrame` class that became the core of all time and activity analysis.  
 It wasn’t just about one or two diagrams. By the end of this phase, I had built seven fully functional visualizations, 
-each designed with dynamic configuration and combined logic in mind.  
+each designed with dynamic configuration and *combinable* logic in mind.
 
 One of the biggest challenges was handling data granularity.  
 The system needed to scale seamlessly between minutes, hours, days, or even months.  
@@ -174,80 +174,100 @@ This phase was all about pushing through under pressure.
 It taught me that progress doesn’t always feel powerful in the moment, but in hindsight,  
 this was one of the most foundational parts of the entire project.  
 
+
 ## Combining Figures, Flexible Filters and Building Widgets
-### Late February to Early March
+### Late February to Early March 2025
 
 By the end of February, the core visualizations were working.  
-But I quickly realized that dynamic updates and figure combinations weren’t behaving as expected.  
-The inline functions I had written earlier couldn’t scale with what I now wanted:  
-combining multiple figures flexibly, reusing Axes, and modifying plots on the fly.  
+But I quickly realized that dynamic updates and figure combinations were not behaving as expected.  
+The inline functions I had written earlier could not scale with what I now wanted:  
+flexible combination of multiple figures, reusing Axes, and showing dynamic information in real-time.
 
-So I rewrote major parts of the Matplotlib logic. I moved everything into structured class methods within ViperDataFrame,  
+So I rewrote major parts of the Matplotlib generation logic.  
+I moved everything into structured class methods within my ViperDataFrame,  
 anchoring the dynamic logic properly inside the class.  
 This allowed the figures to remain editable and reactive, even when reused or combined.  
-It was a heavy rewrite, but it laid the groundwork for advanced comparisons and overlayed visual output.  
+It was a heavy rewrite, but it laid the groundwork for advanced comparisons and overlayed visual output.
 
 Next came the filter system. To generate meaningful DataFrames for analysis, I had to create a database-driven filtering mechanism.  
-This meant crafting a structure that allowed for condition-based filtering across timeframes, labels, window types, and more.  
+This meant crafting a structure that allowed for condition-based filtering across timeframes, labels, window types, and more.
 
 To support flexible time-based filtering, I created a new helper class called `DynamicTimeframe`.  
 Instead of storing fixed datetime values, it stores string-based descriptors like `"last_day"`, `"last_7_days"`, `"current_month"` or `"current_week"`.  
-When executed, these strings are translated into actual `datetime` objects,  
-giving the filter engine the flexibility to work dynamically depending on when it is called.  
+When executed, these strings are translated into actual start and end `datetime` objects,  
+giving the filter engine the flexibility to work dynamically depending on when it is called.
 
-But I didn’t stop there. I also built combinable filters,  
-allowing additive and subtractive logic across nested filters.  
-The result was a fully modular, user-controlled filter pipeline, robust, scalable, and future-proof.  
+I also built a logic to properly combine multiple filters,  
+allowing additive and subtractive logic across the nested filters.  
+The result was a fully modular, user-controlled filter pipeline.  
+Robust, scalable, and future-proof.
 
-Then came **the hard part**: _showing it all in the GUI._  
+Then came the hard part: showing it all in the GUI.
 
 I wanted more than just basic input forms.  
-So I started designing a reusable `ScrollFrame` component that could support not only this project, but future ones too.  
-Alongside that, I built an `ExpandableFrame` system for flexible UI layouts.  
-These weren’t just convenience features — they came from a growing realization:  
-I needed better tools. If building the UI costs me over 100 hours every time, I’ll never get anywhere.  
+So I started redesigning my old `ScrollableFrame` into a reusable `ScrollFrame` component 
+that could support not only this project, but future ones too.  
+Alongside that, I built an `ExpandableFrame` system for flexible UI layouts.
 
-This was the seed of what would later become my own UI toolkit.  
+These were not just convenience features. They came from a growing realization.  
+If I had to spend over 100 hours on UI every time, it would stop me from creating my potential.  
+It was never about the complexity. It was the lack of structure.  
+That thought stuck in my head, like a splinter under the skin.  
+Small, but impossible to forget.
+
+This was the seed of what would later become my own UI toolkit.
 
 Throughout all of this, one theme emerged:  
-user experience(UX).  
+User experience.  
 Every design decision was about flow and usability.  
-Especially for Viper Tracking, where I needed fast input, fluid navigation, and keyboard-first interactions,  
-because I’d be using it myself, daily, and I wasn’t going to tolerate clunky UX.  
+Especially for Viper Tracking, where I needed fast input, fluid navigation, and keyboard-first interactions.  
+Because I would be using it myself, daily, and I was not going to tolerate a clunky UX feeling!
 
-## Modular GUI & Filter Logic
-### Early till mid of March 2025
+## Modular GUI & Filter Logic  
+### Early to Mid March 2025
 
-With the data engine in place, I moved into the frontend and hit another wall.  
+With the data engine in place, I moved into the frontend.  
 
 **I still hate GUI work. But it’s a necessary evil.  
 Without it, none of my dynamic backend logic would be usable for all kind of users!**  
 
-One of the first things I tackled was the DatePicker inside the filter system.  
-The stock widget in TTKBootstrap didn’t support proper keyboard interaction, and that annoyed me deeply.  
-So I deconstructed it and rebuilt it to allow full navigation with arrow keys, confirmation with Enter, and cancellation with Escape.  
-That was a big step toward making the interface more accessible and efficient, for both myself and any future users.  
+The first thing I tried to fix was the DatePicker.  
+TTKBootstrap’s stock version didn’t support keyboard navigation.  
+I couldn’t even move through dates or hit Enter to confirm. That was a red line.  
+So I rewired the entire interaction layer: arrow key movement, Enter to confirm, Escape to cancel.  
+It finally felt usable, something I could accept in a tool that had already become part of my identity.
 
-Then came a massive problem.  
-I had designed the GUI to run on minimal screen sizes, but Matplotlib figures don’t scale well.  
-I tried placing them into a scrollable frame, but the result looked terrible.  
-To solve that, I created a new system: dynamically scaling image frames that render the plots as static images  
-and place them within the limited layout. These images work as previews only.  
-They do not support dynamic interaction, but they help maintain structure and visual clarity.  
+But that was just the beginning.
+
+The GUI was designed also for small screens.
+So I always developed in the smallest accepted resolution,
+just to be sure everything looked right and worked reliably.
+
+Matplotlib, however, does not care about small screens.  
+No matter what I tried, it broke the layout or overflowed.  
+I dumped the figures into a scrollable frame.
+And honestly, it was a pain to look at...
+
+That was the moment I stopped trying to fix stuff.  
+I didn’t want another patch on top of a patch.  
+I wanted something clean.  
 
 To solve that, I implemented an overlay system that allows users to **open the figures in full view with all dynamic actions** added to them.  
 Clicking on a preview opens an overlay over the entire root window,  
 logically linked back to the widget it came from. It looks clean, feels integrated, and scales correctly.  
 
-At the same time, I started thinking bigger:  
-I needed better UI tools.  
-I didn’t want to keep spending 100+ hours per project rebuilding the same junk.  
+At that point, I was done.  
+No way I’d keep wasting 100+ hours rebuilding the same UI junk every time.  
+If the tools slow me down, they don’t belong in my workflow.  
+That decision didn’t come from ambition. It came from frustration.  
+I’ll build something better. And once it's done, I won’t touch this broken stack again.  
+Ever.  
 
 I wrote my own reusable ScrollFrame and an ExpandableFrame. The goal:  
 build reusable, consistent UX components with a strong focus on keyboard-first workflows.  
 
 This phase marked a turning point. I wasn’t just writing a tracking tool anymore.  
-I was laying the foundation for something greater.  
+I was laying the foundation for something greater.
 
 ## Final Cleanup and Refactoring
 ### Mid to Late March 2025
@@ -294,7 +314,7 @@ often under heavy mental and physical strain. This project wasn’t just a portf
 It had become a milestone in my development journey.  
 
 ## Becoming the Architect: Identity, Systems, and the Birth of Ouroboros UIX
-### March 31 to April 1  
+### March 31 to April 1 2025
 
 On March 31st, I sat down with a very specific frustration in mind: I hated checkboxes.  
 They felt clunky, slow, and awkward to use. I didn’t want another collection of tiny toggles.  
@@ -365,7 +385,7 @@ April 1st wasn’t the day I discovered a new feature.
 It was the day I rediscovered myself.  
 
 ## Fixing Tkinter and TTKBootstrap: Mastering the GUI’s Deepest Layers
-### April 1 to April 8
+### April 1 to April 8 2025
 
 At the start of April, I hit the point where styling limitations in Tkinter and TTKBootstrap became impossible to ignore.  
 Three major problems emerged, all of them deeply structural:  
@@ -391,9 +411,11 @@ I designed a pattern language to define style sources:
 - Optionally followed by a **widget selector** using `#WidgetName`.  
 - In the future, **modifiers** using `?Modifier` (e.g. darken, shift, multiply) can be chained, where applicable.  
 > Pattern Buildup:  
-> $...
-> Pattern Example:
-> ...
+> `$<type>[.<property>][#<widget>][?<modifiers>]`
+
+> Pattern Example:  
+> `$color.fg`  
+> `$color.focuscolor#TButton`
 
 The Style Manager can dynamically resolve style data per widget, per property, per theme,  
 with fallback to global defaults or override values.  
@@ -423,7 +445,7 @@ The goal was simple: fast error recovery, so the developing flow stays uninterru
 
 I monkey-patched TTKBootstrap’s internals.   
 Theme changes now fire global events, and every widget subscribed to the Style Manager updates in sync.  
-Styles no longer silently fail, if a developer forgets to register them and instead uses the ttkbootstrap configure instead,  
+Styles no longer silently fail if a developer forgets to register them and instead uses the ttkbootstrap configure instead,  
 they’ll see a warning and get reminded to register them properly.  
 Everything is injected cleanly on import, requiring just one simple initialization with the root window.  
 
@@ -433,7 +455,7 @@ This level of control means any developer can now:
 - Understand what went wrong without guessing  
 
 ## Final Integration and Closure for presentation purpose 
-### April 9 to April 12
+### April 9 to April 12 2025
 
 The last few days were about tying everything together.  
 While finalizing the `ItemSelectionFrame` and its sub-widget, I made a small but annoying mistake,  
@@ -468,13 +490,14 @@ And that’s where the story of this devlog ends.
 - **Struggled with Tkinter/TTKBootstrap limitations** and responded by building my own reusable GUI components.  
 - **Invented a full Style Manager framework** that dynamically handles fonts, colors, and geometries across themes.  
 - **Wrote 1400+ lines of high-end code in just 8 days**, accounting for over 10% of the total project base.  
-- **Experienced a mental and technical breakthrough** that led to the birth of a future UI framework: **Ouroboros UIX**.  
+- **Experienced a mental and technical breakthrough**, realizing I needed better tools — and committed to building them.  
+- **This moment sparked the birth of Ouroboros UIX**, a future standalone UI framework.  
 - **All of this while battling real-life chaos**: renovations, job hunting, illness, and ADHD-related focus issues.  
-- **This is not just code...**  it’s personal evolution in motion.  
+- **This is not just code...** it’s personal evolution in motion.
 
 
 ---
-### Philosophy
+## Philosophy
 
 Viper Tracking was never "just a tool."  
 It became my personal proof of concept, like a counter-model to rigid software conventions.  
@@ -512,6 +535,6 @@ This isn’t just a tool.
 It’s my way of saying: I’m still here. And I’m not done yet.  
 
 *Every line of code is a line I wasn’t allowed to write in past jobs.  
-Now it’s mine! And I’m just getting started.*  
+Now it’s mine! **And I’m just getting started.***  
 
 [See also: Devlog #2 – Finalization till open Beta release](devlog2.md)  

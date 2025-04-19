@@ -21,6 +21,7 @@ and how it's analyzed - without compromising your data privacy.
 - [Privacy & Security](#privacy--security)
 - [License & Contribution](#license--contribution)
 - [Why I Built This](#why-i-built-this)
+- [Numbers](#numbers)
 - [Devlog](#devlog)
 - [Contact](#contact)
 
@@ -168,22 +169,43 @@ no assumptions, just data.
 
 Over time, it became my **portfolio foundation**, my **first real architecture**,  
 and something I hope can **motivate others** to pursue their own ideas.  
-I’ve spent over 1300 coding hours(Timestamp 12.04.2025) on this,  
-overcoming thread deadlocks, architectural rewrites, and even phases of depression and self-doubt.  
+I’ve overcome thread deadlocks, architectural rewrites, and even phases of depression and self-doubt.  
 
 This project isn’t just about code — it’s about perseverance, learning through doing,  
 and building something that actually helps people understand themselves better.  
 
 ---
 
+## Numbers
+
+Some geeky context for what went into this (as of 12th April 2025):
+
+- **1300+ hours** of code, testing, and architecture
+- **200–300 hours** of thinking through problems offline
+- **220.000 characters** of pure code  
+  - That’s roughly **140 pages** in a printed book
+- **90.000 characters** of internal documentation
+- **7 months** until presentation milestone  
+- **6 full weeks** without a single line of code  
+- Regular weeks of **70+ hours** of focused coding
+- In just **8 days**, I wrote 2 new systems to prevent deep TTK/Tkinter errors
+  - ~**1500 lines**, added to a project that had previously just hit **11.000 lines total**
+
+
+---
+
 ## Devlog
+[→ Read the full Devlog](./docs/devlog.md)
 
-Want to follow the development journey in more detail?  
-Read the [Devlog](./docs/devlog.md) for insights, obstacles, architecture decisions,  
-and the thought process behind key features.
+Want to follow the development journey in more depth?  
+The Devlog is not just about features and architecture.  
+It became something else along the way:  
+a personal log, a reflection space, and a voice for those who struggle while building,  
+learning, or just trying to keep going.  
 
-This is not just a project, it's a learning path, a reflection and a way to  
-share how I build real tools that grow together with me.
+This started as a project and became my journey. 
+Built in chaos, shaped by pressure, and written to be honest.  
+It shows how I found *my way* in this world.
 
 ---
 

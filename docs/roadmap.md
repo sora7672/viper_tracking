@@ -59,10 +59,10 @@ how things were built, what challenges came up, and what it all meant, you want 
 - Better Validation logic with *`Ourbobors UIX`*
 - Add also weekdays, daytime dynamic search for filters
 - Complete rework of ViperDF, including optimizations and initialization handling
-- Also probably split the ViperDF to a pandas(analysis only) and matplot(figure generation only) module
+- We should probably split the ViperDF to a pandas(analysis only) and matplot(figure generation only) module
 - Outsource DayAnalyzer in own module
 - Rework the old ViewController
-- Outsource custom exceptiosn & rework them to have the same standard here
+- Outsource custom exceptions & rework them to have the same standard here
 - Add some small helper function like "smart_copy" and recheck all return values for protection
 - Add privacy protection area, where keywords or applications can be blacklisted to not be tracked
 

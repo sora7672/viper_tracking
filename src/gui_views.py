@@ -264,7 +264,7 @@ class ScrollFrame(Frame):
             raise TypeError("scrollbar_position must be a string or tuple/list of 2 strings.")
 
         for sbar in self.scrollbar_configs:
-            sbar["is_positioned"] = True
+            sbar["is_positioned"] = False
 
         self._canvas = Canvas(self)
         if canvas_height:
@@ -305,46 +305,15 @@ class ScrollFrame(Frame):
         self._canvas.pack_propagate(False)
         self._canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
 
-        self.inner_frame.bind("<Configure>", self._frame_size_changed)
+
         self._canvas.bind("<Enter>", self._bind_mousewheel)
         self._canvas.bind("<Leave>", self._unbind_mousewheel)
 
-    def _check_scrollbar_position(self, position_string) -> tuple[str,str,str]:
-        """
-        Determines the scrollbar orientation and canvas attachment side from a position code.
+        self.inner_frame.bind("<Configure>", self._frame_size_changed)
+        self.master.bind("<Configure>", self._frame_size_changed)
 
-        Converts a shorthand position string (e.g., "e", "w", "n", "s") or full position name
-        ("left", "right", "top", "bottom") into a tuple of (`scrollbar_position`, `orientation`, `canvas_side`).
-        This helper is used to configure the scrollbar placement and ensure the canvas is on the opposite side.
+        self.after(100, self._frame_size_changed)
 
-        :param position_string: str (The position code for the scrollbar.)
-        :return: tuple[str, str, str] (A tuple containing the normalized scrollbar position, the scrollbar orientation
-         ("vertical" or "horizontal"), and the side where the canvas should be placed.)
-        :raises ValueError: If the provided position code is not recognized.
-        """
-
-        match position_string.lower():
-            case "e" | "left":
-                scrollbar_position = "left"
-                orientation = "vertical"
-                canvas_side = "right"
-            case "w" | "right":
-                scrollbar_position = "right"
-                orientation = "vertical"
-                canvas_side = "left"
-            case "s" | "bottom":
-                scrollbar_position = "bottom"
-                orientation = "horizontal"
-                canvas_side = "top"
-            case "n" | "top":
-                scrollbar_position = "top"
-                orientation = "horizontal"
-                canvas_side = "bottom"
-            case _:
-                raise ValueError(f"Invalid scrollbar position {position_string}.\n"
-                                 f"Allowed: {self._allowed_scrollbar_positions}")
-
-        return scrollbar_position, orientation, canvas_side
 
     def _frame_size_changed(self, event=None) -> None:
         """
@@ -354,7 +323,8 @@ class ScrollFrame(Frame):
         :return: None
         """
 
-        self.update_idletasks()
+        self.inner_frame.update_idletasks()
+
         frame_width = self.inner_frame.winfo_width()
         frame_height = self.inner_frame.winfo_height()
         canvas_width = self._canvas.winfo_width()
@@ -363,6 +333,7 @@ class ScrollFrame(Frame):
         h_scroll_needed = frame_width > canvas_width
 
         for bar, config in zip(self.scrollbar_list, self.scrollbar_configs):
+
             if config["orientation"] == "vertical" and v_scroll_needed:
                 bar.pack(side=config["scrollbar_position"], fill="y")
 
@@ -381,8 +352,7 @@ class ScrollFrame(Frame):
 
             else:
                 bar.pack_forget()
-                if config["is_positioned"] is True:
-                    config["is_positioned"] = False
+                config["is_positioned"] = False
 
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
 
@@ -443,6 +413,42 @@ class ScrollFrame(Frame):
             direction = 1 if event.num == 5 or event.delta == -120 else -1
             self._canvas.xview_scroll(direction, "units")
 
+    def _check_scrollbar_position(self, position_string) -> tuple[str,str,str]:
+        """
+        Determines the scrollbar orientation and canvas attachment side from a position code.
+
+        Converts a shorthand position string (e.g., "e", "w", "n", "s") or full position name
+        ("left", "right", "top", "bottom") into a tuple of (`scrollbar_position`, `orientation`, `canvas_side`).
+        This helper is used to configure the scrollbar placement and ensure the canvas is on the opposite side.
+
+        :param position_string: str (The position code for the scrollbar.)
+        :return: tuple[str, str, str] (A tuple containing the normalized scrollbar position, the scrollbar orientation
+         ("vertical" or "horizontal"), and the side where the canvas should be placed.)
+        :raises ValueError: If the provided position code is not recognized.
+        """
+
+        match position_string.lower():
+            case "e" | "left":
+                scrollbar_position = "left"
+                orientation = "vertical"
+                canvas_side = "right"
+            case "w" | "right":
+                scrollbar_position = "right"
+                orientation = "vertical"
+                canvas_side = "left"
+            case "s" | "bottom":
+                scrollbar_position = "bottom"
+                orientation = "horizontal"
+                canvas_side = "top"
+            case "n" | "top":
+                scrollbar_position = "top"
+                orientation = "horizontal"
+                canvas_side = "bottom"
+            case _:
+                raise ValueError(f"Invalid scrollbar position {position_string}.\n"
+                                 f"Allowed: {self._allowed_scrollbar_positions}")
+
+        return scrollbar_position, orientation, canvas_side
 
 class SmartDateEntry(DateEntry):
     """

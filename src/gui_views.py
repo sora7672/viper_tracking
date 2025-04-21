@@ -189,18 +189,22 @@ class ScrollFrame(Frame):
     """
     A scrollable frame with configurable scrollbar orientation and placement.
 
-    Use `inner_frame` to place widgets instead of this outer container directly.
+    Use `inner_frame` to place widgets instead of placing them directly on the outer container.
     Supports mousewheel scrolling with automatic binding when hovered.
+
+    **Important:** When binding to parent `<Configure>` events, always use:
+        `master_widget.bind("<Configure>", binding_function, add="+")`
+    This prevents unintended side effects caused by overwritten event bindings.
 
     Allowed scrollbar positions: ["e", "s", "w", "n", "top", "left", "right", "bottom"]
 
     Attributes:
-        scrollbar_list (list): List of scrollbar widgets (max 2).
-        scrollbar_configs (list[dict]): Scrollbar config dictionaries with position and orientation.
-        _canvas_side (str | None): Side where the canvas is attached relative to scrollbars.
-        _canvas (Canvas): Internal canvas used to contain the scrollable content.
-        inner_frame (Frame): The frame inside the canvas where widgets should be placed.
-        _allowed_scrollbar_positions (list[str]): Valid string values for scrollbar positions.
+        scrollbar_list (list): List of active scrollbar widgets (maximum of 2).
+        scrollbar_configs (list[dict]): Scrollbar configuration dictionaries with position and orientation.
+        _canvas_side (str | None): Relative side on which the canvas is packed with respect to scrollbars.
+        _canvas (Canvas): Internal canvas widget containing the scrollable content.
+        inner_frame (Frame): Frame inside the canvas where child widgets should be placed.
+        _allowed_scrollbar_positions (list[str]): Valid values for scrollbar position settings.
     """
 
     _allowed_scrollbar_positions = ["e", "s", "w", "n", "top", "left", "right", "bottom"]
@@ -310,7 +314,7 @@ class ScrollFrame(Frame):
         self._canvas.bind("<Leave>", self._unbind_mousewheel)
 
         self.inner_frame.bind("<Configure>", self._frame_size_changed)
-        self.master.bind("<Configure>", self._frame_size_changed)
+        self.master.bind("<Configure>", self._frame_size_changed, add="+")
 
         self.after(100, self._frame_size_changed)
 

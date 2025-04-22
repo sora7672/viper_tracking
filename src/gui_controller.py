@@ -15,6 +15,7 @@ from tkinter import PhotoImage
 from threading import Lock
 from log_handler import get_logger
 from os import path
+from stylemanager import StyleManager
 
 from settings_manager import UserSettingsManager
 # TODO: Grab the user settings and set the proper style for the windows
@@ -79,7 +80,7 @@ class GuiController:
                 self.root.iconphoto(False, self.icon_image)
             except Exception as e:
                 get_logger().error(f"Failed to set icon. Error: {e}")
-
+            StyleManager(self.root)
             self._lock = Lock()
             get_logger().debug("__init__ from GuiHandler")
 

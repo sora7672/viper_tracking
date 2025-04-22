@@ -1726,6 +1726,25 @@ class ConditionListFrame(Frame):
         """
 
         super().__init__(parent, relief="solid", borderwidth=2, *args, **kwargs)
+
+        StyleManager().register_style(
+            style_name="AndConditionList.TFrame",
+            config={
+                "bordercolor": "#800080",
+                "borderwidth": 2,  "relief": "solid"
+            },
+            mapconfig={}
+        )
+
+        StyleManager().register_style(
+            style_name="OrConditionList.TFrame",
+            config={
+                "bordercolor": "#00FFFF",
+                "borderwidth": 2, "relief": "solid"
+            },
+            mapconfig={}
+        )
+
         self.configure(style="AndConditionList.TFrame")
         self.top_list = top_list
         self.first_element = first_element
@@ -3422,11 +3441,6 @@ class LabelFrame(Frame):
         :param label: Label | None (Optional label object to populate the frame.)
         :return: None
         """
-        # TODO: init stlyes via style manager
-        # TODO: Styles and such infos need to be initialized properly with a function or on the gui_controller
-        # FIXME: styl needs to be created inside the mainloop anyhow
-        # Style().configure("AndConditionList.TFrame", borderwidth=2, relief="solid", background="purple")
-        # Style().configure("OrConditionList.TFrame", borderwidth=2, relief="solid", background="cyan")
 
         super().__init__(parent, *args, **kwargs)
         if label is None:

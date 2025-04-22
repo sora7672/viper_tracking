@@ -18,7 +18,6 @@ from settings_manager import init_user_settings
 from pandas_data_manager import init_day_analyzer
 from filter_manager import init_all_filter_from_db
 
-
 def start_program() -> None:
     """
     Starts the application by initializing and running all necessary components.

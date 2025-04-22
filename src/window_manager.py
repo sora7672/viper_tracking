@@ -93,6 +93,55 @@ class WinInfo:
             del self
             return
 
+        # FIXME: This errors still:
+        # Exception in thread Thread-5 (window_tracker):
+        # Traceback (most recent call last):
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 727, in wrapper
+        #     return fun(self, *args, **kwargs)
+        #            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 989, in create_time
+        #     _user, _system, created = cext.proc_times(self.pid)
+        #                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+        # ProcessLookupError: [Errno 3] assume no such process (originated from OpenProcess -> ERROR_INVALID_PARAMETER)
+        #
+        # During handling of the above exception, another exception occurred:
+        #
+        # Traceback (most recent call last):
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 355, in _init
+        #     self.create_time()
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 757, in create_time
+        #     self._create_time = self._proc.create_time()
+        #                         ^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 729, in wrapper
+        #     raise convert_oserror(err, pid=self.pid, name=self._name)
+        # psutil.NoSuchProcess: process no longer exists (pid=918406544)
+        #
+        # During handling of the above exception, another exception occurred:
+        #
+        # Traceback (most recent call last):
+        #   File "C:\git\python\viper_tracking\src\window_manager.py", line 90, in fill_self
+        #     self.window_type = Process(self.process_id).name()
+        #                        ^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
+        #     self._init(pid)
+        #   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
+        #     raise NoSuchProcess(pid, msg=msg)
+        # psutil.NoSuchProcess: process PID not found (pid=918406544)
+        #
+        # During handling of the above exception, another exception occurred:
+        #
+        # Traceback (most recent call last):
+        #   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+        #     self.run()
+        #   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+        #     self._target(*self._args, **self._kwargs)
+        #   File "C:\git\python\viper_tracking\src\window_manager.py", line 512, in window_tracker
+        #     WinInfo().fill_self()
+        #   File "C:\git\python\viper_tracking\src\window_manager.py", line 91, in fill_self
+        #     except NoSuchProcess | ValueError as e:
+        # TypeError: catching classes that do not inherit from BaseException is not allowed
+
+
         # TODO: Add here a config option for the user for untracked windows
         if self.window_type not in untracked_types:
             self.window_title = string_to_valid_string(self.window_title)

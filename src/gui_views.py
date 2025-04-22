@@ -192,8 +192,8 @@ class ScrollFrame(Frame):
     Use `inner_frame` to place widgets instead of placing them directly on the outer container.
     Supports mousewheel scrolling with automatic binding when hovered.
 
-    **Important:** When binding to parent `<Configure>` events, always use:
-        `master_widget.bind("<Configure>", binding_function, add="+")`
+    **Important:** When binding to this widget `<Configure>` events, always use:
+        `<object>.bind("<Configure>", binding_function, add="+")`
     This prevents unintended side effects caused by overwritten event bindings.
 
     Allowed scrollbar positions: ["e", "s", "w", "n", "top", "left", "right", "bottom"]
@@ -237,6 +237,9 @@ class ScrollFrame(Frame):
         self.scrollbar_configs = []  # List of dicts that should hold each config option per scrollbar
         # example configs: "scrollbar_position" = "left", "orientation" = "vertical", "canvas_side" = "right"
 
+        self._has_horizontal_scrollbar = False
+        self._has_vertical_scrollbar = False
+
         config_keys = ["scrollbar_position", "orientation", "canvas_side"]
         self._canvas_side = None   # needed for saving where the canvas is even on 2 bars
 
@@ -254,6 +257,7 @@ class ScrollFrame(Frame):
                 for sbar in self.scrollbar_configs:
                     if sbar["scrollbar_position"] in ["left", "right"]:
                         self._canvas_side = "left" if sbar["position"] == "right" else "right"
+                        self._has_vertical_scrollbar = True
                         x_num_lr += 1
                 if x_num_lr != 1:
                     raise ValueError("Scrollbar position can only have one for each: \n"
@@ -282,14 +286,18 @@ class ScrollFrame(Frame):
             if self.scrollbar_configs[0]["orientation"] == "vertical":
                 self.scrollbar_list.append(Scrollbar(self, orient="vertical", command=self._canvas.yview))
                 self._canvas.configure(yscrollcommand=self.scrollbar_list[0].set)
+                self._has_vertical_scrollbar = True
 
             else:
                 self.scrollbar_list.append(Scrollbar(self, orient="horizontal", command=self._canvas.xview))
                 self._canvas.configure(xscrollcommand=self.scrollbar_list[0].set)
+                self._has_horizontal_scrollbar = True
 
         elif len(self.scrollbar_configs) == 2:
             y_command = None
             x_command = None
+            self._has_horizontal_scrollbar = True
+            self._has_vertical_scrollbar = True
 
             for sbar in self.scrollbar_configs:
                 if sbar["orientation"] == "vertical":
@@ -307,17 +315,26 @@ class ScrollFrame(Frame):
 
         self._canvas.pack(side=self._canvas_side, fill="both", expand=True)
         self._canvas.pack_propagate(False)
-        self._canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        self._canvas.create_window((0, 0), window=self.inner_frame, anchor="nw", tags="inner_frame")
 
 
         self._canvas.bind("<Enter>", self._bind_mousewheel)
         self._canvas.bind("<Leave>", self._unbind_mousewheel)
 
         self.inner_frame.bind("<Configure>", self._frame_size_changed)
-        self.master.bind("<Configure>", self._frame_size_changed, add="+")
+        self.bind("<Configure>", self._size_change_self, add="+")
 
         self.after(100, self._frame_size_changed)
 
+    def _size_change_self(self, event=None):
+        # # Used for to small innerframe, -15 for scrollbar on that side
+        if not self._has_horizontal_scrollbar:
+            self._canvas.itemconfig("inner_frame", width=self.winfo_width()-15)
+
+        if not self._has_vertical_scrollbar:
+            self._canvas.itemconfig("inner_frame", height=self.winfo_height()-15)
+
+        self._frame_size_changed()
 
     def _frame_size_changed(self, event=None) -> None:
         """
@@ -326,7 +343,8 @@ class ScrollFrame(Frame):
         :param event: Event (Optional tkinter event.)
         :return: None
         """
-
+        self.update_idletasks()
+        self._canvas.update_idletasks()
         self.inner_frame.update_idletasks()
 
         frame_width = self.inner_frame.winfo_width()
@@ -335,6 +353,7 @@ class ScrollFrame(Frame):
         canvas_height= self._canvas.winfo_height()
         v_scroll_needed = frame_height > canvas_height
         h_scroll_needed = frame_width > canvas_width
+
 
         for bar, config in zip(self.scrollbar_list, self.scrollbar_configs):
 

@@ -1622,7 +1622,7 @@ class FilterFrame(tb.Frame):
         """
 
         faulty_fields = []
-        name = self._name.get().strip() or ""
+        name = self._name_var.get().strip() or ""
         window_type = self._window_type.get().strip() or ""
         window_title = self._window_title.get().strip() or ""
         word_list = self._word_list.get().strip() or ""

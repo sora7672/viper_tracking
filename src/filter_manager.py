@@ -100,7 +100,7 @@ class DatabaseFilter:
 
         if isinstance(dynamic_time_frame, DynamicTimeframe):
             self._dynamic_time_frame = dynamic_time_frame
-        elif isinstance(dynamic_time_frame, str):
+        elif dynamic_time_frame and isinstance(dynamic_time_frame, str):
             self._dynamic_time_frame = DynamicTimeframe(dynamic_time_frame)
         else:
             self._dynamic_time_frame = None
@@ -142,7 +142,7 @@ class DatabaseFilter:
             _id = DBHandler().add_filter(name=self._name, word_list=self._word_list, window_type=self._window_type,
                                    window_title=self._window_title, label_list=self._label_list,
                                    start_datetime=self._start_datetime, end_datetime=self._end_datetime,
-                                   dynamic_time_frame=self._dynamic_time_frame.value)
+                                   dynamic_time_frame=self._dynamic_time_frame.value if self._dynamic_time_frame else None)
             self._id = _id
 
     def as_dict(self) -> dict:

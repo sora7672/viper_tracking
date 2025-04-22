@@ -1571,7 +1571,7 @@ class FilterFrame(tb.Frame):
         """
 
         if not event.state & 0x0001:  # Shift key flag
-            result = Messagebox.okcancel(f"Do you want to delete filter '{self._name.get()}'"
+            result = Messagebox.okcancel(f"Do you want to delete filter '{self._name}'"
                 f"({self._filter._name if self._filter else ''}) ?",
             "WARNING! Delete Filter", parent=self.master.master)
             if result != "OK":

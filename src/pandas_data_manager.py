@@ -2062,7 +2062,6 @@ class DayAnalyzer:
     Attributes:
         _instance (DayAnalyzer | None): Class-level singleton instance.
         _lock (Lock): Thread lock to synchronize access to the ViperDF data.
-        _db_call (Callable): Reference to the database query function for retrieving window log data.
         _vdf (ViperDF): The ViperDF instance holding the current day's analyzed data.
         _check_interval (int): Interval in minutes between automatic data refresh checks.
         _next_check_timestamp (datetime): Timestamp for the next scheduled data refresh.
@@ -2096,8 +2095,7 @@ class DayAnalyzer:
         if not hasattr(self, '_initialized'):
             self._lock = Lock()
             self._initialized = True
-            self._db_call = DBHandler().search_window_log
-            tmp_df = self._db_call()
+            tmp_df = DBHandler().search_window_log()
             self._vdf = ViperDF("day_analysis", tmp_df)
             self._vdf.analyze()
 
@@ -2156,7 +2154,7 @@ class DayAnalyzer:
 
         with self._lock:
             del self._vdf
-            tmp_df = self._db_call()
+            tmp_df = DBHandler().search_window_log()
             self._vdf = ViperDF("day_analysis", tmp_df)
             self._vdf.analyze()
 

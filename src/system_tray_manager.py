@@ -96,7 +96,9 @@ class SystemTrayManager:
             self._initialized = True
             self.icon = Icon("Viper Tracking", Image.open("src/viper_tray.ico"))
             self.menu = None
+            self.exit_popup = None
             SystemTrayManager._instance = self
+
             get_logger().debug("__init__ SystemTrayManager")
 
     def start_systray(self) -> None:
@@ -174,6 +176,11 @@ class SystemTrayManager:
     #     thread is not in main
     #     loop
 
+    def exit_systray(self) -> None:
+        if self.exit_popup is not None:
+            return
+        self.exit_popup = True
+
 
     def stop_program(self) -> None:
         """
@@ -225,7 +232,7 @@ class SystemTrayManager:
 
         self.icon.menu = Menu(self._label_menu(),
                               MenuItem("Open GUI", open_main_window),
-                              MenuItem("Exit Viper Tracking", self.stop_program))
+                              MenuItem("Close App", Menu(MenuItem("Exit Viper Tracking", self.stop_program))))
         self.icon.update_menu()
 
     def _label_menu(self) -> MenuItem:

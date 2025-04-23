@@ -95,7 +95,6 @@ class SystemTrayManager:
         if not hasattr(self, '_initialized'):
             self._initialized = True
             self.icon = Icon("Viper Tracking", Image.open("src/viper_tray.ico"))
-            # TODO: Not needed menu?
             self.menu = None
             SystemTrayManager._instance = self
             get_logger().debug("__init__ SystemTrayManager")
@@ -244,14 +243,10 @@ class SystemTrayManager:
         menu_labels = []
         for label in all_label:
             if label.manually:
-                # TODO: remove the enable/disable and make it to set the value if possible.
-                disable_action = MultiFunction(label.disable, self.update_menu)
-                enable_action = MultiFunction(label.enable, self.update_menu)
 
-                menu_labels.append(MenuItem(label.name, Menu(
-                    MenuItem("Activate", enable_action, visible=not label.active),
-                    MenuItem("Deactivate", disable_action, visible=label.active)
-                )))
+                toggle_action = MultiFunction(label.toggle_activity, self.update_menu)
+
+                menu_labels.append(MenuItem(f"{label.name}[{'ON' if label.active else 'OFF'}]", toggle_action))
 
         menu_labels.append(MenuItem("Add & start new Label", open_systray_label))
 

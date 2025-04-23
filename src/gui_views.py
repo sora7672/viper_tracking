@@ -3712,11 +3712,16 @@ class ViewController:
 
         :return: None
         """
-
         get_logger().debug("main_window start")
+
+        if self._main_window is not None:
+            self._main_window.lift()
+            self._main_window.focus_force()
+            return
 
         # Create the Toplevel window
         self._main_window = Toplevel(GuiController().root)
+        self._main_window.protocol("WM_DELETE_WINDOW", self._main_window_closed)
         # TODO: window icon & taskbar icon need to be set properly (probably seen after windows installation)
         #self._main_window.iconphoto(True, GuiController().icon_image)
         self._main_window.title("Viper Tracking")
@@ -3739,7 +3744,9 @@ class ViewController:
         notebook.add(settings_tab, text="Settings")
         notebook.pack(expand=True, fill="both", padx=0, pady=0)
 
-
+    def _main_window_closed(self):
+        self._main_window.destroy()
+        self._main_window = None
 
     def update_tab(self, event) -> None:
         """
@@ -3864,7 +3871,7 @@ class ViewController:
         :param event: Event (Triggered by the "Save" button.)
         :return: None
         """
-        # FIXME: to fast clicking results in multiple label creation
+        # FIXME: to fast clicking results in multiple label creation debouncer use
         if event is None:
             print("error no button provided")
         else:
@@ -4125,11 +4132,10 @@ class ViewController:
         sys_tray_win.resizable(width=False, height=False)
         sys_tray_win.attributes('-toolwindow', True)
         sys_tray_win.attributes('-topmost', True)
-        sys_tray_win.overrideredirect(True)
 
         sys_tray_win.grid_rowconfigure(0, weight=1)
         sys_tray_win.grid_columnconfigure(0, weight=1)
-        sys_tray_win.attributes('-alpha', 0.7)
+        sys_tray_win.attributes('-alpha', 0.9)
 
         title_text = tb.Label(sys_tray_win, text="Choose a label name:", font=("Helvetica", 12))
         label_name = tb.Entry(sys_tray_win, width=40)
@@ -4267,7 +4273,6 @@ def open_main_window() -> None:
     :return: None
     """
 
-    # Todo: If window is allready open (mainwindow) dont reopen it, just make it foreground again
     ViewController().main_window()
 
 

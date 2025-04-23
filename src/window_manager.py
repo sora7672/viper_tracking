@@ -374,6 +374,14 @@ class Label:
         with self.lock:
             return self._creation_datetime
 
+
+    def toggle_activity(self):
+
+        if self.active:
+            self.active = False
+        else:
+            self.active = True
+
     def enable(self):
         """
         Activates the label.

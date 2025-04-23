@@ -66,9 +66,18 @@ class GuiController:
 
         if not hasattr(self, '_initialized'):
             self._initialized = True
-            # TODO: read in config for style from user settings
-            self.root = tb.Window(themename="sandstone")
+            self.root = tb.Window()
             self.root.withdraw()
+
+            theme_from_settings = UserSettingsManager().gui_theme
+            if theme_from_settings in self.root.style.theme_names():
+                self.root.style.theme_use(theme_from_settings)
+            else:
+                self.root.style.theme_use("cosmo")
+                UserSettingsManager().gui_theme = "flatly"
+                UserSettingsManager().save_settings()
+
+
 
             self.root.title('Invisible Window(If you see me report me!)')
             # TODO: get a better image

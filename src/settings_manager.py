@@ -98,7 +98,7 @@ class UserSettingsManager:
             # Project specific attributes
             # Set base values here
             self._gui_theme = "darkly"
-            self._gui_resolution: list[int] = [800, 600]
+            self._gui_resolution: list[int] = [1024, 768]
 
     def init_all_properties(self) -> None:
         """

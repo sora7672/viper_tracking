@@ -153,7 +153,7 @@ def __configure(*args, **kwargs):
                            str(error))
     return out
 
-# Fixme: maybe i forget to ensure fonts allways have names (if not we should use a random hash or so)
+# Todo: maybe i forget to ensure fonts allways have names (if not we should use a random hash or so)
 def __font(*args, **kwargs) -> None:
     """
     Patches the `tkinter.font.Font` constructor.

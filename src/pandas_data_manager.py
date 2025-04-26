@@ -1629,6 +1629,7 @@ class ViperDF:
                 fig.canvas.draw_idle()
                 return
 
+
             for bar, (app_name, percent, duration, details) in zip(bars, zip(df["window_type"], df["overall_percent"],
                                                                              df["duration"], df.get("details", None))):
                 bar_x_min = bar.get_x()
@@ -1653,7 +1654,17 @@ class ViperDF:
 
                     # Position annotation at the middle Y range
                     mid_y = ax.get_ylim()[1] / 2
-                    annotation.xy = (bar_center_x, mid_y)
+
+                    # in case the annotation is too far right, we dont want to cut it
+                    x_min, x_max = ax.get_xlim()
+                    total_width = x_max - x_min
+
+                    if (bar_center_x - x_min) / total_width >= 0.8:
+                        x_pos_annotation = bar_center_x - (total_width * 0.1)
+                    else:
+                        x_pos_annotation = bar_center_x
+
+                    annotation.xy = (x_pos_annotation, mid_y)
                     annotation.set_text(annotation_text)
                     annotation.set_visible(True)
 
@@ -1740,11 +1751,13 @@ class ViperDF:
                 fig.canvas.draw_idle()
                 return
 
+
             for bar, (label_name, percent, duration, details) in zip(bars, zip(df["label_name"], df["overall_percent"],
                                                                      df["duration"], df.get("details", None))):
                 bar_x_min = bar.get_x()
                 bar_x_max = bar.get_x() + bar.get_width()
                 bar_center_x = bar.get_x() + bar.get_width() / 2
+
 
                 # Check if cursor is inside the bar's X range
                 if bar_x_min <= event.xdata <= bar_x_max:
@@ -1765,7 +1778,17 @@ class ViperDF:
                         n_lines_space = 0.5
 
                     mid_y = ax.get_ylim()[1] / 2
-                    annotation.xy = (bar_center_x, mid_y)
+
+                    # in case the annotation is too far right, we dont want to cut it
+                    x_min, x_max = ax.get_xlim()
+                    total_width = x_max - x_min
+
+                    if (bar_center_x - x_min) / total_width >= 0.8:
+                        x_pos_annotation = bar_center_x - (total_width * 0.1)
+                    else:
+                        x_pos_annotation = bar_center_x
+
+                    annotation.xy = (x_pos_annotation, mid_y)
                     annotation.set_text(annotation_text)
                     annotation.set_visible(True)
 

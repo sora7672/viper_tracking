@@ -1910,6 +1910,8 @@ class ViperDF:
                                  bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white", alpha=0.95))
         annotation.set_visible(False)
 
+        first_hover_check = True
+
         def on_hover(event) -> None:
             """
             Handles mouse hover events for the applications pie chart.
@@ -1925,6 +1927,20 @@ class ViperDF:
                 annotation.set_visible(False)
                 fig.canvas.draw_idle()
                 return
+
+            nonlocal first_hover_check
+            if first_hover_check:
+                first_hover_check = False
+                for text, label_name, percent, duration, angle, x, y, color in label_annotations:
+                    renderer = fig.canvas.get_renderer()
+                    bbox = text.get_window_extent(renderer=renderer)
+                    fig_bbox = fig.bbox
+
+                    # Check if all text elements are properly inside the figure
+                    text_inside_figure = (fig_bbox.contains(bbox.x0, bbox.y0) and fig_bbox.contains(bbox.x1, bbox.y1))
+                    if not text_inside_figure:
+                        print(f"[OUT OF BOUNDS] Apps Annotation '{label_name}' at angle {angle:.2f}° "
+                              f" (x={x:.2f}, y={y:.2f})")
 
             for text, label_name, percent, duration, angle, x, y, color in label_annotations:
                 bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())
@@ -1944,15 +1960,21 @@ class ViperDF:
 
                     annotation_text = f"{label_name}: {percent:.2f}%\n{duration_str}"
 
+
+                    annotation_y = y
                     # Check if "Others" and add details with max 5 entries
+                    # also if "Others" set the annotation inside teh pie, for allways 100% readability even
+                    # on super long "Others" app parts
                     if label_name == "Others" and "details" in df.columns:
                         details = df.loc[df["window_type"] == "Others", "details"].values[0]
                         if details:
                             detail_texts = [f"{d['window_type']}: {d['overall_percent']:.2f}%" for d in details]
                             annotation_text += "\n" + "\n".join(detail_texts[:5])
-
+                        annotation_y = 0.3
+                    else:
+                        annotation_y = annotation_y - 0.1
                     # Position annotation below the app name in a fixed location
-                    annotation.xy = (x, y - 0.1)
+                    annotation.xy = (x, annotation_y)
                     annotation.set_text(annotation_text)
                     annotation.set_visible(True)
 
@@ -2040,6 +2062,8 @@ class ViperDF:
                                  bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white", alpha=0.95))
         annotation.set_visible(False)
 
+        first_hover_check = True
+
         def on_hover(event) -> None:
             """
             Handles mouse hover events for the labels pie chart.
@@ -2055,6 +2079,20 @@ class ViperDF:
                 annotation.set_visible(False)
                 fig.canvas.draw_idle()
                 return
+
+            nonlocal first_hover_check
+            if first_hover_check:
+                first_hover_check = False
+                for text, label_name, percent, duration, angle, x, y, color in label_annotations:
+                    renderer = fig.canvas.get_renderer()
+                    bbox = text.get_window_extent(renderer=renderer)
+                    fig_bbox = fig.bbox
+
+                    # Check if all text elements are properly inside the figure
+                    text_inside_figure = (fig_bbox.contains(bbox.x0, bbox.y0) and fig_bbox.contains(bbox.x1, bbox.y1))
+                    if not text_inside_figure:
+                        print(f"[OUT OF BOUNDS] Apps Annotation '{label_name}' at angle {angle:.2f}° "
+                              f" (x={x:.2f}, y={y:.2f})")
 
             for text, label_name, percent, duration, angle, x, y, color in label_annotations:
                 bbox = text.get_window_extent(renderer=fig.canvas.get_renderer())

@@ -788,11 +788,17 @@ class ViperDF:
         :return: None
         """
 
-        # Create hover annotation
-        self.__activity_plot_helper["marker"], = ax.plot([], [], marker="o", color="red", markersize=3, visible=False)
+        # Create hover artists annotation
         self.__activity_plot_helper["annotation"] = ax.annotate("", xy=(0, 0), xytext=(10, 10),
                                     textcoords="offset points", visible=False,
                                     bbox=dict(boxstyle="round", fc="w", ec="red", alpha=0.7))
+
+        self.__activity_plot_helper["hover_line"], = ax.plot([0, 0], [102, -2], color='red',
+                                                             linestyle='dotted', alpha=0.7, visible=False)
+
+        self.__activity_plot_helper["triangle_up"], = ax.plot([], [], marker="v", color="red", markersize=8, visible=False)
+        self.__activity_plot_helper["triangle_down"], = ax.plot([], [], marker="^", color="red", markersize=8, visible=False)
+
         self.__activity_plot_helper["ax"] = ax
 
         # Connect hover event
@@ -811,15 +817,19 @@ class ViperDF:
 
         # This part ensures, that it only runs in the correct axis
         if event.inaxes != self.__activity_plot_helper["ax"]:
-            self.__activity_plot_helper["marker"].set_visible(False)
             self.__activity_plot_helper["annotation"].set_visible(False)
+            self.__activity_plot_helper["triangle_up"].set_visible(False)
+            self.__activity_plot_helper["triangle_down"].set_visible(False)
+            self.__activity_plot_helper["hover_line"].set_visible(False)
             self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
             return
 
         # This part ensures, that it only runs in the correct y area
         if event.ydata is None or not (-5 <= event.ydata <= 105):
-            self.__activity_plot_helper["marker"].set_visible(False)
             self.__activity_plot_helper["annotation"].set_visible(False)
+            self.__activity_plot_helper["triangle_up"].set_visible(False)
+            self.__activity_plot_helper["triangle_down"].set_visible(False)
+            self.__activity_plot_helper["hover_line"].set_visible(False)
             self.__activity_plot_helper["ax"].figure.canvas.draw_idle()
             return
 
@@ -831,13 +841,31 @@ class ViperDF:
 
         # Find the closest point based on x position
         closest_index = (self.__activity_plot_helper["data"]["time"] - x_mouse).abs().idxmin()
+        is_left_side = closest_index < (len(self.__activity_plot_helper["data"]["time"])//2)
         closest_time = self.__activity_plot_helper["data"].iloc[closest_index]["time"]
         closest_value = self.__activity_plot_helper["data"].iloc[closest_index]["value"]
 
-        # Update marker and annotation
-        self.__activity_plot_helper["marker"].set_data([closest_time], [closest_value])
-        self.__activity_plot_helper["marker"].set_visible(True)
-        self.__activity_plot_helper["annotation"].xy = (closest_time, closest_value)
+
+        # update triangel and dotted line
+        self.__activity_plot_helper["triangle_up"].set_data([closest_time], [104])
+        self.__activity_plot_helper["triangle_down"].set_data([closest_time], [-4])
+        self.__activity_plot_helper["hover_line"].set_data([closest_time, closest_time], [102, -2])
+
+        self.__activity_plot_helper["triangle_up"].set_visible(True)
+        self.__activity_plot_helper["triangle_down"].set_visible(True)
+        self.__activity_plot_helper["hover_line"].set_visible(True)
+
+
+        # set startpos of annotation
+        x_min, x_max = self.__activity_plot_helper["ax"].get_xlim()
+        total_span = x_max - x_min
+        offset_time = total_span * 0.22
+        if is_left_side:
+            new_time = closest_time
+        else:
+            new_time = closest_time - pd.to_timedelta(offset_time, unit="D")
+        # new time is the calculated offset to ensure annotation is allways full readable
+        self.__activity_plot_helper["annotation"].xy = (new_time, 40)
         self.__activity_plot_helper["annotation"].set_text(f"{closest_time.strftime('%H:%M:%S')}\n"
                                                            f"{closest_value:.2f} % Activity")
         self.__activity_plot_helper["annotation"].set_visible(True)

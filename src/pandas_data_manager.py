@@ -118,6 +118,10 @@ class ViperDF:
         self._label_ax = None
         self._is_plotted = False
         self.mainplot = None
+        self._fig_pie_apps = None
+        self._fig_pie_labels = None
+        self._fig_vbar_apps = None
+        self._fig_vbar_labels = None
 
         self.__init_label_plot_helper()
 
@@ -301,6 +305,7 @@ class ViperDF:
             self.main_plot_size = self._px_to_inch(self.main_plot_size[0]), self._px_to_inch(self.main_plot_size[1])
         if self.sub_plot_size is not None:
             self.sub_plot_size = self._px_to_inch(self.sub_plot_size[0]), self._px_to_inch(self.sub_plot_size[1])
+
         self._get_ax_line_activity()
         self._get_ax_hbar_apps()
         self._update_ax_hbar_labels()
@@ -724,6 +729,15 @@ class ViperDF:
 
         :return: None
         """
+
+        # Remove clutter on changed plots, no hidden plots in memory
+        if self._activity_ax:
+            try:
+                plt.close(self._activity_ax.figure)
+            except Exception:
+                pass
+            self._activity_ax = None
+
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
         else:
@@ -881,6 +895,14 @@ class ViperDF:
 
         :return: None
         """
+
+        # Remove clutter on changed plots, no hidden plots in memory
+        if self._app_ax:
+            try:
+                plt.close(self._app_ax.figure)
+            except Exception:
+                pass
+            self._app_ax = None
 
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
@@ -1116,6 +1138,14 @@ class ViperDF:
         :raises ValueError: If no valid labels found in grouped data.
         :return: Axes (Matplotlib Axes with label bars.)
         """
+
+        # Remove clutter on changed plots, no hidden plots in memory
+        if self._label_ax:
+            try:
+                plt.close(self._label_ax.figure)
+            except Exception:
+                pass
+            self._label_ax = None
 
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
@@ -1464,6 +1494,14 @@ class ViperDF:
         :return: None
         """
 
+        # Remove clutter on changed plots, no hidden plots in memory
+        if self.mainplot:
+            try:
+                plt.close(self.mainplot)
+            except Exception:
+                pass
+            self.mainplot = None
+
         ax_list = [self._activity_ax, self._app_ax, self._label_ax]
         if not all(ax_list):
             # TODO: Logger
@@ -1583,6 +1621,12 @@ class ViperDF:
 
         :return: Figure | None (App bar chart or None if no data.)
         """
+        if hasattr(self, "_fig_vbar_apps") and self._fig_vbar_apps:
+            try:
+                plt.close(self._fig_vbar_apps)
+            except Exception:
+                pass
+            self._fig_vbar_apps = None
 
         if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
             print("No app data available for plotting.")
@@ -1687,7 +1731,7 @@ class ViperDF:
         fig.tight_layout()
 
         self.image_app_vbar_plot = fig_to_tk_image(fig, self.plot_dpi)
-
+        self._fig_vbar_apps = fig
         return fig
 
     def get_vbar_labels(self) -> Figure:
@@ -1698,6 +1742,12 @@ class ViperDF:
 
         :return: Figure | None (Label bar chart or None if no data.)
         """
+        if hasattr(self, "_fig_vbar_labels") and self._fig_vbar_labels:
+            try:
+                plt.close(self._fig_vbar_labels)
+            except Exception:
+                pass
+            self._fig_vbar_labels = None
 
         if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
             # TODO: Logging
@@ -1812,7 +1862,7 @@ class ViperDF:
         fig.tight_layout()
 
         self.image_label_vbar_plot = fig_to_tk_image(fig, self.plot_dpi)
-
+        self._fig_vbar_labels = fig
         return fig
 
     def get_pie_apps(self) -> Figure:
@@ -1823,6 +1873,13 @@ class ViperDF:
 
         :return: Figure | None (Pie chart for app usage or None if no data.)
         """
+
+        if hasattr(self, "_fig_pie_apps") and self._fig_pie_apps:
+            try:
+                plt.close(self._fig_pie_apps)
+            except Exception:
+                pass
+            self._fig_pie_apps = None
 
         if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
             # TODO: Logging
@@ -1835,37 +1892,7 @@ class ViperDF:
             fig, ax = plt.subplots(figsize=self.sub_plot_size, dpi=self.plot_dpi)
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
-        # FIXME: error warning
-        #     C:\git\python\viper_tracking\src\pandas_data_manager.py: 1787: RuntimeWarning: More
-        #     than
-        #     20
-        #     figures
-        #     have
-        #     been
-        #     opened.Figures
-        #     created
-        #     through
-        #     the
-        #     pyplot
-        #     interface(`matplotlib.pyplot.figure`)
-        #     are
-        #     retained
-        #     until
-        #     explicitly
-        #     closed and may
-        #     consume
-        #     too
-        #     much
-        #     memory.(To
-        #     control
-        #     this
-        #     warning, see
-        #     the
-        #     rcParam
-        #     `figure.max_open_warning`).Consider
-        #     using
-        #     `matplotlib.pyplot.close()`.
-        #
+
         fig, ax = plt.subplots(dpi=self.plot_dpi)
 
 
@@ -1993,7 +2020,7 @@ class ViperDF:
         fig.tight_layout()
 
         self.image_app_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
-
+        self._fig_pie_apps = fig
         return fig
 
     def get_pie_labels(self) -> Figure:
@@ -2004,6 +2031,12 @@ class ViperDF:
 
         :return: Figure | None (Pie chart for label usage or None if no data.)
         """
+        if hasattr(self, "_fig_pie_labels") and self._fig_pie_labels:
+            try:
+                plt.close(self._fig_pie_labels)
+            except Exception:
+                pass
+            self._fig_pie_labels = None
 
         if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
             print("No label data available for plotting.")
@@ -2136,7 +2169,57 @@ class ViperDF:
 
         fig.tight_layout()
         self.image_label_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
+        self._fig_pie_labels = fig
         return fig
+
+    def __del__(self):
+        """
+        Mechanic to cleanly remove old clutter from figures
+        """
+        try:
+            if hasattr(self, "mainplot") and self.mainplot:
+                try:
+                    plt.close(self.mainplot)
+                except Exception:
+                    pass
+                self.mainplot = None
+
+            if hasattr(self, "_activity_ax") and self._activity_ax:
+                try:
+                    plt.close(self._activity_ax.figure)
+                except Exception:
+                    pass
+                self._activity_ax = None
+
+            if hasattr(self, "_app_ax") and self._app_ax:
+                try:
+                    plt.close(self._app_ax.figure)
+                except Exception:
+                    pass
+                self._app_ax = None
+
+            if hasattr(self, "_label_ax") and self._label_ax:
+                try:
+                    plt.close(self._label_ax.figure)
+                except Exception:
+                    pass
+                self._label_ax = None
+
+            if hasattr(self, "image_main_plot"):
+                self.image_main_plot = None
+            if hasattr(self, "image_app_pie_plot"):
+                self.image_app_pie_plot = None
+            if hasattr(self, "image_app_vbar_plot"):
+                self.image_app_vbar_plot = None
+            if hasattr(self, "image_label_pie_plot"):
+                self.image_label_pie_plot = None
+            if hasattr(self, "image_label_vbar_plot"):
+                self.image_label_vbar_plot = None
+
+        except Exception:
+            pass  # Never fail hard during any __del__ !!
+
+        # No super, cuz no parent!
 
 
 class DayAnalyzer:

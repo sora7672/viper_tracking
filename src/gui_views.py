@@ -3097,11 +3097,22 @@ class MainPlotFrame(Frame):
         :return: None
         """
 
-        if self.plot_widget:
-            self.plot_widget.destroy()
-            self.plot_widget = None
+        if self.main_figure:
+            try:
+                plt.close(self.main_figure)
+            except Exception:
+                pass
+            self.main_figure = None
+
         if self.plot_canvas:
+            try:
+                widget = self.plot_canvas.get_tk_widget()
+                if widget and widget.winfo_exists():
+                    widget.destroy()
+            except Exception:
+                pass
             self.plot_canvas = None
+        self.plot_widget = None
 
         self.main_figure = self.vdf.get_main_plot()
         self.plot_canvas = FigureCanvasTkAgg(self.main_figure, master=self.overlay_pack_frame)
@@ -3144,6 +3155,28 @@ class MainPlotFrame(Frame):
             else:
 
                 left_text.grid(row=1, column=0, pady=1, sticky="w")
+
+    def destroy(self):
+        if self.main_figure:
+            try:
+                plt.close(self.main_figure)
+            except Exception:
+                pass
+            self.main_figure = None
+        if self.plot_canvas:
+            try:
+                self.plot_canvas.get_tk_widget().destroy()
+            except Exception:
+                pass
+            self.plot_canvas = None
+        super().destroy()
+
+    def __del__(self):
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
 
 class AppPlotFrame(Frame):
     """
@@ -3228,11 +3261,22 @@ class AppPlotFrame(Frame):
         :return: None
         """
 
-        if self.plot_widget:
-            self.plot_widget.destroy()
-            self.plot_widget = None
+        if self.app_figure:
+            try:
+                plt.close(self.app_figure)
+            except Exception:
+                pass
+            self.app_figure = None
+
         if self.plot_canvas:
+            try:
+                widget = self.plot_canvas.get_tk_widget()
+                if widget and widget.winfo_exists():
+                    widget.destroy()
+            except Exception:
+                pass
             self.plot_canvas = None
+        self.plot_widget = None
 
         self.app_figure = self.vdf.get_pie_apps() if self.plot_type == "Pie" else self.vdf.get_vbar_apps()
         self.plot_canvas = FigureCanvasTkAgg(self.app_figure, master=self.overlay_pack_frame)
@@ -3274,7 +3318,33 @@ class AppPlotFrame(Frame):
             self.plot_type = "Pie"
         self.update_app_plot()
 
-    
+    def destroy(self):
+        if self.app_figure:
+            try:
+                plt.close(self.app_figure)
+            except Exception:
+                pass
+            self.app_figure = None
+
+        if self.plot_canvas:
+            try:
+                widget = self.plot_canvas.get_tk_widget()
+                if widget and widget.winfo_exists():
+                    widget.destroy()
+            except Exception:
+                pass
+            self.plot_canvas = None
+        self.plot_widget = None
+
+        super().destroy()
+
+    def __del__(self):
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
 class LabelPlotFrame(Frame):
     """
     Frame that holds the label-specific usage plot.
@@ -3407,6 +3477,31 @@ class LabelPlotFrame(Frame):
             self.plot_type = "Pie"
         self.update_label_plot()
 
+    def destroy(self):
+        if self.label_figure:
+            try:
+                plt.close(self.label_figure)
+            except Exception:
+                pass
+            self.app_figure = None
+
+        if self.plot_canvas:
+            try:
+                widget = self.plot_canvas.get_tk_widget()
+                if widget and widget.winfo_exists():
+                    widget.destroy()
+            except Exception:
+                pass
+            self.plot_canvas = None
+        self.plot_widget = None
+
+        super().destroy()
+
+    def __del__(self):
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
 class LabelFrame(Frame):
     """
@@ -3658,6 +3753,29 @@ class MainViewFrame(Frame):
             if i < last_entry_id:
                 tb.Separator(self.info_frame, orient="horizontal") \
                     .grid(row=row_base + 2, column=0, sticky="ew", pady=(2, 4))
+
+    def destroy(self):
+        if self.main_figure:
+            try:
+                plt.close(self.main_figure)
+            except Exception:
+                pass
+            self.main_figure = None
+        if self.plot_canvas:
+            try:
+                self.plot_canvas.get_tk_widget().destroy()
+            except Exception:
+                pass
+            self.plot_canvas = None
+        super().destroy()
+
+    def __del__(self):
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+
 
 class ViewController:
     """

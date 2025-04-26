@@ -1103,7 +1103,6 @@ class ViperDF:
 
             elif new_index < 0:
                 new_index = len(self._grouped_app_df) - 1
-            print(new_index)
             self.__app_update_selection(new_index)
 
     def _update_ax_hbar_labels(self, label_list: list[str] | str = None) -> None:

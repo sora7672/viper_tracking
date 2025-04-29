@@ -1921,7 +1921,6 @@ class ViperDF:
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
 
-        fig, ax = plt.subplots(dpi=self.plot_dpi)
 
 
         # Generate wedges with leader lines

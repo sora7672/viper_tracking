@@ -2451,6 +2451,8 @@ class AnalysisFrame(Frame):
             new_vdf.analyze().plot()
         else:
             raise TypeError("Unsupported type. Not [ViperDF, DataFrame]")
+        if self.vdf:
+            del self.vdf
         self.vdf = new_vdf
         self.update_frames()
 
@@ -3860,8 +3862,8 @@ class ViewController:
 
         notebook.add(main_tab, text="Overview")
         notebook.add(analysis_tab, text="Analysis")
-        notebook.add(label_tab, text="Label")
         notebook.add(filter_tab, text="Filter")
+        notebook.add(label_tab, text="Label")
         notebook.add(settings_tab, text="Settings")
         notebook.pack(expand=True, fill="both", padx=0, pady=0)
 
@@ -3892,10 +3894,12 @@ class ViewController:
                 self.update_main_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
             case 1:  # AnalysisTab
                 self.update_analysis_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
-            case 2:  # LabelTab
-                self.update_label_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
-            case 3:  # FilterTab
+
+            case 2:  # FilterTab
                 self.update_filter_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+            case 3:  # LabelTab
+                self.update_label_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
+
             case 4:  # SettingsTab
                 self.update_settings_tab(event.widget.nametowidget(nb.tabs()[tab_index]))
 

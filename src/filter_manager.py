@@ -379,16 +379,19 @@ class DatabaseFilter:
         """
 
         main_df = main_filter.get_dataframe()
-        for fil_list in sub_filter_list:
-            sub_filter = fil_list[0]
-            add_it = fil_list[1]
+
+        for sub_filter, add_it in sub_filter_list:
             sub_df = sub_filter.get_dataframe()
             if sub_df is not None and not sub_df.empty:
                 if add_it:
-                    main_df = pd.concat([main_df, sub_df]).drop_duplicates(subset="window_id", keep="first")
+                    # Combine all data without NaN values, so left and right datasets are existing in the output.
+                    main_df = pd.concat([main_df, sub_df], ignore_index=True)\
+                        .drop_duplicates(subset="window_id", keep="first")
                 else:
+                    # Subtract ids that exist in sub frame
                     main_df = main_df[~main_df["window_id"].isin(sub_df["window_id"])]
-        return main_df
+
+        return main_df.reset_index(drop=True)
 
 
 # # # # External call functions for less import in other files # # # #

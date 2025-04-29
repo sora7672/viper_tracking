@@ -55,6 +55,25 @@ def fig_to_tk_image(fig, dpi=100) -> ImageTk.PhotoImage:
     return ImageTk.PhotoImage(pil_image)
 
 
+def get_no_data_plot():
+    """
+    Helper function that just gives a new empty "no data" plot
+    to ensure frontend allways has stuff
+
+    :return: fig, ax (tuple)
+    """
+    fig, ax = plt.subplots(figsize=(6, 3))
+
+    # Remove stuff around
+    ax.axis('off')
+
+    # Middle with text
+    ax.text(0.5, 0.5, 'NO DATA', horizontalalignment='center', verticalalignment='center', fontsize=14,
+            color='gray', transform=ax.transAxes)
+    fig.tight_layout()
+    return fig, ax
+
+
 class ViperDF:
     """
     A class that encapsulates a pandas DataFrame and provides analysis and plotting methods.
@@ -86,16 +105,24 @@ class ViperDF:
             The primary DataFrame containing window tracking data.
         """
 
+        if not isinstance(main_df, DataFrame):
+            raise TypeError(f'main_df is not a DataFrame ({type(main_df)})')
+        if not isinstance(name, str):
+            raise TypeError(f'name is not a string')
+
         # NOT USED: do we really need prefix here?
         # Naming should be "name" or "label:blahh" or "app:blahh" if name includes ":" check for app/label
         # and set some flags for further implementation
+
+
         self.name = name
         self._lock = Lock()
         self._main_df: DataFrame = main_df
-        self.empty = main_df.empty
-        if not self.empty and not self._validate_mainframe():
-            print("not valid mainframe, created empty DataFrame")
-            self.empty = True
+        self.has_no_data = main_df.empty
+        if not self.has_no_data and not self._validate_mainframe():
+            # todo: logging
+            #print("not valid mainframe, created empty DataFrame")
+            self.has_no_data = True
         self.analysis_results: dict = {}
         self._number_activity_points = 100
         self._is_analyzed = False
@@ -242,7 +269,7 @@ class ViperDF:
         """
 
         # NOT USED: This whole methode. split data on label
-        if not self.empty and not self.is_label_based:
+        if not self.has_no_data and not self.is_label_based:
             if not self._is_analyzed:
                 raise ValueError("Main frame is not analyzed.")
 
@@ -272,7 +299,7 @@ class ViperDF:
         """
 
         # NOT USED: Split data on app needed?
-        if not self.empty and not self.is_app_based:
+        if not self.has_no_data and not self.is_app_based:
             if not self._is_analyzed:
                 raise ValueError("Main frame is not analyzed.")
 
@@ -298,18 +325,24 @@ class ViperDF:
         :raises ValueError: If the DataFrame has not been analyzed.
         :return: ViperDF (self)
         """
+        # TODO: Fallback leere plots, falls keine daten da sind.
+        #  die raises knallen sonst alle anderen module weg, wennn nicht richtig abgefangen.
+        #  Daher sollten alle externen ausgaben immer sauber ein ergebnis zurück liefern,
+        #  bei sowas sollte dann nur ein passendes log geschrieben werden für etwaige "fehler anfragen"
 
-        if not self._is_analyzed:
-            raise ValueError("Main frame is not analyzed.")
         if self.main_plot_size is not None:
             self.main_plot_size = self._px_to_inch(self.main_plot_size[0]), self._px_to_inch(self.main_plot_size[1])
         if self.sub_plot_size is not None:
             self.sub_plot_size = self._px_to_inch(self.sub_plot_size[0]), self._px_to_inch(self.sub_plot_size[1])
 
-        self._get_ax_line_activity()
-        self._get_ax_hbar_apps()
-        self._update_ax_hbar_labels()
-        self._combine_axes()
+        if not self.has_no_data:
+            self._get_ax_line_activity()
+            self._get_ax_hbar_apps()
+            self._update_ax_hbar_labels()
+            self._combine_axes()
+        else:
+            self.mainplot, _ = get_no_data_plot()
+            self.image_main_plot = fig_to_tk_image(self.mainplot, self.plot_dpi)
         self._is_plotted = True
         return self
 
@@ -325,6 +358,7 @@ class ViperDF:
         """
 
         # TODO: Delete all old used things that change on label change
+        
         if len(label_list) == 0 or len(label_list) > 5:
             raise ValueError("label_list cannot be empty or more than 4")
         self._label_ax = None  # Remove the existing label axis
@@ -343,7 +377,7 @@ class ViperDF:
         :return: ViperDF (self)
         """
 
-        if not self.empty:
+        if not self.has_no_data:
             self._time_analysis()
             self._input_analysis()
             if not self.is_app_based:
@@ -351,6 +385,9 @@ class ViperDF:
             if not self.is_label_based:
                 self._label_analysis()
             self._is_analyzed = True
+        else:
+            # TODO: Fill all with placeholders
+            ...
         return self
 
     def _time_analysis(self):
@@ -738,12 +775,16 @@ class ViperDF:
                 pass
             self._activity_ax = None
 
+
+
+
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
-        if self._main_df is None or self._main_df.empty:
+        if self.has_no_data:
             # TODO: Needs better error handling
+            # TODO: return on no data a empty plot
             print("No data available for plotting.")
             return ax
 
@@ -771,7 +812,7 @@ class ViperDF:
         activity_plot_data = pd.concat([original_data, left_offset_data, right_offset_data])
         activity_plot_data = activity_plot_data.sort_values(by="time").reset_index(drop=True)
 
-        # FIXME: Really needed?
+        # Todo: Really needed?
         # Ensure first and last points are zero
         activity_plot_data.iloc[0, activity_plot_data.columns.get_loc("value")] = 0
         activity_plot_data.iloc[-1, activity_plot_data.columns.get_loc("value")] = 0
@@ -911,6 +952,7 @@ class ViperDF:
 
         if self._main_df is None or self._main_df.empty:
             # TODO: Logging
+            # TODO: return on no data a empty plot
             print("No data available for plotting.")
             return ax
 
@@ -1147,47 +1189,20 @@ class ViperDF:
                 pass
             self._label_ax = None
 
+        # TODO: return on no data a empty plot
+
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
 
+        if self.has_no_data or self._grouped_label_df is None or self._grouped_label_df.empty:
+            print("No data available in `_grouped_label_df`.")
+            self._label_ax = get_no_data_plot()[1]
+            return
+
         self.__label_plot_helper["x_start"] = mdates.date2num(self.analysis_results["first_datetime"])
         self.__label_plot_helper["x_end"] = mdates.date2num(self.analysis_results["last_datetime"])
-
-        if self._grouped_label_df is None or self._grouped_label_df.empty:
-            raise ValueError("No data available in `_grouped_label_df`.")
-        # FIXME: error with no data:
-        #     Exception in Tkinter
-        #     callback
-        #     Traceback(most
-        #     recent
-        #     call
-        #     last):
-        #     File
-        #     "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line
-        #     1968, in __call__
-        #     return self.func(*args)
-        #     ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
-        #     File
-        #     "C:\git\python\viper_tracking\src\gui_views.py", line
-        #     1439, in _analyze
-        #     self.analyzing_return_function(main_df)
-        #     File
-        #     "C:\git\python\viper_tracking\src\gui_views.py", line
-        #     1525, in add_vdf_to_show
-        #     new_vdf.analyze().plot()
-        #     File
-        #     "C:\git\python\viper_tracking\src\pandas_data_manager.py", line
-        #     207, in plot
-        #     self._update_ax_hbar_labels()
-        #     File
-        #     "C:\git\python\viper_tracking\src\pandas_data_manager.py", line
-        #     1003, in _update_ax_hbar_labels
-        #     raise ValueError("No data available in `_grouped_label_df`.")
-        #     ValueError: No
-        #     data
-        #     available in `_grouped_label_df`.
 
         available_labels = self._grouped_label_df["label_name"].unique()
 
@@ -1502,6 +1517,8 @@ class ViperDF:
                 pass
             self.mainplot = None
 
+        # TODO: return on no data a empty plot
+
         ax_list = [self._activity_ax, self._app_ax, self._label_ax]
         if not all(ax_list):
             # TODO: Logger
@@ -1608,9 +1625,6 @@ class ViperDF:
 
         :return: Figure (Matplotlib figure with all combined plots.)
         """
-
-        if self.mainplot is None:
-            self._combine_axes()
         return self.mainplot
 
     def get_vbar_apps(self) -> Figure:
@@ -1628,9 +1642,13 @@ class ViperDF:
                 pass
             self._fig_vbar_apps = None
 
-        if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
+        # TODO: return on no data a empty plot
+        if self.has_no_data or self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
             print("No app data available for plotting.")
-            return None
+            fig = get_no_data_plot()[0]
+            self.image_app_vbar_plot = fig_to_tk_image(fig, self.plot_dpi)
+            self._fig_vbar_apps = fig
+            return fig
 
         df = self._grouped_app_summary_df
         if self.sub_plot_size is not None:
@@ -1749,10 +1767,15 @@ class ViperDF:
                 pass
             self._fig_vbar_labels = None
 
-        if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
+        # TODO: return on no data a empty plot
+
+        if self.has_no_data or self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
             # TODO: Logging
             print("No label data available for plotting.")
-            return None
+            fig = get_no_data_plot()[0]
+            self.image_label_vbar_plot = fig_to_tk_image(fig, self.plot_dpi)
+            self._fig_vbar_labels = fig
+            return fig
 
         df = self._grouped_label_summary_df
 
@@ -1881,10 +1904,15 @@ class ViperDF:
                 pass
             self._fig_pie_apps = None
 
-        if self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
+        # TODO: return on no data a empty plot
+
+        if self.has_no_data or self._grouped_app_summary_df is None or self._grouped_app_summary_df.empty:
             # TODO: Logging
             print("No app data available for plotting.")
-            return None
+            fig = get_no_data_plot()[0]
+            self.image_app_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
+            self._fig_pie_apps = fig
+            return fig
 
         df = self._grouped_app_summary_df
 
@@ -2038,9 +2066,14 @@ class ViperDF:
                 pass
             self._fig_pie_labels = None
 
-        if self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
+        # TODO: return on no data a empty plot
+
+        if self.has_no_data or self._grouped_label_summary_df is None or self._grouped_label_summary_df.empty:
             print("No label data available for plotting.")
-            return None
+            fig = get_no_data_plot()[0]
+            self.image_label_pie_plot = fig_to_tk_image(fig, self.plot_dpi)
+            self._fig_pie_labels = fig
+            return fig
 
         df = self._grouped_label_summary_df
 
@@ -2049,14 +2082,7 @@ class ViperDF:
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
 
-        # Fixme: error happend when subtracting animes from the normal analysis
-        # C:\git\python\viper_tracking\src\pandas_data_manager.py:1945: RuntimeWarning: More than 20 figures have been opened.
-        # Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed
-        # and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`).
-        # Consider using `matplotlib.pyplot.close()`.
-        #   fig, ax = plt.subplots(dpi=self.plot_dpi)
-
-        # Generate wedges with leader lines
+        # Generate wedges with leadeing lines
         wedges, texts, autotexts = ax.pie(
             df["overall_percent"],
             labels=None,

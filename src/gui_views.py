@@ -2498,6 +2498,9 @@ class ImageFrame(Frame):
         :param on_click: Callable | None (Optional function to be called on image click.)
         :return: None
         """
+        if not isinstance(tk_photoimage, ImageTk.PhotoImage):
+            raise TypeError(f"No PhotoImage provided.{type(tk_photoimage)}")
+
 
         super().__init__(parent, *args, **kwargs)
 
@@ -2505,7 +2508,7 @@ class ImageFrame(Frame):
         self._original_tk_photoimage = tk_photoimage
         self.old_parent_width = None
         self.old_parent_height = None
-
+        self.config(width=50, height=50)
         self.image_label = tb.Label(self)
         self.image_label.place(relx=0.5, rely=0.5, anchor="center")
 

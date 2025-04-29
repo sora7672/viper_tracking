@@ -341,7 +341,7 @@ class ViperDF:
             self._update_ax_hbar_labels()
             self._combine_axes()
         else:
-            self.mainplot, _ = get_no_data_plot()
+            self.mainplot = get_no_data_plot()[0]
             self.image_main_plot = fig_to_tk_image(self.mainplot, self.plot_dpi)
         self._is_plotted = True
         return self
@@ -782,11 +782,13 @@ class ViperDF:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
+
+        self._activity_ax = ax
+
         if self.has_no_data:
             # TODO: Needs better error handling
-            # TODO: return on no data a empty plot
             print("No data available for plotting.")
-            return ax
+            return
 
         # TODO: Outsource as settings
         offset_time = 0.3
@@ -830,7 +832,7 @@ class ViperDF:
         # Adding Dynamic functions and saving data for it
         self.__activity_plot_helper = {"data": activity_plot_data}
         self.__init_plot_data_activity(ax)
-        self._activity_ax = ax
+
 
     def __init_plot_data_activity(self, ax) -> None:
         """
@@ -950,11 +952,13 @@ class ViperDF:
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
 
+        self._app_ax = ax
+
         if self._main_df is None or self._main_df.empty:
             # TODO: Logging
             # TODO: return on no data a empty plot
             print("No data available for plotting.")
-            return ax
+            return
 
         self.__app_plot_helper = {}
         self.__app_plot_helper["start_y"] = start_y = -5
@@ -981,7 +985,7 @@ class ViperDF:
         self.__init_plot_data_apps(ax)
         self._set_x_lim(ax)
 
-        self._app_ax = ax
+
 
     def __init_plot_data_apps(self, ax) -> None:
         """
@@ -1190,16 +1194,16 @@ class ViperDF:
             self._label_ax = None
 
         # TODO: return on no data a empty plot
+        if self.has_no_data or self._grouped_label_df is None or self._grouped_label_df.empty:
+            print("No data available in `_grouped_label_df`.")
+            self._label_ax = get_no_data_plot()[1]
+            return
 
         if self.main_plot_size is not None:
             fig, ax = plt.subplots(figsize=self.main_plot_size, dpi=self.plot_dpi)
         else:
             fig, ax = plt.subplots(dpi=self.plot_dpi)
-
-        if self.has_no_data or self._grouped_label_df is None or self._grouped_label_df.empty:
-            print("No data available in `_grouped_label_df`.")
-            self._label_ax = get_no_data_plot()[1]
-            return
+        self._label_ax = ax
 
         self.__label_plot_helper["x_start"] = mdates.date2num(self.analysis_results["first_datetime"])
         self.__label_plot_helper["x_end"] = mdates.date2num(self.analysis_results["last_datetime"])
@@ -1261,7 +1265,7 @@ class ViperDF:
         self._set_x_lim(ax)
         ax.set_ylim(lowest_y, 110)
 
-        self._label_ax = ax
+
 
     def __init_plot_data_label(self, ax) -> None:
         """
@@ -2229,6 +2233,34 @@ class ViperDF:
                 except Exception:
                     pass
                 self._label_ax = None
+
+            if hasattr(self, "_fig_pie_apps") and self._fig_pie_apps:
+                try:
+                    plt.close(self._fig_pie_apps)
+                except Exception:
+                    pass
+                self._fig_pie_apps = None
+
+            if hasattr(self, "_fig_pie_labels") and self._fig_pie_labels:
+                try:
+                    plt.close(self._fig_pie_labels)
+                except Exception:
+                    pass
+                self._fig_pie_labels = None
+
+            if hasattr(self, "_fig_vbar_apps") and self._fig_vbar_apps:
+                try:
+                    plt.close(self._fig_vbar_apps)
+                except Exception:
+                    pass
+                self._fig_vbar_apps = None
+
+            if hasattr(self, "_fig_vbar_labels") and self._fig_vbar_labels:
+                try:
+                    plt.close(self._fig_vbar_labels)
+                except Exception:
+                    pass
+                self._fig_vbar_labels = None
 
             if hasattr(self, "image_main_plot"):
                 self.image_main_plot = None

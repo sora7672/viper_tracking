@@ -422,6 +422,10 @@ def input_to_db(window_id: int | None) -> None:
     InputManager().add_to_db(window_id)
 
 
+def reset_input_counters():
+    InputManager().reset()
+
+
 def had_input() -> bool:
     """
     Checks if any keyboard or mouse activity was detected recently.

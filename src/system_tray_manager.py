@@ -96,7 +96,7 @@ class SystemTrayManager:
             self._initialized = True
             self.icon = Icon("Viper Tracking", Image.open("src/viper_tray.ico"))
             self.menu = None
-            self.exit_popup = None
+            self.is_closing = False
             SystemTrayManager._instance = self
 
             get_logger().debug("__init__ SystemTrayManager")
@@ -176,24 +176,22 @@ class SystemTrayManager:
     #     thread is not in main
     #     loop
 
-    def exit_systray(self) -> None:
-        if self.exit_popup is not None:
-            return
-        self.exit_popup = True
-
 
     def stop_program(self) -> None:
         """
         Performs all necessary cleanup operations when the program is stopped.
 
         This method:
-        1. Stops all threads gracefully.
-        2. Calls the stop function for the GUI and database connections.
-        3. Updates all labels to the database.
-        4. Stops the systray icon and logs remaining threads.
+        1. Removes the menu
+        2. Stops all threads gracefully.
+        3. Calls the stop function for the GUI and database connections.
+        4. Updates all labels to the database.
+        5. Stops the systray icon and logs remaining threads.
 
         :return: None
         """
+        self.icon.menu = Menu()
+        self.icon.update_menu()
 
         stop_program_threads()
         # wait for threads to be done
@@ -237,13 +235,15 @@ class SystemTrayManager:
 
     def _label_menu(self) -> MenuItem:
         """
-        Creates menu entries for manually added labels.
+        Builds a submenu for all manually added labels and returns it as a MenuItem.
 
-        For each manual label, this method adds:
-        - Activation and deactivation options based on the label's status.
-        - An option to add and start a new label.
+        For each manual label, this adds a toggleable entry labeled with the current state
+        (e.g., "Work[ON]" or "Work[OFF]"). The action toggles the label's active state
+        and refreshes the menu.
 
-        :return: pystray.MenuItem (The menu item containing all manual labels.)
+        Additionally, includes a static option to add and immediately activate a new manual label.
+
+        :return: pystray.MenuItem (The top-level menu item for all manual labels.)
         """
 
         all_label = Label.get_all_labels()

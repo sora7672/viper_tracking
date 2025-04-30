@@ -331,8 +331,15 @@ class Label:
         with self.lock:
             return self._creation_datetime
 
+    def toggle_activity(self) -> None:
+        """
+        Toggles the internal `active` state of the instance.
 
-    def toggle_activity(self):
+        If `active` is currently True, it becomes False.
+        If `active` is currently False, it becomes True.
+
+        :return: None
+        """
 
         if self.active:
             self.active = False

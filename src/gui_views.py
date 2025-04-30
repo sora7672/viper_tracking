@@ -327,6 +327,16 @@ class ScrollFrame(Frame):
         self.after(100, self._frame_size_changed)
 
     def _size_change_self(self, event=None):
+        """
+        Adjusts the canvas size if the inner frame is too small for the scrollbars.
+
+        Called on `<Configure>` events for the ScrollFrame itself. Ensures the canvas
+        dimensions account for missing scrollbars by subtracting 15 pixels.
+
+        :param event: Event (Optional tkinter event.)
+        :return: None
+        """
+
         # # Used for to small innerframe, -15 for scrollbar on that side
         if not self._has_horizontal_scrollbar:
             self._canvas.itemconfig("inner_frame", width=self.winfo_width()-15)
@@ -3890,10 +3900,14 @@ class ViewController:
 
     def main_window(self) -> None:
         """
-        Creates and displays the main application window.
+        Creates and displays the main application window with multiple tabs.
 
-        Initializes the main tab structure, sets up the title, size, and layout,
-        and prepares tab-switching logic.
+        This method:
+        - Checks if the window already exists and focuses it if so.
+        - Initializes a new `Toplevel` window with title, resolution, and centering.
+        - Sets up a tabbed interface (`ttk.Notebook`) containing:
+          "Overview", "Analysis", "Label", "Filter", and "Settings".
+        - Binds tab change events for dynamic updates.
 
         :return: None
         """

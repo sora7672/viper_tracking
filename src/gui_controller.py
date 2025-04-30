@@ -51,17 +51,19 @@ class GuiController:
 
     def __init__(self) -> None:
         """
-        Initializes the `GuiController` instance.
+        Initializes the `GuiController` singleton instance.
 
-        - Configures the main GUI window.
-        - Sets up the window title and icon.
-        - Initializes a threading lock for safe operations.
+        - Creates and hides the root `ttkbootstrap` window.
+        - Loads and applies the GUI theme from user settings (with fallback).
+        - Sets window metadata such as title and icon.
+        - Initializes the `StyleManager` with the root window.
+        - Sets up a thread lock for synchronized access.
 
-        Note:
-        - The window is invisible on initialization (`withdraw` is called).
-        - Logs initialization details for debugging purposes.
+        Notes:
+        - The main window is hidden initially using `.withdraw()`.
+        - If the icon fails to load, the error is logged but execution continues.
 
-        :raises Exception: If the icon image fails to load.
+        :raises Exception: If the window icon cannot be loaded.
         """
 
         if not hasattr(self, '_initialized'):

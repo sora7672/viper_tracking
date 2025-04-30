@@ -836,12 +836,16 @@ class ViperDF:
 
     def __init_plot_data_activity(self, ax) -> None:
         """
-        Initializes interactive hover elements for the activity plot.
+        Initializes hover markers and annotation display for the activity plot.
 
-        Adds a red marker and annotation text to display activity percentage at cursor position.
-        Binds the motion event to an internal hover callback.
+        This method sets up visual elements such as vertical dotted lines and triangle markers
+        to indicate hover position on the activity plot. It also creates a tooltip-style annotation
+        that appears near the cursor showing additional information like percentage values.
 
-        :param ax: Axes (Target Matplotlib Axes for hover elements.)
+        These interactive elements are attached to the provided `ax` (matplotlib Axes),
+        and the hover logic is registered via the motion event callback.
+
+        :param ax: Axes (The matplotlib Axes instance where hover elements are rendered.)
         :return: None
         """
 
@@ -1633,12 +1637,24 @@ class ViperDF:
 
     def get_vbar_apps(self) -> Figure:
         """
-        Generates vertical bar chart for app usage with interactivity.
+        Generates an interactive vertical bar chart visualizing overall application usage.
 
-        Hovering reveals percent usage, duration, and grouped app details.
+        - Each bar represents one app (or app group) and its usage percentage.
+        - Hovering displays:
+            - App name
+            - Percent usage
+            - Duration (formatted as HH:MM:SS)
+            - If the app is "Others", shows up to 5 grouped entries.
 
-        :return: Figure | None (App bar chart or None if no data.)
+        Interactivity:
+        - Displays a red triangle marker, dotted hover line, and dynamic annotation box.
+        - Hides all hover elements when cursor leaves the chart or no bar is under the cursor.
+
+        Handles empty or missing data by falling back to a "no data" plot.
+
+        :return: Figure (Matplotlib figure object containing the bar chart.)
         """
+
         if hasattr(self, "_fig_vbar_apps") and self._fig_vbar_apps:
             try:
                 plt.close(self._fig_vbar_apps)
@@ -1758,12 +1774,23 @@ class ViperDF:
 
     def get_vbar_labels(self) -> Figure:
         """
-        Generates vertical bar chart for label usage with interactivity.
+            Generates an interactive vertical bar chart visualizing label usage distribution.
 
-        Hovering reveals usage percent, duration, and grouped label details.
+            - Each bar represents a manual label and its usage percentage.
+            - Hovering displays:
+                - Label name
+                - Usage percent
+                - Duration in HH:MM:SS format
+                - If the label is "Others", displays up to 5 grouped label details.
 
-        :return: Figure | None (Label bar chart or None if no data.)
-        """
+            Interactivity:
+            - Shows dynamic hover line and marker triangle to indicate active selection.
+            - Automatically hides all visual elements when leaving the plot area.
+
+            Handles missing or empty data by returning a fallback "no data" plot.
+
+            :return: Figure (Matplotlib figure object containing the rendered bar chart.)
+            """
         if hasattr(self, "_fig_vbar_labels") and self._fig_vbar_labels:
             try:
                 plt.close(self._fig_vbar_labels)
@@ -1894,11 +1921,21 @@ class ViperDF:
 
     def get_pie_apps(self) -> Figure:
         """
-        Creates pie chart for overall app usage with label annotations.
+        Generates an interactive pie chart visualizing grouped application usage.
 
-        Hovering over labels shows percent, duration, and grouped app details.
+        - Segments represent application categories based on usage percentage.
+        - Adds styled leader lines and external labels with bounding boxes.
+        - Hovering over labels displays extended tooltips showing:
+            - Name
+            - Usage percentage
+            - Usage duration (HH:MM:SS)
+            - If the segment is "Others", shows up to 5 grouped app details.
 
-        :return: Figure | None (Pie chart for app usage or None if no data.)
+        Special cases:
+        - Automatically handles missing or empty data by showing a fallback plot.
+        - Dynamically adjusts layout and spacing to prevent label cutoffs.
+
+        :return: Figure (Matplotlib figure object of the generated pie chart.)
         """
 
         if hasattr(self, "_fig_pie_apps") and self._fig_pie_apps:
@@ -2056,12 +2093,23 @@ class ViperDF:
 
     def get_pie_labels(self) -> Figure:
         """
-        Creates pie chart for overall label usage with annotations.
+           Creates an interactive pie chart to visualize overall label usage.
 
-        Hovering reveals usage details and grouped "Others" info.
+           Features:
+           - Each wedge represents one label and its usage percentage.
+           - Hovering over a label displays:
+               - Label name
+               - Usage percent
+               - Duration in HH:MM:SS format
+               - For "Others", up to 5 grouped label details
+           - Dynamic annotation box follows mouse position for better readability.
+           - Draws connecting lines between wedges and label texts.
+           - Ensures annotations are placed without overlapping and remain within the visible plot area.
 
-        :return: Figure | None (Pie chart for label usage or None if no data.)
-        """
+           Automatically falls back to a "no data" placeholder plot when no data is available.
+
+           :return: Figure (Matplotlib pie chart of label usage.)
+           """
         if hasattr(self, "_fig_pie_labels") and self._fig_pie_labels:
             try:
                 plt.close(self._fig_pie_labels)

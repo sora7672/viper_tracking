@@ -103,6 +103,19 @@ def _from_json(json_string: str) -> dict | None:
 
 def error_handling(error_object, db_connection, used_query: str, context_execution:str = "",
                    need_rollback: bool = True):
+    """
+    Handles and logs database-related errors with optional rollback.
+
+    This function detects the type of SQLite error, rolls back the transaction if specified,
+    and logs a formatted error message including the traceback and SQL query that caused it.
+
+    :param error_object: Exception (The raised database-related error instance.)
+    :param db_connection: sqlite3.Connection (The active database connection.)
+    :param used_query: str (The SQL query that triggered the error.)
+    :param context_execution: str (Optional context string to prefix the log entry.)
+    :param need_rollback: bool (Whether to perform a rollback on the database connection.)
+    :return: None
+    """
 
     error_type = ""
     if isinstance(error_object, sqlite3.IntegrityError):

@@ -346,25 +346,8 @@ class Label:
         else:
             self.active = True
 
-    def enable(self):
-        """
-        Activates the label.
+        self.update_in_db()
 
-        Sets the label's `active` property to True, marking it as active for application.
-
-        """
-
-        self.active = True
-
-    def disable(self):
-        """
-        Deactivates the label.
-
-        Sets the label's `active` property to False, marking it as inactive for application.
-
-        """
-
-        self.active = False
 
     # FIXME: check all propertys to be used properly, changed a lot of them
     def get_as_dict(self):

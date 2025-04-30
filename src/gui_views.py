@@ -3088,6 +3088,10 @@ class MainPlotFrame(Frame):
         if not isinstance(vdf, ViperDF):
             raise TypeError("Unsupported type. Not a ViperDF")
 
+        if self.vdf:
+            del self.vdf
+            self.vdf = None
+
         self.vdf = vdf
         self.update_main_plot()
 
@@ -3143,6 +3147,39 @@ class MainPlotFrame(Frame):
 
         :return: None
         """
+        # FIXME: When opening a empty VDF we didnt clean up properly before!
+        #  Exception in Tkinter callback
+        #  Traceback (most recent call last):
+        #   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line 1968, in __call__
+        #     return self.func(*args)
+        #            ^^^^^^^^^^^^^^^^
+        #   File "C:\git\python\viper_tracking\src\gui_views.py", line 2281, in _analyze
+        #     self.analyzing_return_function(main_df)
+        #   File "C:\git\python\viper_tracking\src\gui_views.py", line 2457, in add_vdf_to_show
+        #     self.update_frames()
+        #   File "C:\git\python\viper_tracking\src\gui_views.py", line 2469, in update_frames
+        #     self.main_plot_frame.add_vdf(self.vdf)
+        #   File "C:\git\python\viper_tracking\src\gui_views.py", line 3092, in add_vdf
+        #     self.update_main_plot()
+        #   File "C:\git\python\viper_tracking\src\gui_views.py", line 3135, in update_main_plot
+        #     self.update_info_area()
+        #   File "C:\git\python\viper_tracking\src\gui_views.py", line 3150, in update_info_area
+        #     for i, item in enumerate(self.vdf.main_infos()):
+        #                              ^^^^^^^^^^^^^^^^^^^^^
+        #   File "C:\git\python\viper_tracking\src\pandas_data_manager.py", line 250, in main_infos
+        #     ("Tracked time: ", str(ar.get("tracked_seconds", ""))),
+        #                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        #   File "C:\git\python\viper_tracking\src\helper_classes.py", line 232, in __str__
+        #     return f"{self} seconds"
+        #              ^^^^^^
+        #   File "C:\git\python\viper_tracking\src\helper_classes.py", line 232, in __str__
+        #     return f"{self} seconds"
+        #              ^^^^^^
+        #   File "C:\git\python\viper_tracking\src\helper_classes.py", line 232, in __str__
+        #     return f"{self} seconds"
+        #              ^^^^^^
+        #   [Previous line repeated 745 more times]
+        #  RecursionError: maximum recursion depth exceeded
 
         for child in self.info_frame.winfo_children():
             child.destroy()
@@ -3174,6 +3211,8 @@ class MainPlotFrame(Frame):
             except Exception:
                 pass
             self.plot_canvas = None
+        if self.vdf:
+            del self.vdf
         super().destroy()
 
     def __del__(self):
@@ -3488,7 +3527,7 @@ class LabelPlotFrame(Frame):
                 plt.close(self.label_figure)
             except Exception:
                 pass
-            self.app_figure = None
+            self.label_figure = None
 
         if self.plot_canvas:
             try:
@@ -3692,7 +3731,8 @@ class MainViewFrame(Frame):
         :param parent: Widget (The parent widget this frame belongs to.)
         :return: None
         """
-
+        # FIXME: Change from example VDF to real dayanalyzer VDF
+        #  There should not be a problem with empty data now.
         super().__init__(parent, *args, **kwargs)
 
         test_df = DBHandler().search_window_log(start_time=datetime(2025, 1, 16, 0, 0),
@@ -3760,18 +3800,38 @@ class MainViewFrame(Frame):
                     .grid(row=row_base + 2, column=0, sticky="ew", pady=(2, 4))
 
     def destroy(self):
+        if self.app_plot:
+            try:
+                self.app_plot.destroy()
+            except Exception:
+                pass
+            self.app_plot = None
+
+        if self.label_plot:
+            try:
+                self.label_plot.destroy()
+            except Exception:
+                pass
+            self.label_plot = None
+
         if self.main_figure:
             try:
                 plt.close(self.main_figure)
             except Exception:
                 pass
             self.main_figure = None
+
         if self.plot_canvas:
             try:
                 self.plot_canvas.get_tk_widget().destroy()
             except Exception:
                 pass
             self.plot_canvas = None
+
+        if self.vdf:
+            del self.vdf
+            self.vdf = None
+
         super().destroy()
 
     def __del__(self):

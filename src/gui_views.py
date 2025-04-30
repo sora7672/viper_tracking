@@ -761,7 +761,9 @@ class SmartDatePickerDialog(DatePickerDialog):
         :return: None
         """
 
-        self._on_escape(event)
+        focused = self.root.focus_get()
+        if focused is None or not str(focused).startswith(str(self.root)):
+            self._on_escape()
 
     def _on_return(self, event) -> None:
         """

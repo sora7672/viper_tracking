@@ -14,6 +14,7 @@ and how it's analyzed - without compromising your data privacy.
 - [Simple Explanation](#simple-explanation)
 - [Roadmap](#roadmap)
 - [Key Features](#key-features)
+- [Feature Showcase](#feature-showcase)
 - [Design Philosophy](#design-philosophy)
 - [Architecture & Technologies](#architecture--technologies)
 - [Use Cases](#use-cases)
@@ -81,6 +82,17 @@ All fully interactive and filterable
 
 ---
 
+## Feature Showcase
+
+Curious what ViperTracking looks like in action?  
+Check out the current feature showcase → [Showcase](./docs/showcase.md)
+
+It’s a visual tour with images and GIFs highlighting core features, UI flows, and work-in-progress elements.  
+This page will be updated continuously as new visual features and improvements roll out.
+
+
+---
+
 ## Design Philosophy
 
 - **Privacy by Design:** No keystroke logging, only filtered activity tracking; no data leaves your machine.
@@ -126,7 +138,7 @@ and extracted into the framework later on.
 
 - Clone the repository:
   ```bash
-  git clone https://github.com/sora7672/vipertracking.git
+  git clone https://github.com/sora7672/viper_tracking.git
   ```
 - Install dependencies:
   ```bash
@@ -178,13 +190,13 @@ and building something that actually helps people understand themselves better.
 
 ## Numbers
 
-Some geeky context for what went into this (as of 12th April 2025):
+Some geeky context for what went into this (as of 1st May 2025):
 
-- **1300+ hours** of code, testing, and architecture
-- **200–300 hours** of thinking through problems offline
-- **220.000 characters** of pure code  
-  - That’s roughly **140 pages** in a printed book
-- **90.000 characters** of internal documentation
+- **1100+ hours** of code, testing, and architecture
+- **250–350 hours** of thinking through problems offline
+- **270.000 characters** of pure code  
+  - That’s roughly **150 pages** in a printed book
+- **138.000 characters** of internal documentation
 - **7 months** until presentation milestone  
 - **6 full weeks** without a single line of code  
 - Regular weeks of **70+ hours** of focused coding

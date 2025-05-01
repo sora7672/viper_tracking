@@ -18,7 +18,7 @@ from time import sleep
 from config_manager import stop_program_threads
 from log_handler import get_logger
 from input_manager import stop_done as input_stop_done
-from window_manager import Label, update_all_labels_to_db, stop_done as win_stop_done
+from window_manager import Label, stop_done as win_stop_done
 from gui_controller import stop_gui
 from db_connector import stop_db
 from gui_views import open_main_window, open_systray_label
@@ -84,10 +84,10 @@ class SystemTrayManager:
 
     def __init__(self):
         """
-        Initializes the SystemTrayManager instance.
+        Initializes the `SystemTrayManager` singleton instance.
 
-        - Sets up the system tray icon with a default menu.
-        - Ensures debug logging for initialization.
+        Sets up the system tray icon and prepares the default menu structure.
+        Ensures only one instance is created and logs the initialization.
 
         :return: None
         """
@@ -95,9 +95,10 @@ class SystemTrayManager:
         if not hasattr(self, '_initialized'):
             self._initialized = True
             self.icon = Icon("Viper Tracking", Image.open("src/viper_tray.ico"))
-            # TODO: Not needed menu?
             self.menu = None
+            self.is_closing = False
             SystemTrayManager._instance = self
+
             get_logger().debug("__init__ SystemTrayManager")
 
     def start_systray(self) -> None:
@@ -114,18 +115,83 @@ class SystemTrayManager:
         self.icon.run_detached()
         get_logger().debug("started systray icon detached")
 
+
+    # FIXME: Error when closing and clicking again on icon before close done
+    #     An
+    #     error
+    #     occurred
+    #     when
+    #     calling
+    #     message
+    #     handler
+    #     Traceback(most
+    #     recent
+    #     call
+    #     last):
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_win32.py", line
+    #     412, in _dispatcher
+    #     return int(icon._message_handlers.get(
+    #                ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+    #                File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_win32.py", line
+    #     224, in _on_notify
+    #     descriptors[index - 1](self)
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_base.py", line
+    #     328, in inner
+    #     callback(self)
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_base.py", line
+    #     453, in __call__
+    #     return self._action(icon, self)
+    #     ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+    #     File
+    #     "C:\git\python\viper_tracking\.venv\Lib\site-packages\pystray\_base.py", line
+    #     548, in wrapper0
+    #     return action()
+    #     ^ ^ ^ ^ ^ ^ ^ ^
+    #     File
+    #     "C:\git\python\viper_tracking\src\system_tray_manager.py", line
+    #     137, in stop_program
+    #     stop_gui()
+    #     File
+    #     "C:\git\python\viper_tracking\src\gui_controller.py", line
+    #     150, in stop_gui
+    #     GuiController().stop_helper()
+    #     File
+    #     "C:\git\python\viper_tracking\src\gui_controller.py", line
+    #     109, in stop_helper
+    #     self.root.after(100, self.stop)
+    #     File
+    #     "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line
+    #     873, in after
+    #     name = self._register(callit)
+    #     ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^ ^
+    #     File
+    #     "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\tkinter\__init__.py", line
+    #     1604, in _register
+    #     self.tk.createcommand(name, f)
+    #     RuntimeError: main
+    #     thread is not in main
+    #     loop
+
+
     def stop_program(self) -> None:
         """
         Performs all necessary cleanup operations when the program is stopped.
 
         This method:
-        1. Stops all threads gracefully.
-        2. Calls the stop function for the GUI and database connections.
-        3. Updates all labels to the database.
-        4. Stops the systray icon and logs remaining threads.
+        1. Removes the menu
+        2. Stops all threads gracefully.
+        3. Calls the stop function for the GUI and database connections.
+        4. Updates all labels to the database.
+        5. Stops the systray icon and logs remaining threads.
 
         :return: None
         """
+        self.icon.menu = Menu()
+        self.icon.update_menu()
 
         stop_program_threads()
         # wait for threads to be done
@@ -138,14 +204,12 @@ class SystemTrayManager:
         sleep(0.3)
         get_logger().debug("stop_gui is done")
 
-        update_all_labels_to_db()
-        sleep(0.3)
-        get_logger().debug("update_all_labels_to_db() done")
-
         stop_db()
         sleep(0.3)
         get_logger().debug("close_db_connection() done")
 
+
+        # FIXME: icon stop earlyer?
         self.icon.stop()
         sleep(0.3)
         get_logger().debug("self.icon.stop() done)")
@@ -166,32 +230,30 @@ class SystemTrayManager:
 
         self.icon.menu = Menu(self._label_menu(),
                               MenuItem("Open GUI", open_main_window),
-                              MenuItem("Exit Viper Tracking", self.stop_program))
+                              MenuItem("Close App", Menu(MenuItem("Exit Viper Tracking", self.stop_program))))
         self.icon.update_menu()
 
     def _label_menu(self) -> MenuItem:
         """
-        Creates menu entries for manually added labels.
+        Builds a submenu for all manually added labels and returns it as a MenuItem.
 
-        For each manual label, this method adds:
-        - Activation and deactivation options based on the label's status.
-        - An option to add and start a new label.
+        For each manual label, this adds a toggleable entry labeled with the current state
+        (e.g., "Work[ON]" or "Work[OFF]"). The action toggles the label's active state
+        and refreshes the menu.
 
-        :return: pystray.MenuItem (The menu item containing all manual labels.)
+        Additionally, includes a static option to add and immediately activate a new manual label.
+
+        :return: pystray.MenuItem (The top-level menu item for all manual labels.)
         """
 
         all_label = Label.get_all_labels()
         menu_labels = []
         for label in all_label:
             if label.manually:
-                # TODO: remove the enable/disable and make it to set the value if possible.
-                disable_action = MultiFunction(label.disable, self.update_menu)
-                enable_action = MultiFunction(label.enable, self.update_menu)
 
-                menu_labels.append(MenuItem(label.name, Menu(
-                    MenuItem("Activate", enable_action, visible=not label.active),
-                    MenuItem("Deactivate", disable_action, visible=label.active)
-                )))
+                toggle_action = MultiFunction(label.toggle_activity, self.update_menu)
+
+                menu_labels.append(MenuItem(f"{label.name}[{'ON' if label.active else 'OFF'}]", toggle_action))
 
         menu_labels.append(MenuItem("Add & start new Label", open_systray_label))
 

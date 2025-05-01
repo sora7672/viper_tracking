@@ -21,11 +21,12 @@ from log_handler import get_logger
 from conditions import ObjectCondition, ConditionList
 from datetime import datetime
 
+from input_manager import input_to_db, had_input, reset_input_counters
+
 window_thread: Thread = None
+
 # TODO: Add this to the config
 untracked_types = []
-repl_chars = "–—-"
-removable_chars = "._-,!?;: "
 
 
 class WinInfo:
@@ -45,14 +46,30 @@ class WinInfo:
     """
 
     def __init__(self) -> None:
+        """
+        Initializes a WinInfo object with default values for the current foreground window.
+
+        Sets up placeholders for process ID, window type, window title, etc. The `creation_datetime`
+        is set to the current time when the object is created. No actual window data is populated
+        until `fill_self()` is called.
+        """
+
         self.creation_datetime: datetime = datetime.now()
         self.process_id: int = 0
         self.window_type: str = ""
         self.window_title: str = ""
+        self.activity = False
         self.window_text_words: list[str] = []
         self._label_list: list[int] = []
 
     def __str__(self):
+        """
+        Returns a string representation of the WinInfo instance.
+
+        The returned string is a dictionary-like representation of the WinInfo's attributes
+        (process ID, window title, labels, etc.), primarily for debugging or logging.
+        """
+
         return str(self.__dict__)
 
     def fill_self(self) -> None:
@@ -64,17 +81,539 @@ class WinInfo:
 
         :return: None
         """
+        self.activity = had_input()
 
-        a_win = GetForegroundWindow()
-        self.window_title = GetWindowText(a_win)
-        _, self.process_id = GetWindowThreadProcessId(a_win)
-        # TODO: Test this. Should fix the problem with broken pids
         try:
+            a_win = GetForegroundWindow()
+            self.window_title = GetWindowText(a_win)
+            _, self.process_id = GetWindowThreadProcessId(a_win)
             self.window_type = Process(self.process_id).name()
-        except NoSuchProcess | ValueError as e:
+
+        except Exception as e:
             get_logger().error(f"WinInfo object could not be filled properly: {e}")
-            del self
+            reset_input_counters()
+            self.__dict__.clear()
             return
+
+        # TODO: Add here a config option for the user for untracked windows
+        if self.window_type in untracked_types:
+            reset_input_counters()
+            self.__dict__.clear()
+            return
+
+        self.window_title = string_to_valid_string(self.window_title)
+
+        self.window_text_words = string_to_word_list(self.window_title)
+
+        self.set_labels()
+        self.write_to_db()
+
+    def set_labels(self) -> None:
+        """
+        Assigns labels to the window by evaluating all defined conditions.
+
+        Labels are applied if their conditions are met or if they are marked as manual.
+
+        :return: None
+        """
+
+        for lab in Label.get_all_labels():
+            lab.check_and_add_to_window(self)
+
+    def write_to_db(self) -> None:
+        """
+        Saves the current window's information to the database.
+
+        :return: None
+        """
+
+        window_id = DBHandler().add_window_log(self.as_dict())
+        input_to_db(window_id)
+
+    def add_label(self, value) -> None:
+        """
+        Adds a label ID to the window if it is not already present.
+
+        :param value: int (The label ID to be added.)
+        :return: None
+        """
+
+        if value not in self.label_list:
+            self._label_list.append(value)
+
+    def as_dict(self) -> dict:
+        """
+        Converts the window's attributes into a dictionary.
+
+        :return: dict (A dictionary of the window's attributes.)
+        """
+
+        return dict({"creation_datetime": self.creation_datetime,
+                     "window_type": self.window_type, "window_title": self.window_title,
+                     "window_text_words": self.window_text_words,
+                     "label_list": self._label_list, "activity": self.activity})
+
+    @property
+    def label_list(self) -> list[int]:
+        """
+        Returns the list of label IDs associated with the window.
+
+        :return: list[int]
+        """
+
+        return self._label_list
+
+
+class Label:
+    """
+    Represents a label that can be applied to windows based on conditions.
+
+    This class supports:
+    - Assigning labels to windows.
+    - Managing conditions for label assignment.
+    - Interacting with the database for saving, updating, and retrieving labels.
+
+    Thread-safe implementation ensures consistency when multiple threads modify labels.
+    """
+
+    _label_list = []
+    _lock = Lock()
+
+    def __init__(self, name: str, manually: bool = False, condition_list: ConditionList | None = None,
+                 active: bool = True, creation_datetime=None, db_id=None):
+        """
+        Creates a new Label object and optionally saves it to the database.
+
+        Initializes the label's properties like name, whether it’s manual, its condition list
+        (if any), active state, creation timestamp, and database ID. If no ID is provided and the label
+        is manual or has conditions, the label is automatically added to the database. The new label is appended
+        to the class-wide label list in a thread-safe manner.
+
+        :param name: str (The name of the label.)
+        :param manually: bool (True if this label is a manually applied label, False if it’s condition-based.)
+        :param condition_list: ConditionList | None (The list of conditions that define this label, or None if none.)
+        :param active: bool (Initial active state of the label; inactive labels are ignored in assignments.)
+        :param creation_datetime: datetime | None (Timestamp of label creation; if None, uses current time.)
+        :param db_id: Any (The database identifier for this label if it exists, otherwise None for a new label.)
+        """
+
+        self.lock = Lock()
+        self._name: str = name
+        self._manually = manually
+        self._active = active
+        # todo: simplyfy with just conditionlist param?
+        self._condition_list: ConditionList | None = condition_list or None
+        self._creation_datetime = datetime.now() if creation_datetime is None else creation_datetime
+        self._id = db_id
+
+        if self._id is None and (self._condition_list is not None or self._manually):
+            self.add_to_db()
+        get_logger().debug("(CLASS) LABEL lock use")
+        with Label._lock:
+            Label._label_list.append(self)
+        get_logger().debug("(CLASS) LABEL lock release")
+
+    @property
+    def condition_list(self) -> ConditionList:
+        """
+        Gets the ConditionList defining this label's conditions.
+
+        :return: ConditionList | None (The condition list for this label, or None if no conditions are set.)
+        """
+
+        with self.lock:
+            return self._condition_list
+
+    @condition_list.setter
+    def condition_list(self, condition: ConditionList | ObjectCondition | None) -> None:
+        """
+        Sets the condition(s) for this label.
+
+        Accepts either a ConditionList or a single ObjectCondition. If an ObjectCondition is provided,
+        it wraps it in a ConditionList. The operation is thread-safe.
+
+        :param condition: ConditionList | ObjectCondition | None (The new condition(s)
+        to assign to this label, or None to clear conditions.)
+        """
+
+        with self.lock:
+            if isinstance(self._condition_list, ObjectCondition):
+                self._condition_list = ConditionList(condition)
+            else:
+                self._condition_list = condition
+
+    @property
+    def id(self):
+        """
+        Retrieves the unique database ID of this label.
+
+        :return: Any (The identifier of this label in the database, or None if it hasn't been saved yet.)
+        """
+
+        with self.lock:
+            return self._id
+
+    @property
+    def name(self):
+        """
+        Gets the name of the label.
+
+        :return: str (The label's name.)
+        """
+
+        with self.lock:
+            return self._name
+
+    @name.setter
+    def name(self, name: str):
+        """
+        Sets a new name for the label.
+
+        :param name: str (The new name to assign to this label.)
+        """
+
+        with self.lock:
+            self._name = name
+
+    @property
+    def manually(self):
+        """
+        Indicates whether this label was added manually.
+
+        :return: bool (True if the label is manual (user-defined without conditions),
+         False if it is defined by conditions.)
+        """
+
+        with self.lock:
+            return self._manually
+
+    @manually.setter
+    def manually(self, manually: bool):
+        """
+        Marks this label as manual or condition-based.
+
+        :param manually: bool (Set True if making the label manual, False if it should be treated as condition-based.)
+        """
+
+        with self.lock:
+            self._manually = manually
+
+    @property
+    def active(self) -> bool:
+        """
+        Checks if this label is currently active.
+
+        :return: bool (True if the label is active and should be applied to windows, False if it is inactive.)
+        """
+
+        with self.lock:
+            return self._active
+
+    @active.setter
+    def active(self, active: bool) -> None:
+        """
+        Activates or deactivates this label.
+
+        :param active: bool (True to mark the label as active, False to mark it as inactive.)
+        """
+
+        with self.lock:
+            self._active = active
+
+    @property
+    def creation_datetime(self) -> datetime:
+        """
+        Gets the timestamp when this label was created.
+
+        :return: datetime (The creation date and time of the label.)
+        """
+
+        with self.lock:
+            return self._creation_datetime
+
+    def toggle_activity(self) -> None:
+        """
+        Toggles the internal `active` state of the instance.
+
+        If `active` is currently True, it becomes False.
+        If `active` is currently False, it becomes True.
+
+        :return: None
+        """
+
+        if self.active:
+            self.active = False
+        else:
+            self.active = True
+
+        self.update_in_db()
+
+
+    # FIXME: check all propertys to be used properly, changed a lot of them
+    def get_as_dict(self):
+        """
+        Converts the label's attributes into a dictionary.
+
+        :return: dict (A dictionary of the label's attributes.)
+        """
+
+        get_logger().debug(f"LABEL {self._name} lock use")
+        with self.lock:
+            tmp_dict = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
+                        "conditions": self._condition_list.to_dict() if self._condition_list else None,
+                        "creation_datetime": self._creation_datetime}
+
+        get_logger().debug(f"LABEL {self._name} lock release")
+        return tmp_dict
+
+    def add_to_db(self):
+        """
+        Adds the label to the database if it has no ID and is either manual or has conditions.
+
+        If the label already exists in the database, a warning is logged and no changes are made.
+
+        :return: None
+        """
+
+        get_logger().debug(f"LABEL {self._name} lock use")
+        with self.lock:
+            if self._id is not None:
+                get_logger().warning("Label was already added to the database.")
+            if not self._condition_list and not self._manually:
+                get_logger().error("No conditions were provided.")
+            else:
+                dict_no_id = {"name": self._name, "manually": self._manually, "active": self._active,
+                              "conditions": self._condition_list.to_dict() if self._condition_list else None,
+                              "creation_datetime": self._creation_datetime}
+                self._id = DBHandler().add_label(**dict_no_id)
+
+        get_logger().debug(f"LABEL {self._name} lock release")
+
+    def update_in_db(self) -> None:
+        """
+        Updates the label's information in the database.
+
+        :return: None
+        """
+
+        get_logger().debug(f"LABEL {self._name} lock use")
+        with self.lock:
+            if self._id is not None and self._id != "":
+                dict_with_id = {"label_id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
+                                "conditions": self._condition_list.to_dict() if self._condition_list else None,
+                                "creation_datetime": self._creation_datetime}
+                DBHandler().update_label(**dict_with_id)
+
+            else:
+                get_logger().error("update_in_db only works if the Label._id is properly set!")
+        get_logger().debug(f"LABEL {self._name} lock release")
+
+    def delete_in_db(self) -> None:
+        """
+        Deletes the label from the database and removes it from the label list.
+
+        :return: None
+        """
+
+        DBHandler().delete_label_by_id(self._id)
+        with Label._lock:
+            Label._label_list.remove(self)
+        with self.lock:
+            del self
+
+    def add_conditions(self, *conditions: ObjectCondition | ConditionList) -> None:
+        """
+        Adds one or more conditions to the label.
+
+        If a condition list exists, the new conditions are appended. Otherwise, a new list is created.
+
+        :param conditions: ObjectCondition | ConditionList (One or more conditions to add.)
+        :return: None
+        """
+
+        get_logger().debug(f"LABEL {self._name} lock use")
+        with self.lock:
+            if self._condition_list:
+                self._condition_list.add(*conditions)
+            else:
+                self._condition_list = ConditionList(conditions)
+        get_logger().debug(f"LABEL {self._name} lock release")
+        return self
+
+    def check_and_add_to_window(self, win_info: WinInfo) -> None:
+        """
+        Evaluates the label's conditions and adds it to the provided window if applicable.
+
+        :param win_info: WinInfo (The window object to evaluate.)
+        :return: None
+        """
+
+        get_logger().debug(f"LABEL {self._name} lock use")
+        with self.lock:
+            if self._active and (self._manually or self._condition_list.is_true(win_info)):
+                win_info.add_label(self._id)
+
+        get_logger().debug(f"LABEL {self._id} lock release")
+
+    @classmethod
+    def get_all_labels(cls) -> list:
+        """
+        Retrieves all existing labels as a list.
+
+        :return: list[Label] (A list of all label objects.)
+        """
+
+        get_logger().debug("(CLASS) LABEL lock use")
+        with Label._lock:
+            tmp_list = cls._label_list
+        get_logger().debug("(CLASS) LABEL lock release")
+        return tmp_list
+
+    @classmethod
+    def init_all_labels_from_db(cls) -> None:
+        """
+        Initializes all label objects from the database.
+
+        :return: None
+        """
+
+        label_dicts = DBHandler().get_all_labels()
+        for label_dict in label_dicts:
+            if label_dict["condition_json"] == "{}" or label_dict["condition_json"] is None:
+                # Fallback build in, if database row is corrupted with empty condition
+                tmp_conditionlist = None
+            else:
+                tmp_conditionlist = ConditionList.from_json(label_dict["condition_json"])
+
+            Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
+                  active=label_dict["active"], creation_datetime=label_dict["creation_datetime"],
+                  condition_list=tmp_conditionlist)
+
+
+def window_tracker() -> None:
+    """
+    Tracks the active foreground window and logs its details periodically.
+
+    This function runs in a thread and checks for new windows at intervals specified in the configuration.
+
+    :return: None
+    """
+
+    do_stop = False
+    while not threads_are_stopped():
+        inter = interval_windows()
+        if inter % 5 != 0:
+            raise ValueError(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
+        fifth_timer = inter // 5
+
+        for i in range(fifth_timer):
+            sleep(5)
+            if threads_are_stopped():
+                do_stop = True
+                break
+        if do_stop:
+            break
+        WinInfo().fill_self()
+    get_logger().debug("window_tracker() end")
+
+
+def start_window_tracker() -> None:
+    """
+    Starts the window tracking functionality in a separate thread.
+
+    :return: None
+    """
+
+    global window_thread
+    window_thread = Thread(target=window_tracker)
+    window_thread.start()
+    get_logger().debug("window_thread.start()")
+
+
+valid_chars = "1234567890abcdefghijklmnopqrstuvwxyz.,!?-_:$€@%&/()={}[]+*#|<>^°'\"\t\n\r"
+special_valid_chars = "äöüß"
+
+
+def string_to_valid_string(input_string: str) -> str:
+    """
+    Sanitizes a window title string by filtering out invalid characters.
+
+    Transforms the input string to lowercase, replaces long dash variants with a standard hyphen, and removes any character not in a predefined set of allowed characters (`valid_chars` which includes alphanumeric and common punctuation, plus `special_valid_chars` like German umlauts). The result is a cleaned string suitable for use in labels or comparisons.
+
+    :param input_string: str (The original window title or text to sanitize.)
+    :return: str (A version of the string containing only valid characters.)
+    """
+
+    out_string = ""
+    for c in input_string:
+        if c in "–—-":
+            c = "-"
+        cl = c.lower()
+        if cl in valid_chars or cl in special_valid_chars:
+            out_string += c
+        else:
+            out_string += " "
+    while "  " in out_string:
+        out_string = out_string.replace("  ", " ")
+    return out_string
+
+
+ending_chars = "._-,!?;:| "
+
+
+def string_to_word_list(input_string:str) -> list:
+    """
+    Breaks a window title into a list of individual words.
+
+    Uses whitespace and punctuation as delimiters to split the sanitized window title (after `string_to_valid_string` processing) into separate words. This helps in comparing window titles to label conditions by individual keywords.
+
+    :param input_string: str (The cleaned window title or text.)
+    :return: list[str] (A list of words extracted from the title.)
+    """
+
+    out_list = input_string.strip(ending_chars).split(" ")
+
+    for ec in ending_chars:
+        tmp_out_list = []
+        for out in out_list:
+            out = out.strip(ending_chars)
+            tmp_out_list.extend(out.split(ec))
+
+        out_list = tmp_out_list.copy()
+        out_list = list(dict.fromkeys(out_list))
+        out_list = [word for word in out_list if word]
+    return out_list
+
+
+# # # # External call functions for less import in other files # # # #
+def stop_done() -> bool:
+    """
+    Stops the window tracking thread and waits for it to finish.
+
+    :return: bool (True when the thread has stopped.)
+    """
+
+    global window_thread
+    window_thread.join()
+    return True
+
+
+def init_all_labels_from_db() -> None:
+    """
+    Initializes all labels from the database.
+
+    :return: None
+    """
+
+    Label.init_all_labels_from_db()
+
+
+
+
+if __name__ == "__main__":
+    print("Please start with the main.py")
+
+# TODO: Test this. Should fix the problem with broken pids
         # # # # # Old error, maybe fixed # # # #
         #
         #     Exception in thread Thread-6 (window_tracker):
@@ -158,402 +697,76 @@ class WinInfo:
         # positive
         # integer(got - 1827508448)
 
-        if self.window_type not in untracked_types:
-            for r_char in repl_chars:
-                self.window_title = self.window_title.replace(r_char, "-")
-            tmp_segments = self.window_title.split(" - ")
-            for i in range(len(tmp_segments)):
-                tmp_segments[i] = tmp_segments[i].strip(removable_chars)
-
-            win_words = tmp_segments.copy()
-            for rem in removable_chars:
-                tmp_segments = win_words.copy()
-                win_words = []
-                for t_segm in tmp_segments:
-                    win_words.extend(t_segm.split(rem))
-
-            self.window_text_words = list(dict.fromkeys(win_words))
-            self.set_labels()
-            self.write_to_db()
-
-    def set_labels(self) -> None:
-        """
-        Assigns labels to the window by evaluating all defined conditions.
-
-        Labels are applied if their conditions are met or if they are marked as manual.
-
-        :return: None
-        """
-
-        for lab in Label.get_all_labels():
-            lab.check_and_add_to_window(self)
-
-    def write_to_db(self):
-        """
-        Saves the current window's information to the database.
-
-        :return: None
-        """
-
-        DBHandler().add_window_log(self.as_dict())
-
-    def add_label(self, value):
-        """
-        Adds a label name to the window object if it does not already exist.
-
-        :param value: str (The label name to be added.)
-        :return: self (For chaining method calls.)
-        """
-
-        if value not in self.label_list:
-            self._label_list.append(value)
-        return self
-
-    def as_dict(self) -> dict:
-        """
-        Converts the window's attributes into a dictionary.
-
-        :return: dict (A dictionary of the window's attributes.)
-        """
-
-        return dict({"creation_datetime": self.creation_datetime,
-                     "window_type": self.window_type, "window_title": self.window_title,
-                     "window_text_words": self.window_text_words,
-                     "label_list": self._label_list})
-
-    @property
-    def label_list(self) -> list[int]:
-        """
-        Returns the list of labels associated with the window.
-
-        :return: list[str]
-        """
-
-        return self._label_list
-
-
-class Label:
-    """
-    Represents a label that can be applied to windows based on conditions.
-
-    This class supports:
-    - Assigning labels to windows.
-    - Managing conditions for label assignment.
-    - Interacting with the database for saving, updating, and retrieving labels.
-
-    Thread-safe implementation ensures consistency when multiple threads modify labels.
-    """
-
-    _label_list = []
-    _lock = Lock()
-
-    def __init__(self, name: str, manually: bool = False, condition_list: ConditionList | None = None,
-                 active: bool = True, creation_datetime=None, db_id=None):
-        self.lock = Lock()
-        self._name: str = name
-        self._manually = manually
-        self._active = active
-        # todo: simplyfy with just conditionlist param?
-        self._condition_list: ConditionList | None = condition_list or None
-        self._creation_datetime = datetime.now() if creation_datetime is None else creation_datetime
-        self._id = db_id
-
-        if self._id is None and (self._condition_list is not None or self._manually):
-            self.add_to_db()
-        get_logger().debug("(CLASS) LABEL lock use")
-        with Label._lock:
-            Label._label_list.append(self)
-        get_logger().debug("(CLASS) LABEL lock release")
-
-    @property
-    def condition_list(self) -> ConditionList:
-        with self.lock:
-            return self._condition_list
-
-    @condition_list.setter
-    def condition_list(self, condition: ConditionList | ObjectCondition | None) -> None:
-        with self.lock:
-            if isinstance(self._condition_list, ObjectCondition):
-                self._condition_list = ConditionList(condition)
-            else:
-                self._condition_list = condition
-
-    @property
-    def id(self):
-        with self.lock:
-            return self._id
-
-    @property
-    def name(self):
-        with self.lock:
-            return self._name
-
-    @name.setter
-    def name(self, name: str):
-        with self.lock:
-            self._name = name
-
-    @property
-    def manually(self):
-        with self.lock:
-            return self._manually
-
-    @manually.setter
-    def manually(self, manually: bool):
-        with self.lock:
-            self._manually = manually
-
-    @property
-    def active(self):
-        with self.lock:
-            return self._active
-
-    @active.setter
-    def active(self, active: bool):
-        with self.lock:
-            self._active = active
-
-    @property
-    def creation_datetime(self):
-        with self.lock:
-            return self._creation_datetime
-
-    def enable(self):
-        """
-        Activates the label.
-
-        Sets the label's `active` property to True, marking it as active for application.
-
-        :return: Label (Returns the instance for method chaining.)
-        """
-
-        self.active = True
-        return self
-
-    def disable(self):
-        """
-        Deactivates the label.
-
-        Sets the label's `active` property to False, marking it as inactive for application.
-
-        :return: Label (Returns the instance for method chaining.)
-        """
-
-        self.active = False
-        return self
-
-    # FIXME: check all propertys to be used properly, changed a lot of them
-    def get_as_dict(self):
-        """
-        Converts the label's attributes into a dictionary.
-
-        :return: dict (A dictionary of the label's attributes.)
-        """
-
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            tmp_dict = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
-                        "conditions": self._condition_list.to_dict() if self._condition_list else None,
-                        "creation_datetime": self._creation_datetime}
-
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return tmp_dict
-
-    def add_to_db(self):
-        """
-        Adds the Label into the database.
-        Enables chain method casting.
-        :return: self
-        """
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            if self._id is not None:
-                get_logger().warning("Label was already added to the database.")
-            if not self._condition_list and not self._manually:
-                get_logger().error("No conditions were provided.")
-            else:
-                dict_no_id = {"name": self._name, "manually": self._manually, "active": self._active,
-                              "conditions": self._condition_list.to_dict() if self._condition_list else None,
-                              "creation_datetime": self._creation_datetime}
-                self._id = DBHandler().add_label(dict_no_id)
-
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return self
-
-    def update_in_db(self):
-        """
-        Updates the label's information in the database.
-
-        :return: None
-        """
-
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            if self._id is not None and self._id != "":
-                dict_with_id = {"id": self._id, "name": self._name, "manually": self._manually, "active": self._active,
-                                "conditions": self._condition_list.to_dict() if self._condition_list else None,
-                                "creation_datetime": self._creation_datetime}
-                DBHandler().update_label(dict_with_id)
-
-            else:
-                get_logger().error("update_in_db only works if the Label._id is properly set!")
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return self
-
-    def delete_in_db(self) -> None:
-        """
-        Deletes the label from the database and removes it from the label list.
-
-        :return: None
-        """
-
-        DBHandler().delete_label_by_id(self._id)
-        with Label._lock:
-            Label._label_list.remove(self)
-        with self.lock:
-            del self
-
-    def add_conditions(self, *conditions: ObjectCondition | ConditionList):
-        """
-        Adds a condition to the Label object.
-        Enables chain method casting.
-        Can add multiple conditions with multiple methode calls.
-        :return: self
-        """
-
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            if self._condition_list:
-                self._condition_list.add(*conditions)
-            else:
-                self._condition_list = ConditionList(conditions)
-        get_logger().debug(f"LABEL {self._name} lock release")
-        return self
-
-    def check_and_add_to_window(self, win_info: WinInfo) -> None:
-        """
-        Evaluates the label's conditions and adds it to the provided window if applicable.
-
-        :param win_info: WinInfo (The window object to evaluate.)
-        :return: None
-        """
-
-        get_logger().debug(f"LABEL {self._name} lock use")
-        with self.lock:
-            if self._active and (self._manually or self._condition_list.is_true(win_info)):
-                win_info.add_label(self._id)
-
-        get_logger().debug(f"LABEL {self._id} lock release")
-
-    @classmethod
-    def get_all_labels(cls) -> list:
-        """
-        Retrieves all existing labels as a list.
-
-        :return: list[Label] (A list of all label objects.)
-        """
-
-        get_logger().debug("(CLASS) LABEL lock use")
-        with Label._lock:
-            tmp_list = cls._label_list
-        get_logger().debug("(CLASS) LABEL lock release")
-        return tmp_list
-
-    @classmethod
-    def init_all_labels_from_db(cls):
-        """
-        Initializes all label objects from the database.
-
-        :return: None
-        """
-
-        label_dicts = DBHandler().get_all_labels()
-        for label_dict in label_dicts:
-            if label_dict["condition_json"] == "{}":
-                tmp_conditionlist = None
-            else:
-                tmp_conditionlist = ConditionList.from_json(label_dict["condition_json"])
-
-            Label(name=label_dict["name"], manually=label_dict["manually"], db_id=label_dict["id"],
-                  active=label_dict["active"], creation_datetime=label_dict["creation_datetime"],
-                  condition_list=tmp_conditionlist)
-
-
-def window_tracker() -> None:
-    """
-    Tracks the active foreground window and logs its details periodically.
-
-    This function runs in a thread and checks for new windows at intervals specified in the configuration.
-
-    :return: None
-    """
-
-    do_stop = False
-    while not threads_are_stopped():
-        inter = interval_windows()
-        if inter % 5 != 0:
-            raise ValueError(f'Unexpected input interval! Needs to be multiple of 5: {inter}')
-        fifth_timer = inter // 5
-
-        for i in range(fifth_timer):
-            sleep(5)
-            if threads_are_stopped():
-                do_stop = True
-                break
-        if do_stop:
-            break
-        WinInfo().fill_self()
-    get_logger().debug("window_tracker() end")
-
-
-def start_window_tracker() -> None:
-    """
-    Starts the window tracking functionality in a separate thread.
-
-    :return: None
-    """
-
-    global window_thread
-    window_thread = Thread(target=window_tracker)
-    window_thread.start()
-    get_logger().debug("window_thread.start()")
-
-
-# # # # External call functions for less import in other files # # # #
-def stop_done() -> bool:
-    """
-    Stops the window tracking thread and waits for it to finish.
-
-    :return: bool (True when the thread has stopped.)
-    """
-
-    global window_thread
-    window_thread.join()
-    return True
-
-
-def init_all_labels_from_db() -> None:
-    """
-    Initializes all labels from the database.
-
-    :return: None
-    """
-
-    Label.init_all_labels_from_db()
-
-
-def update_all_labels_to_db() -> None:
-    """
-    Updates all labels in the database. Useful for saving label states before exiting.
-
-    :return: None
-    """
-
-    for lab in Label.get_all_labels():
-        lab.update_in_db()
-
-
-if __name__ == "__main__":
-    print("Please start with the main.py")
-
-
+# FIXME: This error is persistent:
+# Exception in thread Thread-5 (window_tracker):
+# Traceback (most recent call last):
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 76, in fill_self
+#     self.window_type = Process(self.process_id).name()
+#                        ^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
+#     self._init(pid)
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 330, in _init
+#     raise ValueError(msg)
+# ValueError: pid must be a positive integer (got -1229961840)
+#
+# During handling of the above exception, another exception occurred:
+#
+# Traceback (most recent call last):
+#   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+#     self.run()
+#   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+#     self._target(*self._args, **self._kwargs)
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 418, in window_tracker
+#     WinInfo().fill_self()
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 77, in fill_self
+#     except NoSuchProcess | ValueError as e:
+# TypeError: catching classes that do not inherit from BaseException is not allowed
+
+
+# FIXME: Error raised on 20.03:
+# Exception in thread Thread-5 (window_tracker):
+# Traceback (most recent call last):
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 727, in wrapper
+#     return fun(self, *args, **kwargs)
+#            ^^^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 989, in create_time
+#     _user, _system, created = cext.proc_times(self.pid)
+#                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+# ProcessLookupError: [Errno 3] assume no such process (originated from OpenProcess -> ERROR_INVALID_PARAMETER)
+#
+# During handling of the above exception, another exception occurred:
+#
+# Traceback (most recent call last):
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 355, in _init
+#     self.create_time()
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 757, in create_time
+#     self._create_time = self._proc.create_time()
+#                         ^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\_pswindows.py", line 729, in wrapper
+#     raise convert_oserror(err, pid=self.pid, name=self._name)
+# psutil.NoSuchProcess: process no longer exists (pid=1606207504)
+#
+# During handling of the above exception, another exception occurred:
+#
+# Traceback (most recent call last):
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 77, in fill_self
+#     self.window_type = Process(self.process_id).name()
+#                        ^^^^^^^^^^^^^^^^^^^^^^^^
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 319, in __init__
+#     self._init(pid)
+#   File "C:\git\python\viper_tracking\.venv\Lib\site-packages\psutil\__init__.py", line 368, in _init
+#     raise NoSuchProcess(pid, msg=msg)
+# psutil.NoSuchProcess: process PID not found (pid=1606207504)
+#
+# During handling of the above exception, another exception occurred:
+#
+# Traceback (most recent call last):
+#   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1073, in _bootstrap_inner
+#     self.run()
+#   File "C:\Users\s0rab\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1010, in run
+#     self._target(*self._args, **self._kwargs)
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 420, in window_tracker
+#     WinInfo().fill_self()
+#   File "C:\git\python\viper_tracking\src\window_manager.py", line 78, in fill_self
+#     except NoSuchProcess | ValueError as e:
+# TypeError: catching classes that do not inherit from BaseException is not allowed

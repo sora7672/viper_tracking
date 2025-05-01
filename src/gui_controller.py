@@ -15,9 +15,11 @@ from tkinter import PhotoImage
 from threading import Lock
 from log_handler import get_logger
 from os import path
+from stylemanager import StyleManager
 
 from settings_manager import UserSettingsManager
 # TODO: Grab the user settings and set the proper style for the windows
+
 
 class GuiController:
     """
@@ -31,16 +33,16 @@ class GuiController:
         root: The main GUI window (invisible by default).
         icon_image: The icon image for the window.
         icon_path: Absolute path to the icon image file.
-        lock: A threading lock to ensure safe operations.
+        _lock: A threading lock to ensure safe operations.
     """
 
     _instance = None
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kwargs) -> 'GuiController':
         """
         Implements the singleton pattern by ensuring only one instance of the class exists.
 
-        :return: InputManager (The singleton instance.)
+        :return: GuiController (The singleton instance.)
         """
 
         if cls._instance is None:
@@ -49,24 +51,35 @@ class GuiController:
 
     def __init__(self) -> None:
         """
-        Initializes the `GuiController` instance.
+        Initializes the `GuiController` singleton instance.
 
-        - Configures the main GUI window.
-        - Sets up the window title and icon.
-        - Initializes a threading lock for safe operations.
+        - Creates and hides the root `ttkbootstrap` window.
+        - Loads and applies the GUI theme from user settings (with fallback).
+        - Sets window metadata such as title and icon.
+        - Initializes the `StyleManager` with the root window.
+        - Sets up a thread lock for synchronized access.
 
-        Note:
-        - The window is invisible on initialization (`withdraw` is called).
-        - Logs initialization details for debugging purposes.
+        Notes:
+        - The main window is hidden initially using `.withdraw()`.
+        - If the icon fails to load, the error is logged but execution continues.
 
-        :raises Exception: If the icon image fails to load.
+        :raises Exception: If the window icon cannot be loaded.
         """
 
         if not hasattr(self, '_initialized'):
             self._initialized = True
-            # TODO: read in config for style from user settings
-            self.root = tb.Window(themename="sandstone")
+            self.root = tb.Window()
             self.root.withdraw()
+
+            theme_from_settings = UserSettingsManager().gui_theme
+            if theme_from_settings in self.root.style.theme_names():
+                self.root.style.theme_use(theme_from_settings)
+            else:
+                self.root.style.theme_use("cosmo")
+                UserSettingsManager().gui_theme = "flatly"
+                UserSettingsManager().save_settings()
+
+
 
             self.root.title('Invisible Window(If you see me report me!)')
             # TODO: get a better image
@@ -78,8 +91,8 @@ class GuiController:
                 self.root.iconphoto(False, self.icon_image)
             except Exception as e:
                 get_logger().error(f"Failed to set icon. Error: {e}")
-
-            self.lock = Lock()
+            StyleManager(self.root)
+            self._lock = Lock()
             get_logger().debug("__init__ from GuiHandler")
 
     def run(self) -> None:
@@ -106,9 +119,9 @@ class GuiController:
         :return: None
         """
 
-        self.root.after(100, self.stop)
+        self.root.after(100, self._stop)
 
-    def stop(self) -> None:
+    def _stop(self) -> None:
         """
         Stops the GUI's main event loop and destroys all child windows.
 
@@ -131,9 +144,6 @@ class GuiController:
         self.root.quit()
         get_logger().debug("after root.quit")
         get_logger().debug("methode stop from GuiHandler end")
-
-
-# # # # Helper functions for the widgets # # # #
 
 
 # # # # External call functions for less import in other files # # # #

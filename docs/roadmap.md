@@ -29,20 +29,15 @@ how things were built, what challenges came up, and what it all meant, you want 
 
 - Add Mainplot label logic & UI & UX
 - Fix subfilter remove and then error on analyse
-- Prevent double opening of main window
-- Make the app closing with a confirmation
-- Fix window process error, which occurs when there is time between process id grab & process analysis(lag or so)
-- Handle no values on plot and analysis(if not fixed so far)
 - Save colors for labels, also in db
 - Save colors for apps, also in db
 - Enable logging in debug mode & hardcore debug mode in GUI
 - Add logics for logging hardcore debug and normal debug
-- Fix reading in GUI themes from config
 - Add logger to the newer modules
-- Create a smarter DB exception handling
+- Hook in the day analyzer in main_view, not the static data for tests
 - Minimize all imports in each module to `from xyz import methode, methode2` and so on
 - Check for scattered prints or bad raises per module
-- Hook in the day analyzer in main_view, not the static data for tests
+
 
 
 ## Post Open Beta
@@ -90,6 +85,12 @@ or `meeting#daily_scrum`, `meeting#customerABC+insurance_car`
 > This isn’t just "done", these are key stepping stones that shaped the core of Viper Tracking.  
 
 
+- Create a smarter DB exception handling
+- Fix reading in GUI themes from config
+- Prevent double opening of main window
+- Make the app closing with a confirmation
+- Fix window process error, which occurs when there is time between process id grab & process analysis(lag or so)
+- Handle no values on plot and analysis(if not fixed so far)
 - Add duplicate registration cooldown logic to prevent redundant style injection
 - Add final GUI polish and UX handling across all tabs  
 - Create new helper widgets like `FlexFrame`, `OverlayFrame`, `ItemSelectFrame`  
